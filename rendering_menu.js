@@ -848,6 +848,17 @@ function handleCanvasTouch(event, type, isTap = false) {
  */
 function handleCanvasClick(event) {
     if (!gameCanvas) return;
+    
+    // --- Directe Audio deblokkering bij muisklik op de pc ---
+    if (!audioContext) {
+        try {
+            audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            loadAllSounds(); // Laad de geluiden direct in zodra de pc-gebruiker klikt
+        } catch (err) {
+            console.error("Web Audio API not supported", err);
+        }
+    }
+    
     if (audioContext && audioContext.state === 'suspended') {
         audioContext.resume().then(() => {
             audioContextInitialized = true;
@@ -859,6 +870,8 @@ function handleCanvasClick(event) {
             source.connect(audioContext.destination);
             source.start(0);
         });
+    } else if (audioContext && audioContext.state === 'running') {
+        audioContextInitialized = true;
     }
 
     if (isInGameState) {
