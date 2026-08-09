@@ -989,7 +989,7 @@ function renderGame() {
             const platiniColor = "red";
 
             const messageStructure = [
-                { text: "⚠️ Disclaimer ⚠️", font: disclaimerTitleFont, color: disclaimerTitleColor, skipAfter: 0.75, xOffset: -15 },
+                { text: "⚠️ Disclaimer ⚠️", font: disclaimerTitleFont, color: disclaimerTitleColor, skipAfter: 0.75 },
                 { text: "This is an unofficial", font: disclaimerTextFont, color: disclaimerTextColor },
                 { text: "fan remake of Galaga,", font: disclaimerTextFont, color: disclaimerTextColor, skipAfter: 1 },
                 { text: "Created out of love", font: disclaimerTextFont, color: disclaimerTextColor },
@@ -1041,9 +1041,9 @@ function renderGame() {
 
             let currentDisclaimerTextY = disclaimerStartY;
             messageStructure.forEach((item, index) => {
-                const itemLineHeight = lineHeightsInfo[index].height;
-                const xPos = (index === 0) ? (midX - 16) : midX; // Verschuift de 1e gele regel direct naar links
-                drawCanvasText(item.text, xPos, currentDisclaimerTextY + itemLineHeight / 2, item.font, item.color, 'center', 'middle', true);
+    const itemLineHeight = lineHeightsInfo[index].height;
+    const xPos = midX; // Altijd centreren op het midden van de pagina
+    drawCanvasText(item.text, xPos, currentDisclaimerTextY + itemLineHeight / 2, item.font, item.color, 'center', 'middle', true);
                 currentDisclaimerTextY += itemLineHeight;
                 if (item.skipAfter) {
                     currentDisclaimerTextY += referenceSkipLineHeight * item.skipAfter;
