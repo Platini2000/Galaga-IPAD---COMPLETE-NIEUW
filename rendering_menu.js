@@ -989,7 +989,7 @@ function renderGame() {
             const platiniColor = "red";
 
             const messageStructure = [
-                { text: "⚠️ Disclaimer", font: disclaimerTitleFont, color: disclaimerTitleColor, skipAfter: 0.75 },
+                { text: "⚠️ Disclaimer ⚠️", font: disclaimerTitleFont, color: disclaimerTitleColor, skipAfter: 0.75 },
                 { text: "This is an unofficial", font: disclaimerTextFont, color: disclaimerTextColor },
                 { text: "fan remake of Galaga,", font: disclaimerTextFont, color: disclaimerTextColor, skipAfter: 1 },
                 { text: "Created out of love", font: disclaimerTextFont, color: disclaimerTextColor },
