@@ -989,7 +989,7 @@ function renderGame() {
             const platiniColor = "red";
 
             const messageStructure = [
-                { text: "⚠️ Disclaimer ⚠️", font: disclaimerTitleFont, color: disclaimerTitleColor, skipAfter: 0.75 },
+                { text: "⚠️ Disclaimer ⚠️", font: disclaimerTitleFont, color: disclaimerTitleColor, skipAfter: 0.75, xOffset: -15 },
                 { text: "This is an unofficial", font: disclaimerTextFont, color: disclaimerTextColor },
                 { text: "fan remake of Galaga,", font: disclaimerTextFont, color: disclaimerTextColor, skipAfter: 1 },
                 { text: "Created out of love", font: disclaimerTextFont, color: disclaimerTextColor },
@@ -1042,7 +1042,8 @@ function renderGame() {
             let currentDisclaimerTextY = disclaimerStartY;
             messageStructure.forEach((item, index) => {
                 const itemLineHeight = lineHeightsInfo[index].height;
-                drawCanvasText(item.text, midX, currentDisclaimerTextY + itemLineHeight / 2, item.font, item.color, 'center', 'middle', true);
+                const itemXOffset = item.xOffset || 0; // Verkrijg de handmatige correctie
+                drawCanvasText(item.text, midX + itemXOffset, currentDisclaimerTextY + itemLineHeight / 2, item.font, item.color, 'center', 'middle', true);
                 currentDisclaimerTextY += itemLineHeight;
                 if (item.skipAfter) {
                     currentDisclaimerTextY += referenceSkipLineHeight * item.skipAfter;
