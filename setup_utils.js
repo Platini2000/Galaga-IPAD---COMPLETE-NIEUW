@@ -1638,6 +1638,13 @@ const DOUBLE_TAP_MAX_INTERVAL = 300;
 const SCORE_AREA_TAP_MARGIN = 30;
 
 function handleTouchStartGlobal(event) {
+    // --- iOS Audio Unlocking direct bij de start van de touch, vóór preventDefault ---
+    if (audioContext && audioContext.state === 'suspended') {
+        audioContext.resume().then(() => {
+            audioContextInitialized = true;
+        }).catch(err => console.error("Error resuming AudioContext on touchstart:", err));
+    }
+
     event.preventDefault();
     if (event.touches && event.touches.length > 0) {
         const touch = event.touches[0];
@@ -1676,13 +1683,10 @@ function handleTouchMoveGlobal(event) {
 }
 
 function handleTouchEndGlobal(event) {
-    event.preventDefault();
-    
-    // --- iOS Audio Unlocking op touchend (resumeren en stil geluid afspelen) ---
+    // --- iOS Audio Unlocking op touchend (resumeren en stil geluid afspelen), vóór preventDefault ---
     if (audioContext && audioContext.state === 'suspended') {
         audioContext.resume().then(() => {
             audioContextInitialized = true;
-            console.log("AudioContext resumed by touchend.");
             const buffer = audioContext.createBuffer(1, 1, 22050);
             const source = audioContext.createBufferSource();
             source.buffer = buffer;
@@ -1690,6 +1694,8 @@ function handleTouchEndGlobal(event) {
             source.start(0);
         }).catch(err => console.error("Error resuming AudioContext on touchend:", err));
     }
+
+    event.preventDefault();
 
     const now = Date.now();
     const duration = now - touchStartTime;

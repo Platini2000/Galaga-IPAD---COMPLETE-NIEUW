@@ -969,7 +969,8 @@ function renderGame() {
             const disclaimerTitleColor = "yellow";
             const disclaimerTextFont = `normal ${cleanFontBaseSize}px Arial, sans-serif`;
             const disclaimerTextColor = "lime";
-            const rotateFont = "bold 24px 'Press Start 2P'";
+            const rotateFontSize = Math.min(22, gameCanvas.width / 20); // Schaalt nu netjes mee
+            const rotateFont = `bold ${rotateFontSize}px 'Press Start 2P'`;
             const rotateColor = "rgba(0, 191, 255, 0.9)";
             const platiniFont = `normal ${cleanFontBaseSize - 4}px Arial, sans-serif`;
             const platiniColor = "red";
