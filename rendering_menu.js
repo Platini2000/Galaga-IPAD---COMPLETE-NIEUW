@@ -1042,8 +1042,8 @@ function renderGame() {
             let currentDisclaimerTextY = disclaimerStartY;
             messageStructure.forEach((item, index) => {
                 const itemLineHeight = lineHeightsInfo[index].height;
-                const itemXOffset = item.xOffset || 0; // Verkrijg de handmatige correctie
-                drawCanvasText(item.text, midX + itemXOffset, currentDisclaimerTextY + itemLineHeight / 2, item.font, item.color, 'center', 'middle', true);
+                const xPos = (index === 0) ? (midX - 16) : midX; // Verschuift de 1e gele regel direct naar links
+                drawCanvasText(item.text, xPos, currentDisclaimerTextY + itemLineHeight / 2, item.font, item.color, 'center', 'middle', true);
                 currentDisclaimerTextY += itemLineHeight;
                 if (item.skipAfter) {
                     currentDisclaimerTextY += referenceSkipLineHeight * item.skipAfter;
