@@ -739,26 +739,7 @@ function checkCollision(rect1, rect2) {
 }
 
 function initializeAudioContext() {
-    if (audioContextInitialized) return;
-    try {
-        audioContext = new (window.AudioContext || window.webkitAudioContext)();
-        if (audioContext.state === 'suspended') {
-            const unlock = () => {
-                audioContext.resume().then(() => {
-                    console.log("AudioContext resumed successfully after user gesture.");
-                    audioContextInitialized = true;
-                    window.removeEventListener('click', unlock);
-                    window.removeEventListener('touchstart', unlock);
-                }).catch(err => console.error("Error resuming AudioContext:", err));
-            };
-            window.addEventListener('click', unlock, { once: true });
-            window.addEventListener('touchstart', unlock, { once: true });
-        } else {
-            audioContextInitialized = true;
-        }
-    } catch (err) {
-        console.error("Web Audio API is not supported in this browser.", err);
-    }
+    // Leeggelaten om te voorkomen dat Safari de geluidskaart bij het laden al blokkeert.
 }
 
 async function loadSound(name, path) {
@@ -1638,11 +1619,27 @@ const DOUBLE_TAP_MAX_INTERVAL = 300;
 const SCORE_AREA_TAP_MARGIN = 30;
 
 function handleTouchStartGlobal(event) {
-    // --- iOS Audio Unlocking direct bij de start van de touch, vóór preventDefault ---
+    // --- Directe iOS Audio deblokkering bij de allereerste aanraking op het canvas ---
+    if (!audioContext) {
+        try {
+            audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            loadAllSounds(); // Laad de geluiden pas in zodra de geluidskaart actief is
+        } catch (err) {
+            console.error("Web Audio API not supported", err);
+        }
+    }
+    
     if (audioContext && audioContext.state === 'suspended') {
         audioContext.resume().then(() => {
             audioContextInitialized = true;
-        }).catch(err => console.error("Error resuming AudioContext on touchstart:", err));
+            console.log("AudioContext successfully resumed on iOS!");
+            // Start de menumuziek direct zodra de iPhone deblokkeert
+            if (!isInGameState) {
+                playSound('menuMusicSound', true, 0.2);
+            }
+        }).catch(err => console.error("Error resuming AudioContext:", err));
+    } else if (audioContext && audioContext.state === 'running') {
+        audioContextInitialized = true;
     }
 
     event.preventDefault();

@@ -1039,7 +1039,7 @@ function renderGame() {
 
             // --- BEGIN VASTE UI VOOR PORTRETMODUS ---
             gameCtx.save();
-            const PORTRAIT_UI_FONT = "20px 'Press Start 2P'";
+            const PORTRAIT_UI_FONT = "bold 16px monospace";
             const PORTRAIT_LABEL_COLOR = "red";
             const PORTRAIT_SCORE_COLOR = "white";
             const PORTRAIT_MARGIN_TOP_BASE = 15;
