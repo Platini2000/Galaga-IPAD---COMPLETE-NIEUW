@@ -317,7 +317,7 @@ let audioContextInitialized = false;
 const soundPaths = {
     'captureSound': 'Geluiden/Capture.mp3',
     'shipCapturedSound': 'Geluiden/Capture-ship.mp3',
-    'dualShipSound': 'Geluiden/Capture-ship.mp3',
+    'dualShipSound': 'Geluiden/Waveup.mp3',
     'playerShootSound': 'Geluiden/firing.mp3',
     'explosionSound': 'Geluiden/kill.mp3',
     'gameOverSound': 'Geluiden/gameover.mp3',
