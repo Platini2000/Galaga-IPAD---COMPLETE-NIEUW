@@ -24,6 +24,7 @@ body {
     height: 100%;
     z-index: -2; /* Achterste laag */
     display: block;
+    opacity: 0.45; /* Maakt de sterrenhemel 50% transparanter */
 }
 
 #retroGridCanvas {
