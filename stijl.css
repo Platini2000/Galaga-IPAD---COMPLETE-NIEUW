@@ -24,7 +24,7 @@ body {
     height: 100%;
     z-index: -2; /* Achterste laag */
     display: block;
-    opacity: 0.45; /* Maakt de sterrenhemel 50% transparanter */
+    opacity: 0.65; /* Maakt de sterrenhemel transparanter */
 }
 
 #retroGridCanvas {
@@ -35,7 +35,7 @@ body {
     height: 100%;
     z-index: -1; /* Tussen sterren en game */
     display: block; /* Altijd zichtbaar */
-    opacity: 0.4; /* Maakt de retro vloer een stuk zachter en transparanter */
+    opacity: 0.6; /* Maakt de retro vloer een stuk zachter en transparanter */
 }
 
 #gameCanvas {
