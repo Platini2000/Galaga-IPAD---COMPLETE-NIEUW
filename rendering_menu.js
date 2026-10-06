@@ -47,7 +47,7 @@ const PAUSE_TEXT_COLOR = INTRO_TEXT_COLOR_NORMAL;
 const PAUSE_TEXT_SHADOW = true;
 
 // GAME_OVER_DURATION is defined in setup_utils.js
-const RESULTS_SCREEN_DURATION = 20000;
+const RESULTS_SCREEN_DURATION = 10000;
 const PLAYER_GAME_OVER_MESSAGE_DURATION = 5000;
 
 // --- Score Screen Constanten ---
