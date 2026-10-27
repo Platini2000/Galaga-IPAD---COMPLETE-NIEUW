@@ -1,6 +1,9 @@
 // --- START OF FILE game_logic.js ---
 // --- DEEL 1      van 8 dit code blok    ---
 
+// --- Hulpvariabele om bij te houden hoeveel Challenging Stages er al zijn geweest ---
+let completedChallengingStagesCount = 0;
+
 
 function generateAttackPathInternal(enemy) { // Hernoemd naar Internal
     try {
@@ -157,14 +160,12 @@ window.resetAllMessages = resetAllMessagesInternal;
 
 /** Helper functie om game geluiden te stoppen. */
 function stopAllGameSoundsInternal() {
-    // Stop alle geluiden via hun sound ID's.
-    // soundPaths is gedefinieerd in setup_utils.js
     if (typeof soundPaths === 'object' && soundPaths !== null && typeof stopSound === 'function') {
         for (const soundId in soundPaths) {
             stopSound(soundId);
         }
     }
-    isGridSoundPlaying = false; // Reset specifieke vlaggen
+    isGridSoundPlaying = false; 
 }
 window.stopAllGameSounds = stopAllGameSoundsInternal;
 
@@ -175,7 +176,8 @@ function resetGameInternal() {
     score = 0;
     level = 1;
     playerLives = 3;
-    window.highScoreHolderId = null; // << GEWIJZIGD: Reset highScoreHolderId
+    completedChallengingStagesCount = 0; 
+    window.highScoreHolderId = null;
 
     if (isTwoPlayerMode) {
         player1Lives = 3;
@@ -206,7 +208,7 @@ function resetGameInternal() {
         player1NeedsRespawnAfterCapture = false;
         player2NeedsRespawnAfterCapture = false;
 
-        if (selectedGameMode === 'coop') { // Geldt voor Human COOP, 1P vs AI COOP, COOP AI Demo
+        if (selectedGameMode === 'coop') {
             playerLives = 0;
             if (gameCanvas && gameCanvas.width > 0 && gameCanvas.height > 0) {
                 const p1InitialX = gameCanvas.width / 2 - gameCanvas.width * COOP_SHIP_HORIZONTAL_OFFSET_FACTOR - (SHIP_WIDTH / 2);
@@ -231,7 +233,7 @@ function resetGameInternal() {
                 }
             }
             ship = null;
-        } else { // selectedGameMode === 'normal' (Human 2P Normal, 1P vs AI Normal)
+        } else {
             if (!ship && gameCanvas && gameCanvas.width > 0 && gameCanvas.height > 0) {
                  ship = { x: Math.round(gameCanvas.width / 2 - SHIP_WIDTH / 2), y: gameCanvas.height - SHIP_HEIGHT - SHIP_BOTTOM_MARGIN, width: SHIP_WIDTH, height: SHIP_HEIGHT, speed: SHIP_MOVE_SPEED, targetX: 0, id: 'main' };
                  ship.targetX = ship.x;
@@ -243,7 +245,7 @@ function resetGameInternal() {
             ship1 = null;
             ship2 = null;
         }
-    } else { // 1P Classic
+    } else {
         player1Lives = 3;
         player1Score = 0;
         player1MaxLevelReached = 1;
@@ -297,7 +299,6 @@ function resetGameInternal() {
     smoothedShipX = undefined;
     aiCanShootTime = 0;
     aiLastShotTime = 0;
-    // aiPlayerActivelySeekingCaptureById en coopAICapture... zijn al gereset in de COOP specifieke if-tak
     if (!(selectedGameMode === 'coop' && (isCoopAIDemoActive || (isPlayerTwoAI && selectedOnePlayerGameVariant === '1P_VS_AI_COOP')))) {
         aiPlayerActivelySeekingCaptureById = null;
         coopAICaptureDiveAnticipationActive = false;
@@ -326,6 +327,14 @@ window.resetGame = resetGameInternal;
  * Reset de state voor een nieuwe wave (ronde).
  */
 function resetWaveInternal() {
+    // FIXED V8: Als we net een CS hebben afgerond, verhoog teller NU (voordat nieuwe wave type wordt bepaald)
+    // isChallengingStage is nog de oude waarde (van de wave die we verlaten) op dit moment
+    if (typeof isChallengingStage !== 'undefined' && isChallengingStage) {
+        if (typeof completedChallengingStagesCount !== 'undefined') {
+            completedChallengingStagesCount++;
+            console.log(`[CS RESET] CS just finished, incrementing count to ${completedChallengingStagesCount}`);
+        }
+    }
     isWaveTransitioning = false;
     readyForNextWave = false;
     readyForNextWaveReset = false;
@@ -380,12 +389,9 @@ function resetWaveInternal() {
         isShowingDemoText = true;
     }
 
-    // --- AANGEPASTE INTRODUCTIE LOGICA ---
-    if (selectedGameMode === 'coop' && level === 1) { // Geldt voor Human COOP, 1P vs AI COOP, COOP AI Demo
-        // "PLAYERS READY" wordt al getoond via baseStartGame.
-        // Na "PLAYERS READY", zal runSingleGameUpdate overgaan naar de "STAGE 1" intro.
-        isShowingIntro = false; // Wordt true na PLAYERS READY in runSingleGameUpdate
-        introStep = 2; // Klaarzetten voor STAGE 1
+    if (selectedGameMode === 'coop' && level === 1) { 
+        isShowingIntro = false; 
+        introStep = 2; 
     } else if ((isTwoPlayerMode && selectedGameMode === 'normal') ||
                (isPlayerTwoAI && selectedOnePlayerGameVariant === '1P_VS_AI_NORMAL')) {
         introStep = 1;
@@ -395,17 +401,15 @@ function resetWaveInternal() {
         introStep = 3;
         isShowingIntro = true;
         if (!isManualControl) isShowingDemoText = true;
-    } else if (level === 1 && !isTwoPlayerMode) { // 1P Classic (level 1)
+    } else if (level === 1 && !isTwoPlayerMode) {
         introStep = 1;
         isShowingIntro = true;
         if (!isManualControl) isShowingDemoText = true;
-    } else { // 1P Classic (level > 1), of COOP modes (level > 1), of 1P vs AI Normal (level > 1)
+    } else {
         introStep = 2;
         isShowingIntro = true;
         if (!isManualControl) isShowingDemoText = true;
     }
-    // --- EINDE AANGEPASTE INTRODUCTIE LOGICA ---
-
 
     if (isShowingIntro && !(selectedGameMode === 'coop' && level === 1)) {
         introDisplayStartTime = Date.now();
@@ -416,8 +420,7 @@ function resetWaveInternal() {
 
     currentWaveDefinition = generateWaveDefinitionInternal(level);
 
-    // Correcte positionering van schepen bij aanvang van een wave
-    if (selectedGameMode === 'coop') { // Geldt voor Human COOP, 1P vs AI COOP, COOP AI Demo
+    if (selectedGameMode === 'coop') {
         if (gameCanvas && gameCanvas.width > 0 && gameCanvas.height > 0) {
             const p1Active = ship1 && player1Lives > 0;
             const p2Active = ship2 && player2Lives > 0;
@@ -438,12 +441,12 @@ function resetWaveInternal() {
                     const centeredX2 = Math.round(gameCanvas.width / 2 - p2EffectiveWidth / 2);
                     ship2.targetX = centeredX2; ship2.x = centeredX2; smoothedShip2X = centeredX2; ship2.y = shipBaseY;
                 }
-            } else { // Human COOP (forceCenterShipNextReset wordt false gezet, dus X blijft waar het was, alleen Y reset)
+            } else {
                  if (p1Active && ship1) ship1.y = shipBaseY;
                  if (p2Active && ship2) ship2.y = shipBaseY;
             }
         }
-    } else { // 1P Classic, 1P_VS_AI_NORMAL, 2P_NORMAL
+    } else {
         if (ship && gameCanvas && gameCanvas.width > 0 && gameCanvas.height > 0 && (forceCenterShipNextReset || !isManualControl || (isPlayerTwoAI && selectedGameMode === 'normal' && currentPlayer === 2))) {
             let effectiveWidthForCentering = ship.width;
             if (isDualShipActive) effectiveWidthForCentering = DUAL_SHIP_OFFSET_X + SHIP_WIDTH;
@@ -468,16 +471,17 @@ function resetWaveInternal() {
 window.resetWave = resetWaveInternal;
 
 /**
- * Bepaalt het type wave voor een gegeven level.
+ * Bepaalt het type wave voor een gegeven level (met roterende shift na elke voltooide Challenging Stage).
  */
 function getWaveTypeInternal(level) {
-    const patternIndex = (level - 1) % 4;
-    switch (patternIndex) {
+    // FIXED V7: CS VAST op 3,7,11,15 - niet shiften met count
+    const basePatternIndex = (level - 1) % 4;
+    switch (basePatternIndex) {
         case 0: return 'full_grid';
         case 1: return 'entrance_flight_1';
         case 2: return 'challenging_stage';
         case 3: return 'entrance_flight_2';
-        default: return 'unknown';
+        default: return 'full_grid';
     }
 }
 window.getWaveType = getWaveTypeInternal;
@@ -489,108 +493,57 @@ function generateWaveDefinitionInternal(level) {
     let waveDef = [];
     currentWavePatternIndex = -1;
     const waveType = getWaveTypeInternal(level);
-
-    if (typeof waveEntrancePatterns === 'undefined' || !Array.isArray(waveEntrancePatterns) || waveEntrancePatterns.length < 2) {
-        console.error("CRITICAL: waveEntrancePatterns not defined or insufficient for wave generation.");
-        return [];
-    }
+    
+    // Bepaal de index voor de wave-patterns gebaseerd op de shift
+    const basePatternIndex = (waveType === 'full_grid' || waveType === 'entrance_flight_1') ? 0 : 1;
+    currentWavePatternIndex = (basePatternIndex + completedChallengingStagesCount) % waveEntrancePatterns.length;
+    
+    const selectedPattern = waveEntrancePatterns[currentWavePatternIndex];
 
     if (waveType === 'challenging_stage') {
-        waveDef = []; // Specifieke CS logica handelt dit af in startChallengingStageSequence
-    } else if (waveType === 'full_grid') {
-        currentWavePatternIndex = 0; // Gebruik altijd het eerste patroon voor full grid
-        const selectedPattern = waveEntrancePatterns[0];
-        if (!selectedPattern || selectedPattern.length === 0) {
-            console.error("CRITICAL: Full grid wave pattern (index 0) is missing or empty.");
+        waveDef = []; 
+    } else if (selectedPattern && selectedPattern.length > 0) {
+        try {
+            waveDef = JSON.parse(JSON.stringify(selectedPattern), (key, value) => {
+                if (value && typeof value === 'object' && value.type === ENEMY3_TYPE && typeof value.hasCapturedShip === 'undefined') {
+                    value.hasCapturedShip = false;
+                }
+                return value;
+            });
+        } catch (e) {
+            console.error("Error cloning wave pattern:", e);
             waveDef = [];
-        } else {
-            try {
-                // Diepe kopie om te voorkomen dat originele data wordt gewijzigd
-                waveDef = JSON.parse(JSON.stringify(selectedPattern), (key, value) => {
-                    // Zorg ervoor dat nieuwe bazen standaard geen gevangen schip hebben
-                    if (value && typeof value === 'object' && value.type === ENEMY3_TYPE && typeof value.hasCapturedShip === 'undefined') {
-                        value.hasCapturedShip = false;
-                    }
-                    return value;
-                });
-            } catch (e) {
-                console.error("Error cloning full grid wave pattern:", e);
-                waveDef = [];
-            }
-        }
-    } else if (waveType === 'entrance_flight_1') {
-        currentWavePatternIndex = 0; // Gebruik het eerste patroon
-        const selectedPattern = waveEntrancePatterns[0];
-         if (!selectedPattern || selectedPattern.length === 0) {
-            console.error("CRITICAL: Entrance flight 1 wave pattern (index 0) is missing or empty.");
-            waveDef = [];
-        } else {
-            try {
-                waveDef = JSON.parse(JSON.stringify(selectedPattern), (key, value) => {
-                    if (value && typeof value === 'object' && value.type === ENEMY3_TYPE && typeof value.hasCapturedShip === 'undefined') {
-                        value.hasCapturedShip = false;
-                    }
-                    return value;
-                });
-            } catch (e) {
-                console.error("Error cloning entrance flight 1 wave pattern:", e);
-                waveDef = [];
-            }
-        }
-    } else if (waveType === 'entrance_flight_2') {
-        currentWavePatternIndex = 1; // Gebruik het tweede patroon
-        const selectedPattern = waveEntrancePatterns[1];
-        if (!selectedPattern || selectedPattern.length === 0) {
-            console.error("CRITICAL: Entrance flight 2 wave pattern (index 1) is missing or empty.");
-            waveDef = [];
-        } else {
-            try {
-                waveDef = JSON.parse(JSON.stringify(selectedPattern), (key, value) => {
-                    if (value && typeof value === 'object' && value.type === ENEMY3_TYPE && typeof value.hasCapturedShip === 'undefined') {
-                        value.hasCapturedShip = false;
-                    }
-                    return value;
-                });
-            } catch (e) {
-                console.error("Error cloning entrance flight 2 wave pattern:", e);
-                waveDef = [];
-            }
         }
     } else {
-        console.warn(`Unknown wave type for level ${level}: ${waveType}`);
+        console.error("CRITICAL: Wave pattern is missing or empty.");
         waveDef = [];
     }
 
-    // Valideer paden voor niet-CS waves
     if (waveType !== 'challenging_stage') {
         if (typeof normalWaveEntrancePaths === 'undefined' || Object.keys(normalWaveEntrancePaths).length === 0) {
-             console.error("CRITICAL: normalWaveEntrancePaths not defined or empty. Cannot assign paths to squadrons.");
-             return waveDef; // Geef terug wat we hebben, maar het zal waarschijnlijk problemen veroorzaken.
+             console.error("CRITICAL: normalWaveEntrancePaths not defined or empty.");
+             return waveDef;
         }
         for (let i = waveDef.length - 1; i >= 0; i--) {
             const squadron = waveDef[i];
             if (!normalWaveEntrancePaths?.[squadron.pathId]) {
-                // console.warn(`Squadron ${i} in wave ${level} has invalid pathId '${squadron.pathId}'. Removing squadron.`);
                 waveDef.splice(i, 1);
                 continue;
             }
             if (squadron.enemies && Array.isArray(squadron.enemies)) {
                 for (let j = squadron.enemies.length - 1; j >= 0; j--) {
                     const enemy = squadron.enemies[j];
-                    if (!enemy || !normalWaveEntrancePaths?.[enemy.entrancePathId]) {                        // console.warn(`Enemy ${j} in squadron ${i} (wave ${level}) has invalid entrancePathId '${enemy?.entrancePathId}'. Removing enemy.`);
+                    if (!enemy || !normalWaveEntrancePaths?.[enemy.entrancePathId]) {
                         squadron.enemies.splice(j, 1);
                     }
-                    // Zorg ervoor dat bazen in de definitie correct geïnitialiseerd zijn
                     if (enemy && enemy.type === ENEMY3_TYPE && typeof enemy.hasCapturedShip === 'undefined') {
                         enemy.hasCapturedShip = false;
                     }
                 }
                 if (squadron.enemies.length === 0) {
-                    // console.warn(`Squadron ${i} in wave ${level} has no valid enemies after path validation. Removing squadron.`);
                     waveDef.splice(i, 1);
                 }
             } else {
-                //  console.warn(`Squadron ${i} in wave ${level} has no 'enemies' array or it's not an array. Removing squadron.`);
                  waveDef.splice(i, 1);
             }
         }
@@ -599,10 +552,46 @@ function generateWaveDefinitionInternal(level) {
 }
 window.generateWaveDefinition = generateWaveDefinitionInternal;
 
+function startFullGridWave() {
+    if (!currentWaveDefinition || currentWaveDefinition.length === 0 || !isFullGridWave) {
+        isWaveTransitioning = true; readyForNextWaveReset = true;
+        return;
+    }
+    playSound('entranceSound', false, 0.4);
+    enemySpawnTimeouts.forEach(clearTimeout); enemySpawnTimeouts = [];
+    totalEnemiesScheduledForWave = 0; enemiesSpawnedThisWave = 0;
+    squadronCompletionStatus = {}; squadronEntranceFiringStatus = {};
+    let totalEnemiesPlaced = 0;
+    currentWaveDefinition.forEach((squadronData, squadronIndex) => {
+        let enemiesInSquadron = 0;
+        if (squadronData && squadronData.enemies && Array.isArray(squadronData.enemies)) {
+            enemiesInSquadron = squadronData.enemies.length;
+            squadronData.enemies.forEach((enemyDef, enemyIndex) => {
+                try {
+                    let enemyType = enemyDef.type;
+                    let enemyHealth = (enemyType === ENEMY3_TYPE) ? ENEMY3_MAX_HITS : 1;
+                    let enemyWidth = (enemyType === ENEMY1_TYPE) ? ENEMY1_WIDTH : (enemyType === ENEMY3_TYPE ? BOSS_WIDTH : ENEMY_WIDTH);
+                    let enemyHeight = (enemyType === ENEMY1_TYPE) ? ENEMY1_HEIGHT : (enemyType === ENEMY3_TYPE ? BOSS_HEIGHT : ENEMY_HEIGHT);
+                    const { x: targetGridX, y: targetGridY } = getCurrentGridSlotPosition(enemyDef.gridRow, enemyDef.gridCol, enemyWidth);
+                    const newEnemy = { x: targetGridX, y: targetGridY, width: enemyWidth, height: enemyHeight, targetGridX, targetGridY, speed: 0, state: 'in_grid', gridRow: enemyDef.gridRow, gridCol: enemyDef.gridCol, type: enemyType, health: enemyHealth, isDamaged: false, velocityX: 0, velocityY: 0, attackPathStep: 0, initialY: 0, initialX: 0, diveDirection: 1, lastFiredTime: 0, targetX1: 0, targetY1: 0, targetX2: 0, targetY2: 0, targetX3: 0, targetY3: 0, attackPathSegments: [], attackPathSegmentIndex: 0, attackPathT: 0, attackStartTime: 0, attackFormationOffsetX: 0, attackGroupId: null, entrancePathId: null, pathSegmentIndex: 0, pathT: 0, squadronId: squadronIndex, squadronEnemyIndex: enemyIndex, id: `enemy-grid-${squadronIndex}-${enemyIndex}-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`, justReturned: false, canFireThisDive: false, attackType: 'normal', hasCapturedShip: (enemyType === ENEMY3_TYPE) ? false : undefined, capturedShipX: undefined, capturedShipY: undefined, capturedShipLastFiredTime: (enemyType === ENEMY3_TYPE) ? 0 : undefined, captureStartTime: 0, capturePrepareTimeout: null, pathSpeedMultiplier: 1.0, captureDiveInitiationTime: 0 };
+                    enemies.push(newEnemy);
+                    totalEnemiesPlaced++;
+                } catch (placementError) { console.error(`Full Grid error:`, placementError); }
+            });
+        }
+        squadronCompletionStatus[squadronIndex] = { completed: enemiesInSquadron, total: enemiesInSquadron };
+    });
+    totalEnemiesScheduledForWave = totalEnemiesPlaced;
+    enemiesSpawnedThisWave = totalEnemiesPlaced;
+    isEntrancePhaseActive = false;
+    gridJustCompleted = true;
+    if (!isGridSoundPlaying) { isGridSoundPlaying = true; playSound('gridBackgroundSound', true, 0.1); }
+    if (GRID_BREATH_ENABLED && !isGridBreathingActive) { isGridBreathingActive = true; gridBreathStartTime = Date.now(); currentGridBreathFactor = 0; }
+    lastGridFireCheckTime = Date.now(); firstEnemyLanded = true;
+}
+window.startFullGridWave = startFullGridWave;
 
-// ...
 // --- EINDE deel 1      van 8 dit codeblok ---
-// --- END OF FILE game_logic.js ---
 
 
 
@@ -752,7 +741,42 @@ function scheduleEntranceFlightWave() {
 /**
  * Start de sequentie voor een Challenging Stage.
  */
-function startChallengingStageSequence() { currentWaveDefinition = []; isEntrancePhaseActive = false; enemySpawnTimeouts.forEach(clearTimeout); enemySpawnTimeouts = []; totalEnemiesScheduledForWave = 0; enemiesSpawnedThisWave = 0; squadronEntranceFiringStatus = {}; if (Object.keys(challengingStagePaths).length === 0) { defineChallengingStagePaths(); } if (Object.keys(challengingStagePaths).length === 0) { console.error("CRITICAL: Failed to define CS paths!"); isWaveTransitioning = true; setTimeout(() => { if ((isInGameState || (!isInGameState && ((isTwoPlayerMode && selectedGameMode === 'coop' && (player1Lives > 0 || player2Lives > 0)) || (!isTwoPlayerMode && playerLives > 0)))) && typeof resetWave === 'function') { resetWave(); } }, NEXT_WAVE_DELAY_AFTER_MESSAGE); return; } const fixedPathSequence = [ 'CS3_DiveLoopL_Sharp', 'CS3_DiveLoopR_Sharp', 'CS_HorizontalFlyByL', 'CS_HorizontalFlyByR' ]; const loopAttackPaths = [ 'CS_LoopAttack_TL', 'CS_LoopAttack_TR', 'CS_LoopAttack_BL', 'CS_LoopAttack_BR' ]; const requiredPaths = [...fixedPathSequence, ...loopAttackPaths]; for (const pathId of requiredPaths) { if (!challengingStagePaths.hasOwnProperty(pathId)) { console.error(`CRITICAL: Required CS path "${pathId}" not found! Aborting CS.`); isWaveTransitioning = true; setTimeout(() => { if ((isInGameState || (!isInGameState && ((isTwoPlayerMode && selectedGameMode === 'coop' && (player1Lives > 0 || player2Lives > 0)) || (!isTwoPlayerMode && playerLives > 0)))) && typeof resetWave === 'function') { resetWave(); } }, NEXT_WAVE_DELAY_AFTER_MESSAGE); return; } } let finalPathIdsForStage = [...fixedPathSequence]; let shuffledLoopPaths = [...loopAttackPaths].sort(() => Math.random() - 0.5); finalPathIdsForStage.push(...shuffledLoopPaths); currentWaveDefinition = []; for (let i = 0; i < CHALLENGING_STAGE_SQUADRON_COUNT; i++) { const pathId = finalPathIdsForStage[i]; const squadron = { pathId: pathId, enemies: [] }; for (let j = 0; j < CHALLENGING_STAGE_SQUADRON_SIZE; j++) { let enemyType = (j < Math.floor(CHALLENGING_STAGE_SQUADRON_SIZE / 2)) ? ENEMY1_TYPE : ENEMY2_TYPE; squadron.enemies.push({ type: enemyType, entrancePathId: pathId }); } currentWaveDefinition.push(squadron); } challengingStageTotalEnemies = CHALLENGING_STAGE_ENEMY_COUNT; totalEnemiesScheduledForWave = challengingStageTotalEnemies; enemiesSpawnedThisWave = 0; if (currentWaveDefinition.length > 0) { isEntrancePhaseActive = true; enemySpawnTimeouts = []; let totalTimeoutsScheduled = 0; const CS3_START_SHIFT_X = -28; const csLevelIndex = Math.floor(Math.max(0, level - 3) / 4) + 1; const effectiveBaseSpeedMultiplier = scaleValue(csLevelIndex, BASE_CS_SPEED_MULTIPLIER, MAX_CS_SPEED_MULTIPLIER); currentWaveDefinition.forEach((squadronData, squadronIndex) => { let startDelay = 0; if (squadronIndex <= 1) { startDelay = 0; } else if (squadronIndex <= 3) { startDelay = CHALLENGING_STAGE_SQUADRON_INTERVAL; } else { startDelay = (squadronIndex - 2) * CHALLENGING_STAGE_SQUADRON_INTERVAL; } let currentSpeedMultiplier = effectiveBaseSpeedMultiplier; if (squadronIndex === 2 || squadronIndex === 3) { currentSpeedMultiplier *= CS_HORIZONTAL_FLYBY_SPEED_FACTOR; } const squadronStartTimeoutId = setTimeout(() => { const sqIdx = enemySpawnTimeouts.indexOf(squadronStartTimeoutId); if (sqIdx > -1) enemySpawnTimeouts.splice(sqIdx, 1);
+function startChallengingStageSequence() { currentWaveDefinition = []; isEntrancePhaseActive = false; enemySpawnTimeouts.forEach(clearTimeout); enemySpawnTimeouts = []; totalEnemiesScheduledForWave = 0; enemiesSpawnedThisWave = 0; squadronEntranceFiringStatus = {}; if (Object.keys(challengingStagePaths).length === 0) { defineChallengingStagePaths(); } if (Object.keys(challengingStagePaths).length === 0) { console.error("CRITICAL: Failed to define CS paths!"); isWaveTransitioning = true; setTimeout(() => { if ((isInGameState || (!isInGameState && ((isTwoPlayerMode && selectedGameMode === 'coop' && (player1Lives > 0 || player2Lives > 0)) || (!isTwoPlayerMode && playerLives > 0)))) && typeof resetWave === 'function') { resetWave(); } }, NEXT_WAVE_DELAY_AFTER_MESSAGE); return; } const fixedPathSequence = [ 'CS3_DiveLoopL_Sharp', 'CS3_DiveLoopR_Sharp', 'CS_HorizontalFlyByL', 'CS_HorizontalFlyByR' ]; const loopAttackPaths = [ 'CS_LoopAttack_TL', 'CS_LoopAttack_TR', 'CS_LoopAttack_BL', 'CS_LoopAttack_BR' ]; const requiredPaths = [...fixedPathSequence, ...loopAttackPaths]; for (const pathId of requiredPaths) { if (!challengingStagePaths.hasOwnProperty(pathId)) { console.error(`CRITICAL: Required CS path "${pathId}" not found! Aborting CS.`); isWaveTransitioning = true; setTimeout(() => { if ((isInGameState || (!isInGameState && ((isTwoPlayerMode && selectedGameMode === 'coop' && (player1Lives > 0 || player2Lives > 0)) || (!isTwoPlayerMode && playerLives > 0)))) && typeof resetWave === 'function') { resetWave(); } }, NEXT_WAVE_DELAY_AFTER_MESSAGE); return; } } const BASE_SEQUENCE = [...fixedPathSequence, ...loopAttackPaths];
+    const shift = (completedChallengingStagesCount * 2) % BASE_SEQUENCE.length;
+    console.log(`[CS START] Level ${level} Count=${completedChallengingStagesCount} Shift=${shift} First=${BASE_SEQUENCE[shift]} Full=${[...BASE_SEQUENCE.slice(shift), ...BASE_SEQUENCE.slice(0, shift)].join(',')}`);
+    const finalPathIdsForStage = [
+        ...BASE_SEQUENCE.slice(shift),
+        ...BASE_SEQUENCE.slice(0, shift)
+    ]; currentWaveDefinition = []; for (let i = 0; i < CHALLENGING_STAGE_SQUADRON_COUNT; i++) { const pathId = finalPathIdsForStage[i]; const squadron = { pathId: pathId, enemies: [] }; for (let j = 0; j < CHALLENGING_STAGE_SQUADRON_SIZE; j++) { let enemyType = (j < Math.floor(CHALLENGING_STAGE_SQUADRON_SIZE / 2)) ? ENEMY1_TYPE : ENEMY2_TYPE; squadron.enemies.push({ type: enemyType, entrancePathId: pathId }); } currentWaveDefinition.push(squadron); } challengingStageTotalEnemies = CHALLENGING_STAGE_ENEMY_COUNT; totalEnemiesScheduledForWave = challengingStageTotalEnemies; enemiesSpawnedThisWave = 0; if (currentWaveDefinition.length > 0) { isEntrancePhaseActive = true; enemySpawnTimeouts = []; let totalTimeoutsScheduled = 0; const CS3_START_SHIFT_X = -28; const csLevelIndex = Math.floor(Math.max(0, level - 3) / 4) + 1; const effectiveBaseSpeedMultiplier = scaleValue(csLevelIndex, BASE_CS_SPEED_MULTIPLIER, MAX_CS_SPEED_MULTIPLIER);         currentWaveDefinition.forEach((squadronData, squadronIndex) => {
+            // FIXED V9: Snelheid en timing op basis van ROUTE TYPE (pathId), niet squadronIndex
+            // Zo blijft snelheid correct na rotatie en komt boven niet 2x tegelijk
+            const pathId = squadronData.pathId;
+            const isFlyBy = pathId.includes('FlyBy');
+            const isSharp = pathId.includes('Sharp');
+            const isLoop = pathId.includes('LoopAttack');
+
+            let startDelay = 0;
+            // Timing: FlyBy L+R mogen tegelijk, Sharp (boven) en Loop om en om
+            if (squadronIndex === 0) {
+                startDelay = 0;
+            } else {
+                const prevPathId = currentWaveDefinition[squadronIndex - 1]?.pathId || '';
+                const prevIsFlyBy = prevPathId.includes('FlyBy');
+                if (isFlyBy && prevIsFlyBy) {
+                    // FlyBy L en R tegelijk laten starten
+                    startDelay = currentWaveDefinition[squadronIndex - 1]._computedDelay ?? ((squadronIndex - 1) * CHALLENGING_STAGE_SQUADRON_INTERVAL * 0.7);
+                } else {
+                    // Om en om voor Sharp en Loop
+                    startDelay = squadronIndex * (CHALLENGING_STAGE_SQUADRON_INTERVAL * 0.7);
+                }
+            }
+            squadronData._computedDelay = startDelay;
+
+            let currentSpeedMultiplier = effectiveBaseSpeedMultiplier;
+            // Snelheid altijd op basis van path type
+            if (isFlyBy) {
+                currentSpeedMultiplier *= CS_HORIZONTAL_FLYBY_SPEED_FACTOR; // 0.35 = langzaam zoals in stage 3
+            } const squadronStartTimeoutId = setTimeout(() => { const sqIdx = enemySpawnTimeouts.indexOf(squadronStartTimeoutId); if (sqIdx > -1) enemySpawnTimeouts.splice(sqIdx, 1);
     let csGameCanContinue = false; if (isTwoPlayerMode && selectedGameMode === 'coop') { csGameCanContinue = player1Lives > 0 || player2Lives > 0; } else { csGameCanContinue = playerLives > 0; }
     if (!isPaused && isInGameState && isEntrancePhaseActive && isChallengingStage && !isWaveTransitioning && csGameCanContinue) { try { const pathId = squadronData.pathId; const pathSource = challengingStagePaths; const pathSegments = pathSource[pathId]; if (!pathSegments || pathSegments.length === 0) { console.error(`CS: Path ${pathId} for squadron ${squadronIndex} invalid! Skipping.`); enemiesSpawnedThisWave += squadronData.enemies.length; return; } let spawnDelayBetweenEnemies = CS_ENEMY_SPAWN_DELAY_IN_SQUADRON; if (squadronIndex >= 2 && squadronIndex <= 3) { spawnDelayBetweenEnemies = CS_HORIZONTAL_FLYBY_SPAWN_DELAY; } else if (squadronIndex >= 4) { spawnDelayBetweenEnemies = CS_LOOP_ATTACK_SPAWN_DELAY; } squadronData.enemies.forEach((enemyDef, enemyIndex) => { if (!enemyDef || !enemyDef.type) { console.error(`CS: Invalid enemy def in squadron ${squadronIndex}, index ${enemyIndex}. Skipping.`); enemiesSpawnedThisWave++; return; } const spawnDelay = enemyIndex * spawnDelayBetweenEnemies; const enemyTimeoutId = setTimeout(() => { const enIdx = enemySpawnTimeouts.indexOf(enemyTimeoutId); if (enIdx > -1) enemySpawnTimeouts.splice(enIdx, 1);
     let csSpawnCanContinue = false; if (isTwoPlayerMode && selectedGameMode === 'coop') { csSpawnCanContinue = player1Lives > 0 || player2Lives > 0; } else { csSpawnCanContinue = playerLives > 0; }
@@ -876,208 +900,6 @@ function startFullGridWave() {
 
 
 
-// --- START OF FILE rendering_menu.js ---
-// --- DEEL 3      van 3 dit code blok    --- (Focus op renderGame voor CO-OP schip rendering)
-
-function renderGame() {
-    try {
-        if (!gameCtx || !gameCanvas) { if (mainLoopId) cancelAnimationFrame(mainLoopId); mainLoopId = null; return; }
-        gameCtx.clearRect(0, 0, gameCanvas.width, gameCanvas.height);
-        const now = Date.now();
-
-        // --- STAP 1: Teken UI (Score, Levens, Level) ---
-        // ... (UI rendering blijft ongewijzigd, maar moet later P1/P2 levens/scores tonen) ...
-        // Voor nu focussen we op de schepen. De UI voor P2 levens/scores kan later worden toegevoegd.
-        gameCtx.save();
-        const UI_FONT="20px 'Press Start 2P'"; const LABEL_COLOR="red"; const SCORE_COLOR="white"; /* ... etc. ... */
-        // ... (de drawTopUiElement en gerelateerde logica blijft zoals het was)
-        let score1PValue, score2PValue, sessionHighScore, label1P;
-        let show1UPBlink = false, show2UPBlink = false, highScoreConditionMet = false;
-        // Logic to determine score1PValue, score2PValue, etc. (ongewijzigd voor nu, maar moet CO-OP scores reflecteren)
-        if (isShowingResultsScreen) { /* ... */ }
-        else if (gameOverSequenceStartTime > 0 && !isShowingPlayerGameOverMessage) { /* ... */ }
-        else if (isShowingPlayerGameOverMessage) { /* ... */ }
-        else if (!isInGameState) { /* ... */ }
-        else { /* ... */
-            sessionHighScore = highScore || 0;
-            if (!isManualControl) { /* AI ... */ }
-            else if (isTwoPlayerMode && selectedGameMode === 'coop') { // CO-OP SCORES
-                score1PValue = player1Score;
-                score2PValue = player2Score;
-                sessionHighScore = Math.max(highScore, player1Score, player2Score);
-                label1P = "1UP";
-                show1UPBlink = !isShowingIntro && !isPaused && player1Lives > 0 && ship1 && !isPlayer1ShipCaptured && !isPlayer1WaitingForRespawn;
-                show2UPBlink = !isShowingIntro && !isPaused && player2Lives > 0 && ship2 && !isPlayer2ShipCaptured && !isPlayer2WaitingForRespawn;
-                // High score blink: check if P1 of P2 de high score heeft
-                if (player1Score >= sessionHighScore && player1Score > 0) highScoreConditionMet = show1UPBlink;
-                if (player2Score >= sessionHighScore && player2Score > 0 && player2Score > player1Score) highScoreConditionMet = show2UPBlink; // P2 blinkt alleen als P2 de HS heeft en hoger is dan P1
-
-            } else if (isTwoPlayerMode && selectedGameMode === 'normal') { // Alternating
-                score1PValue = (currentPlayer === 1) ? score : player1Score;
-                score2PValue = (currentPlayer === 2) ? score : player2Score;
-                sessionHighScore = Math.max(highScore, player1Score, player2Score, score);
-                label1P = "1UP";
-                show1UPBlink = !isShowingIntro && !isPaused && currentPlayer === 1 && playerLives > 0 && !isShipCaptured && !isWaitingForRespawn;
-                show2UPBlink = !isShowingIntro && !isPaused && currentPlayer === 2 && playerLives > 0 && !isShipCaptured && !isWaitingForRespawn;
-                highScoreConditionMet = !isPaused && !isShowingIntro && score > 0 && sessionHighScore > 0 && score >= sessionHighScore;
-            } else { // 1P
-                score1PValue = score; score2PValue = 0; /* ... */ label1P = "1UP"; /* ... */
-            }
-        }
-        let isHighScoreBlinkingNow = false; if (highScoreConditionMet) { /* ... */ }
-        if(typeof MARGIN_SIDE!=='undefined' && typeof MARGIN_TOP!=='undefined' && typeof SCORE_OFFSET_Y!=='undefined'){ drawTopUiElement(label1P, score1PValue, 'left', MARGIN_SIDE, show1UPBlink); drawTopUiElement("HIGH SCORE", sessionHighScore, 'center', gameCanvas.width / 2, isHighScoreBlinkingNow); drawTopUiElement("2UP", score2PValue, 'right', gameCanvas.width - MARGIN_SIDE, show2UPBlink); }
-
-        // Levens iconen (moet P1 en P2 apart tonen in CO-OP)
-        if (typeof shipImage !== 'undefined' && typeof LIFE_ICON_MARGIN_BOTTOM !== 'undefined' && typeof LIFE_ICON_SIZE !== 'undefined' && typeof LIFE_ICON_MARGIN_LEFT !== 'undefined' && typeof LIFE_ICON_SPACING !== 'undefined') {
-            if (shipImage.complete && shipImage.naturalHeight !== 0) {
-                const lifeIconY = gameCanvas.height - LIFE_ICON_MARGIN_BOTTOM - LIFE_ICON_SIZE;
-                let livesP1ToDisplay = 0;
-                let livesP2ToDisplay = 0; // Voor CO-OP
-
-                if (isTwoPlayerMode && selectedGameMode === 'coop') {
-                    if (player1Lives > 0) livesP1ToDisplay = Math.max(0, player1Lives -1); // -1 omdat actieve schip niet telt
-                    if (player2Lives > 0) livesP2ToDisplay = Math.max(0, player2Lives -1);
-                } else { // 1P of 2P Alternating
-                     if (playerLives > 0) livesP1ToDisplay = Math.max(0, playerLives - 1);
-                }
-                // ... (verdere logica om P1 en P2 levens apart te tekenen)
-                // Voor nu, alleen P1:
-                const maxLivesIcons = 5;
-                for (let i = 0; i < Math.min(livesP1ToDisplay, maxLivesIcons); i++) {
-                    const currentIconX = LIFE_ICON_MARGIN_LEFT + i * (LIFE_ICON_SIZE + LIFE_ICON_SPACING);
-                    gameCtx.drawImage(shipImage, Math.round(currentIconX), Math.round(lifeIconY), LIFE_ICON_SIZE, LIFE_ICON_SIZE);
-                }
-                // Toon P2 levens rechtsonder in CO-OP
-                if (isTwoPlayerMode && selectedGameMode === 'coop') {
-                    const p2LivesStartX = gameCanvas.width - LIFE_ICON_MARGIN_RIGHT - (Math.min(livesP2ToDisplay, maxLivesIcons) * (LIFE_ICON_SIZE + LIFE_ICON_SPACING)) + LIFE_ICON_SPACING;
-                     for (let i = 0; i < Math.min(livesP2ToDisplay, maxLivesIcons); i++) {
-                        const currentIconX = p2LivesStartX + i * (LIFE_ICON_SIZE + LIFE_ICON_SPACING);
-                        gameCtx.drawImage(shipImage, Math.round(currentIconX), Math.round(lifeIconY), LIFE_ICON_SIZE, LIFE_ICON_SIZE);
-                    }
-                }
-            }
-        }
-        // ... (level iconen ongewijzigd) ...
-        gameCtx.restore();
-
-
-        // --- STAP 1.6: Teken Spelersschip (Hoofd + Dual) ---
-        gameCtx.save();
-        if (isTwoPlayerMode && selectedGameMode === 'coop') {
-            // Teken Schip 1 (P1)
-            if (ship1 && player1Lives > 0 && !isPlayer1WaitingForRespawn && !isPlayer1ShipCaptured) {
-                let shouldDrawP1 = true;
-                if (isPlayer1Invincible) {
-                    const blinkCycleTime = INVINCIBILITY_BLINK_ON_MS + INVINCIBILITY_BLINK_OFF_MS;
-                    if ((now % blinkCycleTime) >= INVINCIBILITY_BLINK_ON_MS) shouldDrawP1 = false;
-                }
-                if (shouldDrawP1) {
-                    const shipDrawX = ship1.x;
-                    const shipDrawY = ship1.y; // Y is al correct gezet
-                    if (typeof shipImage !== 'undefined' && shipImage.complete) {
-                        gameCtx.drawImage(shipImage, Math.round(shipDrawX), Math.round(shipDrawY), ship1.width, ship1.height);
-                        if (player1IsDualShipActive) {
-                             gameCtx.drawImage(shipImage, Math.round(shipDrawX + DUAL_SHIP_OFFSET_X), Math.round(shipDrawY), ship1.width, ship1.height);
-                        }
-                    } else { gameCtx.fillStyle = "blue"; gameCtx.fillRect(Math.round(shipDrawX), Math.round(shipDrawY), ship1.width, ship1.height); }
-                }
-            }
-            // Teken Schip 2 (P2)
-            if (ship2 && player2Lives > 0 && !isPlayer2WaitingForRespawn && !isPlayer2ShipCaptured) {
-                let shouldDrawP2 = true;
-                if (isPlayer2Invincible) {
-                    const blinkCycleTime = INVINCIBILITY_BLINK_ON_MS + INVINCIBILITY_BLINK_OFF_MS;
-                    if ((now % blinkCycleTime) >= INVINCIBILITY_BLINK_ON_MS) shouldDrawP2 = false;
-                }
-                if (shouldDrawP2) {
-                    const shipDrawX = ship2.x;
-                    const shipDrawY = ship2.y;
-                    if (typeof shipImage !== 'undefined' && shipImage.complete) {
-                        gameCtx.drawImage(shipImage, Math.round(shipDrawX), Math.round(shipDrawY), ship2.width, ship2.height);
-                         if (player2IsDualShipActive) {
-                             gameCtx.drawImage(shipImage, Math.round(shipDrawX + DUAL_SHIP_OFFSET_X), Math.round(shipDrawY), ship2.width, ship2.height);
-                        }
-                    } else { gameCtx.fillStyle = "green"; gameCtx.fillRect(Math.round(shipDrawX), Math.round(shipDrawY), ship2.width, ship2.height); }
-                }
-            }
-        } else { // 1P of 2P Alternating (gebruik het 'ship' object)
-            if (ship && !isShowingCaptureMessage) {
-                let shouldDrawShip = true;
-                if (isInGameState && !gameOverSequenceStartTime && !isShowingPlayerGameOverMessage && isInvincible) {
-                    const blinkCycleTime = INVINCIBILITY_BLINK_ON_MS + INVINCIBILITY_BLINK_OFF_MS;
-                    if ((now % blinkCycleTime) >= INVINCIBILITY_BLINK_ON_MS) shouldDrawShip = false;
-                }
-                if (shouldDrawShip) {
-                    let shipDrawX = ship.x;
-                    let shouldCenterSingleShip = (isShowingPlayerGameOverMessage || gameOverSequenceStartTime > 0 || !isInGameState || isShowingScoreScreen || (isInGameState && isShowingIntro && !isManualControl && (introStep === 1 || introStep === 2 || introStep === 3))) && !isDualShipActive;
-                    if (shouldCenterSingleShip) { shipDrawX = Math.round(gameCanvas.width / 2 - ship.width / 2); }
-                    const shipDrawY = ship.y; // Y is al correct
-                    if (typeof shipImage !== 'undefined' && shipImage.complete) {
-                        gameCtx.drawImage(shipImage, Math.round(shipDrawX), Math.round(shipDrawY), ship.width, ship.height);
-                        if (isInGameState && !gameOverSequenceStartTime && !isShowingPlayerGameOverMessage && isDualShipActive && !isShipCaptured) {
-                            gameCtx.drawImage(shipImage, Math.round(shipDrawX + DUAL_SHIP_OFFSET_X), Math.round(shipDrawY), ship.width, ship.height);
-                        }
-                    } else { gameCtx.fillStyle = "blue"; gameCtx.fillRect(Math.round(shipDrawX), Math.round(shipDrawY), ship.width, ship.height); }
-                }
-            }
-        }
-        // Vallende schepen (ongewijzigd)
-        if (fallingShips.length > 0 && typeof shipImage !== 'undefined' && shipImage.complete) { /* ... */ }
-        gameCtx.restore();
-
-
-        // --- STAP 2: State-specifieke content (Menu / Game / Score) ---
-        if (!isInGameState) { // Menu of Score Screen
-            // ... (Menu rendering logica zoals eerder gecorrigeerd, met logo en ondertitel altijd zichtbaar in menu states) ...
-             if (isShowingScoreScreen) { /* ... score screen ... */ }
-             else { // Hoofdmenu of een sub-menu (Player, Game Mode, Firing Mode)
-                gameCtx.save();
-                const canvasWidth = gameCanvas.width; const canvasHeight = gameCanvas.height; const canvasCenterX = canvasWidth / 2;
-                if (selectedButtonIndex === -1 && (isPlayerSelectMode || isFiringModeSelectMode || isGameModeSelectMode || (!isPlayerSelectMode && !isFiringModeSelectMode && !isGameModeSelectMode))) { selectedButtonIndex = 0; }
-                let actualLogoHeight = MENU_LOGO_APPROX_HEIGHT; let actualLogoWidth = actualLogoHeight * (logoImage.naturalWidth / logoImage.naturalHeight || 1); if (typeof logoImage !== 'undefined' && logoImage.complete && logoImage.naturalHeight !== 0) { actualLogoHeight = logoImage.naturalHeight * LOGO_SCALE_FACTOR; actualLogoWidth = logoImage.naturalWidth * LOGO_SCALE_FACTOR; }
-                const subtitleHeight = getSubtitleApproxHeight(MENU_SUBTITLE_FONT);
-                const totalContentHeightForLayout = actualLogoHeight + MENU_LOGO_BOTTOM_TO_START_GAP + (2 * MENU_BUTTON_HEIGHT) + MENU_BUTTON_V_GAP + MENU_BUTTON_SUBTITLE_V_GAP + subtitleHeight;
-                let groupStartYForLayout = (canvasHeight - totalContentHeightForLayout) / 2 - 70; groupStartYForLayout += MENU_GENERAL_Y_OFFSET;
-                const logoDrawX = canvasCenterX - actualLogoWidth / 2; const logoDrawY = groupStartYForLayout + MENU_LOGO_EXTRA_Y_OFFSET;
-                if (typeof logoImage !== 'undefined' && logoImage.complete && logoImage.naturalHeight !== 0) { gameCtx.drawImage(logoImage, Math.round(logoDrawX), Math.round(logoDrawY), actualLogoWidth, actualLogoHeight); }
-                else { drawCanvasText("LOGO", canvasCenterX, logoDrawY + actualLogoHeight / 2, "30px Arial", "grey"); }
-
-                if (isGameModeSelectMode) { drawCanvasButton("NORMAL GAME", 0, selectedButtonIndex === 0); drawCanvasButton("CO-OP GAME", 1, selectedButtonIndex === 1); }
-                else if (isFiringModeSelectMode) { drawCanvasButton("EASY", 0, selectedButtonIndex === 0); drawCanvasButton("NORMAL", 1, selectedButtonIndex === 1); }
-                else if (isPlayerSelectMode) { drawCanvasButton("1 PLAYER", 0, selectedButtonIndex === 0); drawCanvasButton("2 PLAYER", 1, selectedButtonIndex === 1); }
-                else { drawCanvasButton("START GAME", 0, selectedButtonIndex === 0); drawCanvasButton("GAME EXIT", 1, selectedButtonIndex === 1); }
-
-                const exitButtonRect = getMenuButtonRect(1); let subtitleCenterY; if (exitButtonRect) { subtitleCenterY = exitButtonRect.y + exitButtonRect.height + MENU_BUTTON_SUBTITLE_V_GAP + (subtitleHeight / 2); } else { subtitleCenterY = groupStartYForLayout + actualLogoHeight + MENU_LOGO_BOTTOM_TO_START_GAP + (2 * MENU_BUTTON_HEIGHT) + MENU_BUTTON_V_GAP + MENU_BUTTON_SUBTITLE_V_GAP + (subtitleHeight / 2); }
-                drawCanvasText( MENU_SUBTITLE_TEXT, canvasCenterX - 1, Math.round(subtitleCenterY), MENU_SUBTITLE_FONT, MENU_SUBTITLE_COLOR, 'center', 'middle', true );
-                gameCtx.restore();
-            }
-        } else { // --- Game bezig OF Game Over / Results ---
-            // --- STAP 2.1: Gameplay Actief (of PAUSED) ---
-            if (gameOverSequenceStartTime === 0 && !isShowingPlayerGameOverMessage) {
-                // ... (Rendering kogels, vijanden, capture beam, explosies, scores, sparks, berichten - ongewijzigd) ...
-                 gameCtx.save();
-                 let showBullets = !showReadyMessage && !showCsHitsMessage && !showPerfectMessage && !showCsBonusScoreMessage && !showCSClearMessage && !isCsCompletionDelayActive && !isShowingIntro && !isShowingCaptureMessage;
-                 if (showBullets) { bullets.forEach(b => { /* ... */ }); enemyBullets.forEach(eb => { /* ... */ }); }
-                 enemies.forEach(e => { /* ... */ });
-                 if (captureBeamActive && capturingBossId && captureBeamProgress > 0) { /* ... */ }
-                 renderExplosions(); renderFloatingScores(); renderHitSparks();
-                 let messageDrawn = false; const midScreenY = gameCanvas.height / 2; /* ... etc. ... */
-                 if (isPaused) { /* ... */ } else if (isShowingCaptureMessage) { /* ... */ } /* ... etc. ... */
-                 gameCtx.restore();
-            }
-            // --- STAP 2.2: Game Over State (Player X of Final) ---
-            else {
-                // ... (Game Over / Results rendering - ongewijzigd) ...
-                if (isShowingPlayerGameOverMessage) { /* ... */ }
-                else if (gameOverSequenceStartTime > 0) { /* ... */ }
-            }
-        }
-    } catch (e) { /* ... error handling (ongewijzigd) ... */ console.error("Error in renderGame:", e, e.stack); /* ... */ }
-} // Einde renderGame
-
-// ... (hideCursor, handleCanvasMouseMove, mainLoop, startMainLoop, initializeGame - ongewijzigd) ...
-
-// --- EINDE deel 3      van 3 dit codeblok ---
 // --- END OF rendering_menu.js ---
 
 
@@ -1426,37 +1248,8 @@ function createHitSparks(x, y) { if (!gameCtx) return; const now = Date.now(); f
 function updateHitSparks() { const now = Date.now(); for (let i = hitSparks.length - 1; i >= 0; i--) { const s = hitSparks[i]; const elapsedTime = now - s.creationTime; if (elapsedTime >= s.lifetime) { hitSparks.splice(i, 1); } else { s.vy += HIT_SPARK_GRAVITY; s.x += s.vx; s.y += s.vy; s.alpha = Math.max(0, 1.0 - elapsedTime * HIT_SPARK_FADE_SPEED); } } }
 
 
-function moveEntities() {
-    try {
-        if (isPaused) {
-             return;
-        }
-        const now = Date.now();
+// [REMOVED STUB moveEntities - logic moved to DEEL7, real version kept]
 
-        // --- Ship Movement ---
-        // Deze logica is verplaatst naar DEEL 7 en gebruikt nu globale vlaggen.
-
-        // --- Player Bullet Movement & Collision ---
-        // Deze logica is verplaatst naar DEEL 7.
-
-        // --- Enemy Bullet Movement ---
-        // Deze logica is verplaatst naar DEEL 7.
-
-        // --- Falling Ship Movement & Collision ---
-        // Deze logica is verplaatst naar DEEL 7.
-
-    } catch (e) {
-        console.error("FATAL Error in moveEntities (Restored Conditions):", e, e.stack);
-        isGridSoundPlaying = false; stopSound('gridBackgroundSound'); isEntrancePhaseActive = false; stopSound('entranceSound'); isShowingPlayerGameOverMessage = false; playerGameOverMessageStartTime = 0; playerWhoIsGameOver = 0; nextActionAfterPlayerGameOver = ''; isShipCaptured = false; captureBeamActive = false; capturingBossId = null; stopSound('captureSound'); stopSound('shipCapturedSound'); isWaitingForRespawn = false; fallingShips = []; isDualShipActive = false; player1IsDualShipActive = false; player2IsDualShipActive = false; isInvincible = false; invincibilityEndTime = 0; hitSparks = []; if(typeof showMenuState === 'function') showMenuState(); if (mainLoopId) cancelAnimationFrame(mainLoopId); mainLoopId = null; alert("Critical error during entity movement/collision. Returning to menu.");
-    }
-}
-
-
-/**
- * Switches the current player in a 2-player game. (Vooral voor 'alternating' mode)
- * <<< GEWIJZIGD: Zorgt ervoor dat playerXMaxLevelReached correct wordt geüpdatet
- *     met het level waarop de speler zijn/haar beurt beëindigde. >>>
- */
 function switchPlayerTurn() {
     if (!isTwoPlayerMode || selectedGameMode === 'coop') return false; // Niet voor CO-OP
     // stopSound('hiScoreSound'); // Verplaatst naar binnen de high score logica
@@ -3569,44 +3362,8 @@ function handlePlayerShipCollision(playerNumber, hitDualPart, collisionTime, was
 /**
  * Switches the current player in a 2-player game. (Vooral voor 'alternating' mode)
  */
-function switchPlayerTurn() {
-    if (!isTwoPlayerMode || selectedGameMode === 'coop') return false;
-    stopSound('hiScoreSound');
-    if (currentPlayer === 1) { player1Score = score; player1IsDualShipActive = isDualShipActive; if (player1Score > highScore) highScore = player1Score; }
-    else { player2Score = score; player2IsDualShipActive = isDualShipActive; if (player2Score > highScore) highScore = player2Score; }
-    const nextPlayer = (currentPlayer === 1) ? 2 : 1;
-    const nextPlayerLives = (nextPlayer === 1) ? player1Lives : player2Lives;
-    if (nextPlayerLives <= 0) {
-        const currentSpelersLives = (currentPlayer === 1) ? player1Lives : player2Lives;
-        if (currentSpelersLives <= 0) { triggerFinalGameOverSequence(); return false; }
-        else { forceCenterShipNextReset = false; return false; }
-    }
-    currentPlayer = nextPlayer;
-    score = (currentPlayer === 1) ? player1Score : player2Score;
-    playerLives = (currentPlayer === 1) ? player1Lives : player2Lives;
-    isDualShipActive = (currentPlayer === 1) ? player1IsDualShipActive : player2IsDualShipActive;
-    forceCenterShipNextReset = true;
-    scoreEarnedThisCS = 0;
-    csCurrentChainHits = 0; csCurrentChainScore = 0; csLastHitTime = 0; csLastChainHitPosition = null;
-    normalWaveCurrentChainHits = 0; normalWaveCurrentChainScore = 0; normalWaveLastHitTime = 0; normalWaveLastHitPosition = null;
-    leftPressed = false; rightPressed = false; shootPressed = false;
-    p2LeftPressed = false; p2RightPressed = false; p2ShootPressed = false;
-    keyboardP1LeftDown = false; keyboardP1RightDown = false; keyboardP1ShootDown = false;
-    keyboardP2LeftDown = false; keyboardP2RightDown = false; keyboardP2ShootDown = false;
-    p1JustFiredSingle = false; p2JustFiredSingle = false;
-    p1FireInputWasDown = false; p2FireInputWasDown = false;
-    isShipCaptured = false;
-    isWaitingForRespawn = false; respawnTime = 0;
-    isInvincible = false; invincibilityEndTime = 0;
-    fallingShips = []; hitSparks = [];
-    showExtraLifeMessage = false; extraLifeMessageStartTime = 0;
-    return true;
-}
+// [REMOVED OLD DUPLICATE switchPlayerTurn - kept newer version]
 
-
-/**
- * Triggers firing from grid enemies based on level and timing.
- */
 function triggerGridFiring() {
     try { // <<< TOEGEVOEGD: try-catch blok om de functie heen >>>
         if (isPaused || !isInGameState || isChallengingStage || isWaveTransitioning) { return; }
