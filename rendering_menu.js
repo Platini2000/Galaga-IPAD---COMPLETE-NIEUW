@@ -2,9 +2,6 @@
 // --- DEEL 1      van 3 dit code blok    ---
 
 // --- Menu/UI Constanten ---
-let lastFrameTime = 0;
-const targetFPS = 60;
-const frameInterval = 1000 / targetFPS;
 const MENU_LOGO_APPROX_HEIGHT = 85;
 const MENU_SUBTITLE_TEXT = "Written By Platini2000(c)";
 const MENU_SUBTITLE_FONT = "18px 'Arial Black', Gadget, sans-serif"; // Groter
@@ -121,15 +118,7 @@ function getMenuButtonRect(buttonIndex) {
 function pollControllerForMenu() {
     try {
         if (audioContext && audioContext.state === 'suspended' && (connectedGamepadIndex !== null || connectedGamepadIndexP2 !== null) ) {
-             audioContext.resume().then(() => {
-            audioContextInitialized = true;
-            console.log("AudioContext resumed by canvas click.");
-            const buffer = audioContext.createBuffer(1, 1, 22050);
-            const source = audioContext.createBufferSource();
-            source.buffer = buffer;
-            source.connect(audioContext.destination);
-            source.start(0);
-        });
+             audioContext.resume().then(() => { audioContextInitialized = true; console.log("AudioContext resumed by controller interaction."); });
         }
         if (connectedGamepadIndex === null && connectedGamepadIndexP2 === null) { joystickMovedVerticallyLastFrame = false; if(previousButtonStates.length > 0) previousButtonStates = []; if(previousGameButtonStates.length > 0) previousGameButtonStates = []; if(previousGameButtonStatesP2.length > 0) previousGameButtonStatesP2 = []; return; }
         let primaryGamepadIndex = connectedGamepadIndex !== null ? connectedGamepadIndex : connectedGamepadIndexP2;
@@ -371,7 +360,6 @@ function showMenuState() {
        gameJustStartedAndWaveLaunched = false;
 
        isInGameState = false;
-       lastFrameTime = 0;
        isShowingScoreScreen = false; scoreScreenStartTime = 0;
        isManualControl = false; isShowingDemoText = false;
        isPaused = false;
@@ -541,7 +529,6 @@ function baseStartGame(setManualControl) {
         }
         stopAutoDemoTimer();
         isInGameState = true; isShowingScoreScreen = false;
-        lastFrameTime = 0;
         isPlayerSelectMode = false;
         isOnePlayerGameTypeSelectMode = false;
         isOnePlayerVsAIGameTypeSelectMode = false;
@@ -848,30 +835,8 @@ function handleCanvasTouch(event, type, isTap = false) {
  */
 function handleCanvasClick(event) {
     if (!gameCanvas) return;
-    
-    // --- Directe Audio deblokkering bij muisklik op de pc ---
-    if (!audioContext) {
-        try {
-            audioContext = new (window.AudioContext || window.webkitAudioContext)();
-            loadAllSounds(); // Laad de geluiden direct in zodra de pc-gebruiker klikt
-        } catch (err) {
-            console.error("Web Audio API not supported", err);
-        }
-    }
-    
-    if (audioContext && audioContext.state === 'suspended') {
-        audioContext.resume().then(() => {
-            audioContextInitialized = true;
-            console.log("AudioContext resumed by canvas click.");
-            // Kort stil geluid afspelen om iOS audio-pijplijn wakker te schudden
-            const buffer = audioContext.createBuffer(1, 1, 22050);
-            const source = audioContext.createBufferSource();
-            source.buffer = buffer;
-            source.connect(audioContext.destination);
-            source.start(0);
-        });
-    } else if (audioContext && audioContext.state === 'running') {
-        audioContextInitialized = true;
+     if (audioContext && audioContext.state === 'suspended') {
+        audioContext.resume().then(() => { audioContextInitialized = true; console.log("AudioContext resumed by canvas click."); });
     }
 
     if (isInGameState) {
@@ -982,14 +947,13 @@ function renderGame() {
             const disclaimerTitleColor = "yellow";
             const disclaimerTextFont = `normal ${cleanFontBaseSize}px Arial, sans-serif`;
             const disclaimerTextColor = "lime";
-            const rotateFontSize = Math.min(22, gameCanvas.width / 20); // Schaalt nu netjes mee
-            const rotateFont = `bold ${rotateFontSize}px 'Press Start 2P'`;
+            const rotateFont = "bold 24px 'Press Start 2P'";
             const rotateColor = "rgba(0, 191, 255, 0.9)";
             const platiniFont = `normal ${cleanFontBaseSize - 4}px Arial, sans-serif`;
             const platiniColor = "red";
 
             const messageStructure = [
-                { text: "[ DISCLAIMER ]", font: disclaimerTitleFont, color: disclaimerTitleColor, skipAfter: 0.75 },
+                { text: "⚠️ Disclaimer", font: disclaimerTitleFont, color: disclaimerTitleColor, skipAfter: 0.75 },
                 { text: "This is an unofficial", font: disclaimerTextFont, color: disclaimerTextColor },
                 { text: "fan remake of Galaga,", font: disclaimerTextFont, color: disclaimerTextColor, skipAfter: 1 },
                 { text: "Created out of love", font: disclaimerTextFont, color: disclaimerTextColor },
@@ -1003,20 +967,17 @@ function renderGame() {
                 { text: "Written by Platini2000(c)", font: platiniFont, color: platiniColor }
             ];
 
-            // Disclaimer Tekst Logica (Herschreven om verschuiving op de iPhone te voorkomen)
-            const getSafeFontHeight = (fontStr) => {
-                const match = fontStr.match(/(\d+)px/);
-                return match ? parseInt(match[1], 10) : 20;
-            };
-
             let totalBlockHeight = 0;
             const lineHeightsInfo = messageStructure.map(item => {
-                const fontSize = getSafeFontHeight(item.font);
-                const height = (fontSize * 1.2) + 8; // Vaste en stabiele line-height
+                gameCtx.font = item.font;
+                const metrics = gameCtx.measureText("M");
+                const height = (metrics.actualBoundingBoxAscent || parseInt(item.font, 10) * 1.2) + (metrics.actualBoundingBoxDescent || 0) + 8;
                 return { height: height, skip: item.skipAfter || 0 };
             });
 
-            const referenceSkipLineHeight = (getSafeFontHeight(rotateFont) * 1.2) + 5;
+            gameCtx.font = rotateFont;
+            const refMetrics = gameCtx.measureText("M");
+            const referenceSkipLineHeight = (refMetrics.actualBoundingBoxAscent || parseInt(rotateFont,10)*1.2) + (refMetrics.actualBoundingBoxDescent || 0) + 5;
 
             lineHeightsInfo.forEach(info => {
                 totalBlockHeight += info.height;
@@ -1041,9 +1002,8 @@ function renderGame() {
 
             let currentDisclaimerTextY = disclaimerStartY;
             messageStructure.forEach((item, index) => {
-    const itemLineHeight = lineHeightsInfo[index].height;
-    const xPos = midX; // Altijd centreren op het midden van de pagina
-    drawCanvasText(item.text, xPos, currentDisclaimerTextY + itemLineHeight / 2, item.font, item.color, 'center', 'middle', true);
+                const itemLineHeight = lineHeightsInfo[index].height;
+                drawCanvasText(item.text, midX, currentDisclaimerTextY + itemLineHeight / 2, item.font, item.color, 'center', 'middle', true);
                 currentDisclaimerTextY += itemLineHeight;
                 if (item.skipAfter) {
                     currentDisclaimerTextY += referenceSkipLineHeight * item.skipAfter;
@@ -1053,7 +1013,7 @@ function renderGame() {
 
             // --- BEGIN VASTE UI VOOR PORTRETMODUS ---
             gameCtx.save();
-            const PORTRAIT_UI_FONT = "bold 16px monospace";
+            const PORTRAIT_UI_FONT = "20px 'Press Start 2P'";
             const PORTRAIT_LABEL_COLOR = "red";
             const PORTRAIT_SCORE_COLOR = "white";
             const PORTRAIT_MARGIN_TOP_BASE = 15;
@@ -1795,7 +1755,7 @@ function renderGame() {
                                 introText = (!isManualControl && !isCoopAIDemoActive && !isPlayerTwoAI) ? "AI PLAYER READY!" :
                                             (isCoopAIDemoActive ? "AI PLAYER 1" : 
                                             ((isTwoPlayerMode && selectedGameMode === 'normal' && !isPlayerTwoAI) ? `PLAYER ${currentPlayer}` :
-                                            ((isPlayerTwoAI && selectedOnePlayerGameVariant === '1P_VS_AI_NORMAL') ? `PLAYER ${currentPlayer}` : "PLAYER 1") ));
+                                            ((isPlayerTwoAI && selectedOnePlayerGameVariant === '1P_VS_AI_COOP') ? `PLAYER ${currentPlayer}` : "PLAYER 1") ));
                                  if (isManualControl && isPlayerTwoAI && selectedGameMode === 'normal' && currentPlayer === 2) introText = "AI PLAYER 2";
                             }
                         }
@@ -1923,21 +1883,30 @@ function handleCanvasMouseMove(event) {
 }
 
 
+// --- Toegevoegde variabelen voor de 60 FPS Framerate Cap ---
+let lastFrameTime = 0;
+const targetFPS = 60;
+const frameInterval = 1000 / targetFPS; // Ongeveer 16.66 ms per frame
+
 function mainLoop(timestamp) {
-    // --- 60 FPS START ---
-    if (!timestamp) timestamp = performance.now(); // Zorg dat er altijd een tijd is
-    if (!lastFrameTime) lastFrameTime = timestamp; // Eerste keer instellen
-
-    const elapsed = timestamp - lastFrameTime;
-
-    if (elapsed < 15) {
-        mainLoopId = requestAnimationFrame(mainLoop);
-        return; // Stop hier, nog te vroeg voor een nieuw frame
-    }
-
-    lastFrameTime = timestamp - (elapsed % frameInterval); // Tijd resetten voor volgende keer
-    // --- 60 FPS EIND ---
     try {
+        // Bereken hoeveel tijd er is verstreken sinds het vorige frame
+        if (!lastFrameTime) {
+            lastFrameTime = timestamp;
+        }
+        const elapsed = timestamp - lastFrameTime;
+
+        // Als de tijd korter is dan het gewenste interval (bijv. op 144Hz of hoger),
+        // slaan we de zware game-update over voor deze specifieke cyclus, 
+        // maar vragen we wel direct om een nieuwe animatieframe.
+        if (elapsed < frameInterval - 1) {
+            mainLoopId = requestAnimationFrame(mainLoop);
+            return;
+        }
+
+        // Corrigeer de lastFrameTime voor de volgende iteratie, met een kleine marge tegen opstapeling
+        lastFrameTime = timestamp - (elapsed % frameInterval);
+
         drawStars(); if (retroGridCtx && retroGridCanvas) { drawRetroGrid(); } pollControllerForMenu();
         if (isInGameState && !isPaused && !isShowingPortraitMessage) {
             if (!isManualControl && connectedGamepadIndex !== null) { const gamepads = navigator.getGamepads(); if (gamepads?.[connectedGamepadIndex]) { const gamepad = gamepads[connectedGamepadIndex]; const currentDemoButtonStates = gamepad.buttons.map(b => b.pressed); let anyButtonPressedNow = false; for (let i = 0; i < currentDemoButtonStates.length; i++) { if (i === PS5_BUTTON_R1 || i === PS5_BUTTON_TRIANGLE) continue; if (currentDemoButtonStates[i] && !(previousDemoButtonStates[i] ?? false)) { anyButtonPressedNow = true; break; } } if (anyButtonPressedNow) { isCoopAIDemoActive = false; isPlayerTwoAI = false; showMenuState(); requestAnimationFrame(mainLoop); return; } previousDemoButtonStates = currentDemoButtonStates.slice(); } else { if(previousDemoButtonStates.length > 0) previousDemoButtonStates = []; } } else { if(previousDemoButtonStates.length > 0) previousDemoButtonStates = []; }
@@ -1985,6 +1954,7 @@ function mainLoop(timestamp) {
 function startMainLoop() {
     if (mainLoopId === null) {
         gridOffsetY = 0;
+        lastFrameTime = 0; // Reset de timer bij de start
         mainLoop();
     } else {
     }
@@ -2029,5 +1999,5 @@ function initializeGame() {
 
 window.addEventListener('load', initializeGame);
 
-// --- EINDE deel 4 van 4 dit codeblok ---
-// --- END OF rendering_menu.js ---
+// --- EINDE deel 4 van 4 dit code blok    ---
+// --- END OF FILE rendering_menu.js ---
