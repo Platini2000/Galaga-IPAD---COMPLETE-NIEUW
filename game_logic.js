@@ -14,6 +14,7 @@ let justFinishedChallengingStage = false; // helper
 let simultaneousAssaultActiveShooters = 0;
 let simultaneousAssaultLastShooterReset = 0;
 function canSimultaneousAssaultEnemyShoot() {
+
     if (typeof isSimultaneousAssaultWave === 'undefined' || !isSimultaneousAssaultWave) return true;
     const now = Date.now();
     if (now - simultaneousAssaultLastShooterReset > 800) { // elke 800ms reset
@@ -403,6 +404,8 @@ function resetWaveInternal() {
     isChallengingStage = currentWaveType === 'challenging_stage';
     isFullGridWave = currentWaveType === 'full_grid';
     isSimultaneousAssaultWave = currentWaveType === 'simultaneous_assault';
+    isBossStage = currentWaveType === 'boss_stage';
+    window.isBossStage = isBossStage;
     window.isSimultaneousAssaultWave = isSimultaneousAssaultWave;
 
     challengingStageEnemiesHit = 0;
@@ -413,7 +416,7 @@ function resetWaveInternal() {
     csLastChainHitPosition = null;
 
 
-    if (isFullGridWave || isChallengingStage) {
+    if (isFullGridWave || isChallengingStage || isBossStage) {
         isEntrancePhaseActive = false;
     }
     // simultaneous_assault gebruikt entrance phase (zoals entrance_flight), dus niet hier op false zetten
@@ -433,6 +436,10 @@ function resetWaveInternal() {
     } else if ((isTwoPlayerMode && selectedGameMode === 'normal') ||
                (isPlayerTwoAI && selectedOnePlayerGameVariant === '1P_VS_AI_NORMAL')) {
         introStep = 1;
+        isShowingIntro = true;
+        if (!isManualControl) isShowingDemoText = true;
+    } else if (isBossStage) {
+        introStep = 2;
         isShowingIntro = true;
         if (!isManualControl) isShowingDemoText = true;
     } else if (isChallengingStage) {
@@ -525,9 +532,50 @@ function isAllEnemiesInGridForSimultaneous() {
 window.isAllEnemiesInGridForSimultaneous = isAllEnemiesInGridForSimultaneous;
 
 
+function getBossStageVariantForLevel(lvl) {
+    // DEFINITIEF: 6 = bees (100 hits / 10k), 12 = enemy2 (200 hits / 20k), 18 = enemy3 (300 hits / 30k), herhalend elke 18
+    if (lvl === 6) return 'bees';
+    if (lvl === 12) return 'enemy2';
+    if (lvl === 18) return 'enemy3';
+    const mod18 = lvl % 18;
+    if (mod18 === 6) return 'bees';
+    if (mod18 === 12) return 'enemy2';
+    if (mod18 === 0 && lvl >= 18) return 'enemy3';
+    return 'bees';
+}
+window.getBossStageVariantForLevel = getBossStageVariantForLevel;
+
+function getBossStageBonusForVariant(variant) {
+    if (variant === 'enemy2') return 20000;
+    if (variant === 'enemy3') return 30000;
+    return 10000;
+}
+window.getBossStageBonusForVariant = getBossStageBonusForVariant;
+
+function getBossStageMaxHitsForVariant(variant) {
+    if (variant === 'enemy2') return 200;
+    if (variant === 'enemy3') return 300;
+    return 100;
+}
+window.getBossStageMaxHitsForVariant = getBossStageMaxHitsForVariant;
+
+function getBossStageDifficulty(variant) {
+    if (variant === 'enemy2') {
+        return { gridShotInterval: 280, gridShotChance: 0.38, gridMaxShootersPerCheck: 2, bossShotInterval: 850, bossNextAttackDelay: 1100, bossSpeedFactor: 1.25 };
+    }
+    if (variant === 'enemy3') {
+        return { gridShotInterval: 180, gridShotChance: 0.55, gridMaxShootersPerCheck: 3, bossShotInterval: 550, bossNextAttackDelay: 750, bossSpeedFactor: 1.5 };
+    }
+    return { gridShotInterval: 400, gridShotChance: 0.25, gridMaxShootersPerCheck: 1, bossShotInterval: 1200, bossNextAttackDelay: 1500, bossSpeedFactor: 1.0 };
+}
+window.getBossStageDifficulty = getBossStageDifficulty;
+
 function getWaveTypeInternal(level) {
+    // DEFINITIEF: alleen elke 6 (6,12,18,24,30,36...) - level 2 is normaal
+    if (level % 6 === 0) {
+        return 'boss_stage';
+    }
     // FIXED V10: 5-wave cycle - nieuw level na elke CS
-    // 0: full_grid, 1: entrance_flight_1, 2: challenging_stage, 3: simultaneous_assault (NIEUW), 4: entrance_flight_2
     const basePatternIndex = (level - 1) % 5;
     switch (basePatternIndex) {
         case 0: return 'full_grid';
@@ -571,6 +619,19 @@ function generateWaveDefinitionInternal(level) {
     } else {
         console.error("CRITICAL: Wave pattern is missing or empty.");
         waveDef = [];
+    }
+
+    if (waveType === 'boss_stage') {
+        // Boss stage uses same pattern but filtered to only blue bees (ENEMY1_TYPE)
+        for (let i = 0; i < waveDef.length; i++) {
+            const sq = waveDef[i];
+            if (sq.enemies) {
+                for (let e of sq.enemies) {
+                    e.type = ENEMY1_TYPE;
+                }
+            }
+        }
+        return waveDef;
     }
 
     if (waveType !== 'challenging_stage') {
@@ -643,7 +704,503 @@ function startFullGridWave() {
     if (GRID_BREATH_ENABLED && !isGridBreathingActive) { isGridBreathingActive = true; gridBreathStartTime = Date.now(); currentGridBreathFactor = 0; }
     lastGridFireCheckTime = Date.now(); firstEnemyLanded = true;
 }
+
 window.startFullGridWave = startFullGridWave;
+
+// --- BOSS STAGE FUNCTIES ---
+function resetBossStageState() {
+    bossStagePhase = 'none';
+    bossStageBoss = null;
+    bossStageBossHealth = BOSS_STAGE_MAX_HITS;
+    bossStageBossMaxHealth = BOSS_STAGE_MAX_HITS;
+    bossStageSpawnQueue = [];
+    bossStageSpawnIndex = 0;
+    bossStageLastSpawnTime = 0;
+    isShowingBossStageMessage = false;
+    isShowingBossDefeatedMessage = false;
+    bossStageReturnCount = 0;
+    bossStageBounceCount = 0;
+    bossStageBounceStartY = 0;
+    bossStageBounceLastTime = 0;
+    bossStageLastGridBeeShot = 0;
+}
+
+function buildBossStageSpawnQueue() {
+    bossStageSpawnQueue = [];
+    if (!currentWaveDefinition) return;
+    // Flatten all enemies from pattern into queue, each with grid pos
+    currentWaveDefinition.forEach((sq, sqIdx) => {
+        if (sq.enemies) {
+            sq.enemies.forEach((edef, eIdx) => {
+                bossStageSpawnQueue.push({
+                    gridRow: edef.gridRow,
+                    gridCol: edef.gridCol,
+                    entrancePathId: edef.entrancePathId || sq.pathId,
+                    squadronId: sqIdx,
+                    squadronEnemyIndex: eIdx
+                });
+            });
+        }
+    });
+    // Shuffle slightly? No, keep order but we want to fill grid
+    totalEnemiesScheduledForWave = bossStageSpawnQueue.length;
+    enemiesSpawnedThisWave = 0;
+}
+
+function startBossStageWave() {
+    console.log("[BOSS STAGE] startBossStageWave level", level);
+    enemySpawnTimeouts.forEach(clearTimeout);
+    enemySpawnTimeouts = [];
+    enemies = [];
+    squadronCompletionStatus = {};
+    squadronEntranceFiringStatus = {};
+    resetBossStageState();
+
+    // Bepaal variant en max hits voor deze level
+    try {
+        if (typeof getBossStageVariantForLevel === 'function') {
+            bossStageVariant = getBossStageVariantForLevel(level);
+        } else {
+            bossStageVariant = 'bees';
+        }
+        if (bossStageVariant === 'enemy2') bossStageEnemyType = ENEMY2_TYPE;
+        else if (bossStageVariant === 'enemy3') bossStageEnemyType = ENEMY3_TYPE;
+        else bossStageEnemyType = ENEMY1_TYPE;
+        console.log("[BOSS STAGE] variant:", bossStageVariant, "enemyType:", bossStageEnemyType);
+    } catch(e) {
+        bossStageVariant = 'bees';
+        bossStageEnemyType = ENEMY1_TYPE;
+    }
+    // Max hits per variant: 100 / 200 / 300 - ALTIJD VOL BIJ START
+    let bossMaxHitsForThisStage = BOSS_STAGE_MAX_HITS;
+    if (typeof getBossStageMaxHitsForVariant === 'function') {
+        bossMaxHitsForThisStage = getBossStageMaxHitsForVariant(bossStageVariant);
+    }
+    bossStageBossMaxHealth = bossMaxHitsForThisStage;
+    bossStageBossHealth = bossMaxHitsForThisStage;
+    if (typeof window !== 'undefined') {
+        window.bossStageVariant = bossStageVariant;
+        window.bossStageEnemyType = bossStageEnemyType;
+        window.bossStageBossMaxHealth = bossMaxHitsForThisStage;
+        window.bossStageBossHealth = bossMaxHitsForThisStage;
+    }
+    
+    buildBossStageSpawnQueue();
+    
+    // Geen extra BOSS STAGE message - intro via STAGE X -> BOSS STAGE beide cyaan
+    isShowingBossStageMessage = false;
+    playSound('entranceSound', false, 0.6);
+    
+    // Create boss entity 5x bigger, starting above screen
+    const canvasW = gameCanvas ? gameCanvas.width : 800;
+    const canvasH = gameCanvas ? gameCanvas.height : 600;
+    const isEnemy2BossForSize = (typeof bossStageVariant !== 'undefined' && bossStageVariant === 'enemy2');
+    const isEnemy3BossForSize = (typeof bossStageVariant !== 'undefined' && bossStageVariant === 'enemy3');
+    let bossW, bossH;
+    if (isEnemy3BossForSize) { bossW = Math.round(BOSS_WIDTH * 2.2); bossH = Math.round(BOSS_HEIGHT * 2.2); }
+    else if (isEnemy2BossForSize) { bossW = Math.round(ENEMY_WIDTH * 2.0 * 1.33); bossH = Math.round(ENEMY_HEIGHT * 2.0 * 1.33); }
+    else { bossW = BOSS_STAGE_BOSS_WIDTH; bossH = BOSS_STAGE_BOSS_HEIGHT; }
+    bossStageTargetY = canvasH * 0.20;
+    
+    bossStageBoss = {
+        x: canvasW/2 - bossW/2,
+        y: -bossH - 100,
+        width: bossW,
+        height: bossH,
+        targetGridX: canvasW/2 - bossW/2,
+        targetGridY: bossStageTargetY,
+        speed: 0,
+        state: 'boss_entering',
+        type: BOSS_STAGE_BOSS_TYPE,
+        health: (typeof bossMaxHitsForThisStage !== 'undefined' ? bossMaxHitsForThisStage : BOSS_STAGE_MAX_HITS),
+        maxHealth: (typeof bossMaxHitsForThisStage !== 'undefined' ? bossMaxHitsForThisStage : BOSS_STAGE_MAX_HITS),
+        isDamaged: false,
+        isBluePhase: false,
+        isDamagedFlash: false,
+        velocityX: 0,
+        velocityY: 0,
+        attackPathSegments: [],
+        attackPathSegmentIndex: 0,
+        attackPathT: 0,
+        id: 'boss-stage-boss-'+Date.now(),
+        canFireThisDive: true,
+        lastFiredTime: 0,
+        attackFormationOffsetX: 0,
+        attackGroupId: null
+    };
+    
+    bossStagePhase = 'intro';
+    bossStageBossHealth = (typeof bossMaxHitsForThisStage !== 'undefined' ? bossMaxHitsForThisStage : BOSS_STAGE_MAX_HITS);
+    isEntrancePhaseActive = false;
+    isWaveTransitioning = false;
+}
+window.startBossStageWave = startBossStageWave;
+
+function spawnOneBossStageBee() {
+    if (bossStageSpawnIndex >= bossStageSpawnQueue.length) return false;
+    const def = bossStageSpawnQueue[bossStageSpawnIndex];
+    try {
+        const isEnemy2Variant = (typeof bossStageVariant !== 'undefined' && bossStageVariant === 'enemy2');
+        const isEnemy3Variant = (typeof bossStageVariant !== 'undefined' && bossStageVariant === 'enemy3');
+        let enemyTypeToSpawn, enemyWidth, enemyHeight, enemyHealth;
+        if (isEnemy3Variant) {
+            enemyTypeToSpawn = ENEMY3_TYPE;
+            enemyWidth = BOSS_WIDTH;
+            enemyHeight = BOSS_HEIGHT;
+            enemyHealth = ENEMY3_MAX_HITS; // 2 hits, blauw na 1e hit zoals normale enemy3
+        } else if (isEnemy2Variant) {
+            enemyTypeToSpawn = ENEMY2_TYPE;
+            enemyWidth = ENEMY_WIDTH;
+            enemyHeight = ENEMY_HEIGHT;
+            enemyHealth = 1;
+        } else {
+            enemyTypeToSpawn = ENEMY1_TYPE;
+            enemyWidth = ENEMY1_WIDTH;
+            enemyHeight = ENEMY1_HEIGHT;
+            enemyHealth = 1;
+        }
+        const { x: targetGridX, y: targetGridY } = getCurrentGridSlotPosition(def.gridRow, def.gridCol, enemyWidth);
+        // Netjes uit boss poten gespugd zoals gevraagd
+        let startX = bossStageBoss ? bossStageBoss.x + bossStageBoss.width*0.5 - enemyWidth/2 : gameCanvas.width/2;
+        let startY = bossStageBoss ? bossStageBoss.y + bossStageBoss.height*0.8 : bossStageTargetY;
+        const pathSource = normalWaveEntrancePaths;
+        const pathId = def.entrancePathId;
+        let pathSegments = pathSource[pathId];
+        if (!pathSegments || pathSegments.length === 0) {
+            const firstKey = Object.keys(pathSource)[0];
+            pathSegments = pathSource[firstKey];
+        }
+        // Niet overschrijven met path p0 - we willen echt uit boss komen, daarna pad volgen
+        const newEnemy = {
+            x: startX, y: startY,
+            width: enemyWidth, height: enemyHeight,
+            targetGridX, targetGridY,
+            speed: 0,
+            state: 'following_entrance_path',
+            gridRow: def.gridRow, gridCol: def.gridCol,
+            type: enemyTypeToSpawn,
+            health: (typeof enemyHealth !== 'undefined' ? enemyHealth : 1),
+            isDamaged: false,
+            velocityX: 0, velocityY: 0,
+            attackPathSegments: [], attackPathSegmentIndex: 0, attackPathT: 0,
+            attackFormationOffsetX: 0, attackGroupId: null,
+            entrancePathId: pathId,
+            pathSegmentIndex: 0,
+            pathT: -bossStageSpawnIndex * 0.02 - 0.05,
+            squadronId: def.squadronId, squadronEnemyIndex: def.squadronEnemyIndex,
+            id: `boss-bee-${bossStageSpawnIndex}-${Date.now()}-${Math.random().toString(36).substring(2,5)}`,
+            justReturned: false, canFireThisDive: false,
+            pathSpeedMultiplier: 1.2
+        };
+        enemies.push(newEnemy);
+        enemiesSpawnedThisWave++;
+        bossStageSpawnIndex++;
+        return true;
+    } catch(e) {
+        console.error("Boss spawn error", e);
+        bossStageSpawnIndex++;
+        return true;
+    }
+}
+
+function updateBossStageLogic(now) {
+    if (!isBossStage || !bossStageBoss) return;
+    
+    // Intro STAGE X -> BOSS STAGE via isShowingIntro, daarna pas entering
+    if (bossStagePhase === 'intro') {
+        if (typeof isShowingIntro !== 'undefined' && !isShowingIntro) {
+            bossStagePhase = 'entering';
+        }
+        return;
+    }
+    
+    if (isShowingBossDefeatedMessage && now - bossDefeatedMessageStartTime > 2500) {
+        isShowingBossDefeatedMessage = false;
+    }
+    
+    switch(bossStagePhase) {
+        case 'intro':
+            // waiting for message
+            break;
+        case 'entering': {
+            // Move boss down to targetY
+            const dy = bossStageTargetY - bossStageBoss.y;
+            if (Math.abs(dy) > 2) {
+                bossStageBoss.y += dy * 0.08 + 1.5;
+            } else {
+                bossStageBoss.y = bossStageTargetY;
+                bossStagePhase = 'bouncing';
+                bossStageBounceStartY = bossStageBoss.y;
+                bossStageBounceLastTime = now;
+                bossStageBounceCount = 0;
+                // console.log("[BOSS] Start spawning");
+            }
+            break;
+        }
+        case 'bouncing': {
+            isEntrancePhaseActive = true;
+            const elapsed = now - bossStageBounceLastTime;
+            bossStageBoss.y = bossStageBounceStartY + Math.sin((elapsed/600)*Math.PI*2) * 28;
+            if (elapsed > 600) {
+                bossStageBounceCount++; bossStageBounceLastTime = now;
+                if (bossStageBounceCount >= 3) { bossStageBoss.y = bossStageBounceStartY; bossStagePhase = 'spawning'; bossStageLastSpawnTime = now; bossStageSpawnIndex = 0; }
+            }
+            break;
+        }
+        case 'spawning': {
+            isEntrancePhaseActive = true;
+            // Spawn ALL at once zoals stage 4
+            while (bossStageSpawnIndex < bossStageSpawnQueue.length) {
+                spawnOneBossStageBee();
+            }
+            bossStagePhase = 'exiting_after_spawn';
+            break;
+        }
+        case 'exiting_after_spawn': {
+            // Boss goes up out of screen after grid vol
+            bossStageBoss.y -= 8;
+            if (bossStageBoss.y < -bossStageBoss.height - 50) {
+                // Hide boss, wait for grid clear
+                bossStagePhase = 'waiting_grid_clear';
+                console.log("[BOSS] Grid full, boss exited, waiting clear");
+            }
+            break;
+        }
+        case 'waiting_for_grid':
+        case 'waiting_grid':
+        case 'waiting_for_grid_clear': {
+            isEntrancePhaseActive = true;
+            let stillEntering = false;
+            for (let e of enemies) { if (e && (e.state === 'following_entrance_path' || e.state === 'moving_to_grid')) { stillEntering = true; break; } }
+            if (!stillEntering) { isEntrancePhaseActive = false; bossStagePhase = 'bees_in_grid'; if (bossStageBoss) bossStageBoss.isVisible = false; }
+            break;
+        }
+        case 'bees_in_grid': {
+            isEntrancePhaseActive = false;
+            if (bossStageBoss) bossStageBoss.isVisible = false;
+            if (typeof enemies !== 'undefined' && enemies.length > 0) {
+                const diff = (typeof getBossStageDifficulty === 'function' ? getBossStageDifficulty(bossStageVariant) : {gridShotInterval:400, gridShotChance:0.25});
+                if (now - (window.bossStageLastGridBeeShot || 0) > diff.gridShotInterval) {
+                    const gridBees = enemies.filter(e => e && e.state === 'in_grid');
+                    if (gridBees.length > 0 && Math.random() < diff.gridShotChance) {
+                        const shooter = gridBees[Math.floor(Math.random()*gridBees.length)];
+                        if (shooter && typeof createBulletSimple === 'function') {
+                            if (createBulletSimple(shooter)) {
+                                shooter.lastFiredTime = now;
+                                bossStageLastGridBeeShot = now; window.bossStageLastGridBeeShot = now;
+                            }
+                        }
+                    }
+                }
+            }
+            if (enemies.length === 0) {
+                const canvasW = gameCanvas ? gameCanvas.width : 800;
+                if (bossStageBoss) {
+                    bossStageBoss.x = canvasW/2 - bossStageBoss.width/2;
+                    bossStageBoss.y = -bossStageBoss.height - 100;
+                    bossStageBoss.state = 'boss_entering_return';
+                    bossStageBoss.isVisible = true;
+                    bossStageBoss.velocityX = 0;
+                    bossStageBoss.velocityY = 0;
+                }
+                bossStagePhase = 'returning';
+                console.log("[BOSS] All small bees dead, returning - FIXED");
+            }
+            break;
+        }
+        case 'waiting_grid_clear': {
+            // Fallback - same as bees_in_grid
+            if (enemies.length === 0) {
+                const canvasW = gameCanvas ? gameCanvas.width : 800;
+                if (bossStageBoss) {
+                    bossStageBoss.x = canvasW/2 - bossStageBoss.width/2;
+                    bossStageBoss.y = -bossStageBoss.height - 100;
+                    bossStageBoss.state = 'boss_entering_return';
+                    bossStageBoss.isVisible = true;
+                }
+                bossStagePhase = 'returning';
+            }
+            break;
+        }
+        case 'returning': {
+            const dy = bossStageTargetY - bossStageBoss.y;
+            if (Math.abs(dy) > 2) {
+                bossStageBoss.y += dy * 0.08 + 2.5;
+            } else {
+                bossStageBoss.y = bossStageTargetY;
+                bossStageBoss.state = 'in_grid_boss'; // hovering
+                bossStagePhase = 'fighting';
+                bossStageBoss.lastFiredTime = 0;
+                // Set next attack time
+                const diffNext = (typeof getBossStageDifficulty === 'function' ? getBossStageDifficulty(bossStageVariant) : {bossNextAttackDelay:1500});
+                bossStageBoss.nextAttackTime = now + diffNext.bossNextAttackDelay;
+            }
+            break;
+        }
+        case 'fighting': {
+            if (bossStageBoss.state === 'in_grid_boss') {
+                if (now > (bossStageBoss.nextAttackTime || 0)) {
+                    try {
+                        let attackPath = generateAttackPathInternal(bossStageBoss);
+                        if (attackPath && typeof gameCanvas !== 'undefined' && gameCanvas) {
+                            const maxY = gameCanvas.height * 0.75;
+                            for (let seg of attackPath) {
+                                if (seg.p0 && seg.p0.y > maxY) seg.p0.y = maxY;
+                                if (seg.p1 && seg.p1.y > maxY) seg.p1.y = maxY;
+                                if (seg.p2 && seg.p2.y > maxY) seg.p2.y = maxY;
+                                if (seg.p3 && seg.p3.y > maxY) seg.p3.y = maxY;
+                            }
+                        }
+                        if (attackPath && attackPath.length > 0) {
+                            bossStageBoss.attackPathSegments = attackPath;
+                            bossStageBoss.attackPathSegmentIndex = 0;
+                            bossStageBoss.attackPathT = 0;
+                            bossStageBoss.state = 'attacking';
+                            const diffSpeed = (typeof getBossStageDifficulty === 'function' ? getBossStageDifficulty(bossStageVariant) : {bossSpeedFactor:1.0});
+                            bossStageBoss.speed = BASE_ENEMY_ATTACK_SPEED * diffSpeed.bossSpeedFactor;
+                            bossStageBoss.canFireThisDive = true;
+                            playSound('bossGalagaDiveSound', false, 0.3);
+                        }
+                    } catch(e){ console.error("Boss attack gen failed", e); }
+                }
+            } else if (bossStageBoss.state === 'attacking') {
+                // Movement handled in moveEntities
+            } else if (bossStageBoss.state === 'returning') {
+                const targetX = gameCanvas.width/2 - bossStageBoss.width/2;
+                const dx = targetX - bossStageBoss.x;
+                const dy = bossStageTargetY - bossStageBoss.y;
+                const dist = Math.sqrt(dx*dx + dy*dy);
+                if (dist > 5) {
+                    bossStageBoss.x += dx * 0.08;
+                    bossStageBoss.y += dy * 0.08;
+                } else {
+                    bossStageBoss.x = targetX;
+                    bossStageBoss.y = bossStageTargetY;
+                    bossStageBoss.state = 'in_grid_boss';
+                    bossStageBoss.nextAttackTime = now + 600;
+                }
+            }
+            // Boss schiet minder
+            if (bossStageBoss.state === 'attacking' && bossStageBoss.canFireThisDive) {
+                const diffBoss = (typeof getBossStageDifficulty === 'function' ? getBossStageDifficulty(bossStageVariant) : {bossShotInterval:1200, bossNextAttackDelay:1500, bossSpeedFactor:1.0});
+                if (now - (bossStageBoss.lastFiredTime||0) > diffBoss.bossShotInterval) {
+                    createBulletSimple(bossStageBoss);
+                    bossStageBoss.lastFiredTime = now;
+                    bossStageBoss.canFireThisDive = false;
+                    playSound('enemyShootSound', false, 0.5);
+                }
+            }
+            // NIEUW: Bijen in grid mogen klein beetje vuren in boss mode
+            if (typeof enemies !== 'undefined' && enemies.length > 0) {
+                if (now - (window.bossStageLastGridBeeShot || 0) > 350) {
+                    const gridBees = enemies.filter(e => e && e.state === 'in_grid');
+                    if (gridBees.length > 0 && Math.random() < 0.30) {
+                        const shooter = gridBees[Math.floor(Math.random()*gridBees.length)];
+                        if (shooter && typeof createBulletSimple === 'function') {
+                            if (createBulletSimple(shooter)) {
+                                shooter.lastFiredTime = now;
+                                bossStageLastGridBeeShot = now; window.bossStageLastGridBeeShot = now;
+                            }
+                        }
+                    }
+                }
+            }
+            break;
+        }
+        case 'defeated':
+            break;
+    }
+}
+
+function handleBossStageBossHit() {
+    if (!bossStageBoss) return;
+    bossStageBossHealth--;
+    if (bossStageBossHealth < 0) bossStageBossHealth = 0;
+    
+    // Voor grote enemy3 boss: bij 150 hits (helft van 300) wordt hij blauw zoals normale enemy3 na 1e hit
+    if (typeof bossStageVariant !== 'undefined' && bossStageVariant === 'enemy3') {
+        if (bossStageBossHealth <= 150) {
+            bossStageBoss.isBluePhase = true; // persistent blauw na 150 hits
+        }
+    }
+    // Flash + normale KLEINE explosie bij raken
+    bossStageBoss.isDamagedFlash = true;
+    bossStageBoss.isDamaged = true;
+    setTimeout(()=>{ if(bossStageBoss) { bossStageBoss.isDamagedFlash = false; bossStageBoss.isDamaged = bossStageBoss.isBluePhase ? true : false; } }, 150);
+    if (typeof createExplosion === 'function' && bossStageBoss) {
+        const hx = bossStageBoss.x + bossStageBoss.width/2 + (Math.random()-0.5)*bossStageBoss.width*0.4;
+        const hy = bossStageBoss.y + bossStageBoss.height/2 + (Math.random()-0.5)*bossStageBoss.height*0.4;
+        createExplosion(hx, hy);
+        // ook kleine hit sound voor feedback
+        playSound('bossHit1Sound', false, 0.5);
+    }
+    
+    if (bossStageBossHealth <= 0) {
+        triggerBossStageDefeat();
+    }
+}
+
+function triggerBossStageDefeat() {
+    if (bossStagePhase === 'defeated') return;
+    bossStagePhase = 'defeated';
+    
+    const bossX = bossStageBoss ? bossStageBoss.x + bossStageBoss.width/2 : gameCanvas.width/2;
+    const bossY = bossStageBoss ? bossStageBoss.y + bossStageBoss.height/2 : gameCanvas.height*0.3;
+    const bossW = bossStageBoss ? bossStageBoss.width : BOSS_STAGE_BOSS_WIDTH;
+    const bossH = bossStageBoss ? bossStageBoss.height : BOSS_STAGE_BOSS_HEIGHT;
+    
+    // 5x een 2x zo grote explosie rondom de Boss nadat boss verslagen is
+    for (let i=0;i<5;i++) {
+        setTimeout(()=>{
+            const rx = (Math.random()-0.5)*bossW*0.8 + bossX;
+            const ry = (Math.random()-0.5)*bossH*0.8 + bossY;
+            if (typeof createExplosion === 'function') {
+                createExplosion(rx, ry, BOSS_STAGE_BOSS_WIDTH*2.0, BOSS_STAGE_BOSS_HEIGHT*2.0);
+            }
+            playSound('explosionSound', false, 0.7);
+        }, i*120);
+    }
+
+    const bonus = (typeof getBossStageBonusForVariant === 'function' ? getBossStageBonusForVariant(bossStageVariant) : BOSS_STAGE_BONUS_SCORE);
+    score += bonus;
+    if (isTwoPlayerMode && selectedGameMode === 'coop') {
+        // Give to both? Give to current player logic handled elsewhere, give to p1 for now
+        player1Score += bonus;
+        player2Score += bonus;
+    } else if (isTwoPlayerMode && selectedGameMode === 'normal') {
+        if (currentPlayer === 1) player1Score += bonus;
+        else player2Score += bonus;
+    } else {
+        // single player score already added
+    }
+    
+    if (typeof createFloatingScore === 'function') {
+        createFloatingScore(bossX, bossY - 20, bonus);
+    }
+    
+    isShowingBossDefeatedMessage = true;
+    bossDefeatedMessageStartTime = Date.now();
+    
+    bossStageBoss = null;
+    
+    // After short delay, go to next wave - tekst weg bij volgende stage
+    setTimeout(()=>{
+        isShowingBossDefeatedMessage = false;
+        bossDefeatedMessageStartTime = 0;
+        if (typeof resetWaveInternal === 'function') {
+            level++;
+            console.log("[BOSS] Defeated, going to level", level);
+            resetWaveInternal();
+        }
+    }, 2600);
+}
+
+window.updateBossStageLogic = updateBossStageLogic;
+window.handleBossStageBossHit = handleBossStageBossHit;
+window.triggerBossStageDefeat = triggerBossStageDefeat;
+window.startBossStageWave = startBossStageWave;
+
+
 
 // --- EINDE deel 1      van 8 dit codeblok ---
 
@@ -1393,6 +1950,38 @@ function switchPlayerTurn() {
 // --- DEEL 5 van 8 dit code blok    ---
 
 function firePlayerBullet(shooterId = null, isTapEvent = false) {
+
+    // BOSS STAGE: AI mag alleen in boss levels op boss vuren - veilig, alleen in deze versie - VUURSnelheid zoals normale levels, VEILIGHEID EERST
+    if (typeof isBossStage !== 'undefined' && isBossStage && typeof bossStageBoss !== 'undefined' && bossStageBoss && typeof bossStagePhase !== 'undefined' && bossStagePhase === 'fighting') {
+        try {
+            if (bossStageBoss.state === 'attacking' || bossStageBoss.state === 'in_grid_boss') {
+                const bossCenterX = bossStageBoss.x + bossStageBoss.width/2;
+                if (typeof effectiveShipWidth !== 'undefined' && typeof AI_EDGE_BUFFER !== 'undefined' && typeof gameCanvas !== 'undefined' && gameCanvas) {
+                    // Vuursnelheid niet forceren - behouden zoals normale levels
+                    // Alleen target zetten, desiredTargetX wordt elders met dodge-prioriteit bepaald
+                    if (typeof targetEnemyForAI !== 'undefined') {
+                        targetEnemyForAI = bossStageBoss;
+                    }
+                }
+            }
+        } catch(e) {}
+    }
+
+    // BOSS STAGE: AI moet boss willen opvreten - maar wel kogels ontwijken - VEILIGHEID EERST
+    if (typeof isBossStage !== 'undefined' && isBossStage && typeof bossStageBoss !== 'undefined' && bossStageBoss && typeof bossStagePhase !== 'undefined' && bossStagePhase === 'fighting') {
+        try {
+            if (bossStageBoss.isVisible !== false) {
+                const bossCenterX = bossStageBoss.x + bossStageBoss.width/2;
+                if (typeof effectiveShipWidth !== 'undefined' && typeof AI_EDGE_BUFFER !== 'undefined' && typeof gameCanvas !== 'undefined' && gameCanvas) {
+                    // In firePlayerBullet geen forced shooting, vuursnelheid zoals normale levels
+                    if (typeof targetEnemyForAI !== 'undefined') {
+                        targetEnemyForAI = bossStageBoss;
+                    }
+                }
+            }
+        } catch(e) {}
+    }
+
     if (typeof isSimultaneousAssaultWave !== "undefined" && isSimultaneousAssaultWave) { if (typeof isEntrancePhaseActive !== "undefined" && isEntrancePhaseActive && !isAllEnemiesInGridForSimultaneous()) return false; }
     const now = Date.now();
 
@@ -2586,6 +3175,27 @@ function calculateAIDesiredState(currentShip, currentSmoothedX, isShipDual, game
         }
     }
 
+    // BOSS STAGE: AI moet boss willen opvreten - maar wel kogels ontwijken - VEILIGHEID EERST
+    if (typeof isBossStage !== 'undefined' && isBossStage && typeof bossStageBoss !== 'undefined' && bossStageBoss && typeof bossStagePhase !== 'undefined' && bossStagePhase === 'fighting') {
+        try {
+            if (bossStageBoss.isVisible !== false) {
+                const bossCenterX = bossStageBoss.x + bossStageBoss.width/2;
+                if (typeof effectiveShipWidth !== 'undefined' && typeof AI_EDGE_BUFFER !== 'undefined' && typeof gameCanvas !== 'undefined' && gameCanvas) {
+                    // VEILIGHEID EERST: alleen op boss mikken als we NIET aan het ontwijken zijn
+                    targetEnemyForAI = bossStageBoss;
+                    if (typeof isDodgingThreatCurrentFrame === 'undefined' || !isDodgingThreatCurrentFrame) {
+                        const nowWiggle = typeof currentTime !== 'undefined' ? currentTime : Date.now();
+                        const wiggle = Math.sin(nowWiggle/300)*15;
+                        let tx = bossCenterX - effectiveShipWidth/2 + wiggle;
+                        tx = Math.max(AI_EDGE_BUFFER, Math.min(gameCanvas.width - effectiveShipWidth - AI_EDGE_BUFFER, tx));
+                        desiredTargetX = tx;
+                        shouldTryShoot_AI_Calc = true;
+                    }
+                }
+            }
+        } catch(e) {}
+    }
+
     if (typeof isSimultaneousAssaultWave !== "undefined" && isSimultaneousAssaultWave) { if (typeof isEntrancePhaseActive !== "undefined" && isEntrancePhaseActive && !isAllEnemiesInGridForSimultaneous()) { shouldTryShoot_AI_Calc = false; } }
     if (typeof gameEnemies !== "undefined") { const bossWithShipAttacking = gameEnemies.find(e => e && e.type === ENEMY3_TYPE && e.hasCapturedShip && (e.state === "attacking" || e.state === "diving")); if (bossWithShipAttacking) { shouldTryShoot_AI_Calc = true; targetEnemyForAI = bossWithShipAttacking; } }
     desiredTargetX = Math.max(AI_EDGE_BUFFER, Math.min(gameCanvas.width - effectiveShipWidth - AI_EDGE_BUFFER, desiredTargetX));
@@ -2766,6 +3376,42 @@ function moveEntities(overrideP1Left = null, overrideP1Right = null) {
     if (isPaused) return;
     try {
         const now = Date.now();
+        // BOSS STAGE UPDATE
+        if (typeof isBossStage !== 'undefined' && isBossStage && typeof updateBossStageLogic === 'function') {
+            updateBossStageLogic(now);
+        }
+        // BOSS BOSS attacking movement
+        if (typeof bossStageBoss !== 'undefined' && bossStageBoss && bossStageBoss.state === 'attacking') {
+            let bossPathSegments = bossStageBoss.attackPathSegments;
+            if (bossPathSegments && bossStageBoss.attackPathSegmentIndex < bossPathSegments.length) {
+                const seg = bossPathSegments[bossStageBoss.attackPathSegmentIndex];
+                if (seg && seg.p0) {
+                    const speedFactor = 0.015 * (bossStageBoss.speed / 5);
+                    bossStageBoss.attackPathT += speedFactor;
+                    if (bossStageBoss.attackPathT >= 1.0) {
+                        bossStageBoss.attackPathT = 0;
+                        bossStageBoss.attackPathSegmentIndex++;
+                        if (bossStageBoss.attackPathSegmentIndex >= bossPathSegments.length) {
+                            // Return to top
+                            bossStageBoss.state = 'returning';
+                            bossStageBoss.attackPathT = 0;
+                            bossStageBoss.attackPathSegmentIndex = 0;
+                        }
+                    } else {
+                        try {
+                            if (typeof calculateBezierPoint !== 'function') { if (bossStageBoss) bossStageBoss.state = 'returning'; }
+                            const nx = calculateBezierPoint(bossStageBoss.attackPathT, seg.p0.x, seg.p1.x, seg.p2.x, seg.p3.x);
+                            const ny = calculateBezierPoint(bossStageBoss.attackPathT, seg.p0.y, seg.p1.y, seg.p2.y, seg.p3.y);
+                            bossStageBoss.x = nx;
+                            bossStageBoss.y = ny;
+                        } catch(e){}
+                    }
+                }
+            } else {
+                bossStageBoss.state = 'returning';
+            }
+        }
+
         const shipBaseY  = gameCanvas ? gameCanvas.height - SHIP_HEIGHT - SHIP_BOTTOM_MARGIN : 500;
         const COOP_AI_ASSIST_FIRE_STOP_DURATION_MS_CONST = 3000; // Constante voor vuurstop duur
 
@@ -2864,13 +3510,27 @@ function moveEntities(overrideP1Left = null, overrideP1Right = null) {
             if (isInvincible && now >= invincibilityEndTime) isInvincible = false;
         }
 
-        // Move Player Bullets & Collision with Enemies - V38: Boss met beamer onkwetsbaar tijdens capture
+        // Move Player Bullets & Collision with Enemies - V38 + BOSS STAGE
         for (let i = bullets.length - 1; i >= 0; i--) {
             const b = bullets[i]; if (!b) { bullets.splice(i, 1); continue; }
             b.y -= b.speed; if (b.y + PLAYER_BULLET_HEIGHT < 0) { bullets.splice(i, 1); continue; }
+            let bulletHit = false;
+            // BOSS STAGE BOSS collision - kogels mogen niet door boss heen, bij raken normale explosie en kogel weg
+            if (typeof isBossStage !== 'undefined' && isBossStage && typeof bossStageBoss !== 'undefined' && bossStageBoss && bossStagePhase === 'fighting') {
+                const bossVulnerable = bossStageBoss.state === 'attacking' || bossStageBoss.state === 'in_grid_boss';
+                if (bossVulnerable) {
+                    const bossRect = { x: bossStageBoss.x, y: bossStageBoss.y, width: bossStageBoss.width, height: bossStageBoss.height };
+                    const bulletRect = { x: b.x, y: b.y, width: b.width, height: b.height };
+                    if (checkCollision(bulletRect, bossRect)) {
+                        bullets.splice(i, 1);
+                        handleBossStageBossHit();
+                        bulletHit = true;
+                    }
+                }
+            }
+            if (bulletHit) continue;
             for (let j = enemies.length - 1; j >= 0; j--) {
                 const enemy = enemies[j]; if (!enemy) { enemies.splice(j,1); continue; }
-                // V41: Alleen tijdens beamer straal (capturing) onkwetsbaar, daarna wel weer kwetsbaar
                 if (enemy.type === ENEMY3_TYPE && enemy.state === 'capturing') {
                     continue;
                 }
@@ -3453,6 +4113,24 @@ function handlePlayerShipCollision(playerNumber, hitDualPart, collisionTime, was
 // [REMOVED OLD DUPLICATE switchPlayerTurn - kept newer version]
 
 function triggerGridFiring() {
+    // BOSS STAGE: AI moet boss willen opvreten - maar wel kogels ontwijken
+    if (typeof isBossStage !== 'undefined' && isBossStage && typeof bossStageBoss !== 'undefined' && bossStageBoss && typeof bossStagePhase !== 'undefined' && bossStagePhase === 'fighting') {
+        try {
+            if (bossStageBoss.isVisible !== false) {
+                const bossCenterX = bossStageBoss.x + bossStageBoss.width/2;
+                if (typeof effectiveShipWidth !== 'undefined' && typeof AI_EDGE_BUFFER !== 'undefined' && typeof gameCanvas !== 'undefined' && gameCanvas) {
+                    const nowWiggle = typeof currentTime !== 'undefined' ? currentTime : Date.now();
+                    const wiggle = Math.sin(nowWiggle/300)*15;
+                    let tx = bossCenterX - effectiveShipWidth/2 + wiggle;
+                    tx = Math.max(AI_EDGE_BUFFER, Math.min(gameCanvas.width - effectiveShipWidth - AI_EDGE_BUFFER, tx));
+                    desiredTargetX = tx;
+                    targetEnemyForAI = bossStageBoss;
+                    shouldTryShoot_AI_Calc = true;
+                }
+            }
+        } catch(e) {}
+    }
+
     if (typeof isSimultaneousAssaultWave !== "undefined" && isSimultaneousAssaultWave) { if (typeof isEntrancePhaseActive !== "undefined" && isEntrancePhaseActive && !isAllEnemiesInGridForSimultaneous()) return; }
     try { // <<< TOEGEVOEGD: try-catch blok om de functie heen >>>
         if (isPaused || !isInGameState || isChallengingStage || isWaveTransitioning) { return; }
@@ -4191,7 +4869,8 @@ function runSingleGameUpdate(timestamp) {
 
 
                 if (shouldLaunchWaveNow) {
-                    if (isChallengingStage) startChallengingStageSequence();
+                    if (isBossStage) startBossStageWave();
+                    else if (isChallengingStage) startChallengingStageSequence();
                     else {
                         if (currentWaveDefinition && currentWaveDefinition.length > 0) {
                             if (isFullGridWave) startFullGridWave();
@@ -4224,7 +4903,8 @@ function runSingleGameUpdate(timestamp) {
                 const isCoopModeL1NotAlreadyHandled = selectedGameMode === 'coop' && level === 1 && coopPlayersReadyStartTime !== 0;
 
                 if (!isCoopModeL1NotAlreadyHandled) {
-                    if (isChallengingStage) startChallengingStageSequence();
+                    if (isBossStage) startBossStageWave();
+                    else if (isChallengingStage) startChallengingStageSequence();
                     else {
                         if (currentWaveDefinition && currentWaveDefinition.length > 0) {
                             if (isFullGridWave) startFullGridWave();
@@ -4297,7 +4977,8 @@ function runSingleGameUpdate(timestamp) {
 
             if (!isWaveTransitioning && activePlayersForLogic && !inNormalIntro && !isShowingCaptureMessage && !isEntrancePhaseActive) {
                 let allEnemiesGone = enemies.length === 0; let noFallingShips = fallingShips.length === 0; let waveConsideredComplete = false;
-                if (isChallengingStage) { if (allEnemiesGone && !isEntrancePhaseActive) waveConsideredComplete = true; }
+                if (isBossStage) { waveConsideredComplete = false; } // Boss handled separately
+                else if (isChallengingStage) { if (allEnemiesGone && !isEntrancePhaseActive) waveConsideredComplete = true; }
                 else { if (allEnemiesGone && !isEntrancePhaseActive && noFallingShips) waveConsideredComplete = true; }
 
                 if (waveConsideredComplete) {

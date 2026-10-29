@@ -4,6 +4,7 @@
 const
     // Enemy Types (Needs to be defined BEFORE game_logic.js uses them)
     ENEMY1_TYPE = 'enemy1', ENEMY2_TYPE = 'enemy2', ENEMY3_TYPE = 'enemy3',
+    BOSS_STAGE_BOSS_TYPE = 'boss_stage_boss',
 
     // Basis Afmetingen (Vijanden & Schip) - Nodig voor paden & vroege logica
     ENEMY_WIDTH = 40, ENEMY_HEIGHT = 40,
@@ -13,6 +14,11 @@ const
     BOSS_SCALE_FACTOR = 1.50,
     BOSS_WIDTH = Math.round(ENEMY_WIDTH * BOSS_SCALE_FACTOR),
     BOSS_HEIGHT = Math.round(ENEMY_HEIGHT * BOSS_SCALE_FACTOR),
+    BOSS_STAGE_SCALE_FACTOR = 2.0,
+    BOSS_STAGE_BOSS_WIDTH = Math.round(ENEMY1_WIDTH * BOSS_STAGE_SCALE_FACTOR),
+    BOSS_STAGE_BOSS_HEIGHT = Math.round(ENEMY1_HEIGHT * BOSS_STAGE_SCALE_FACTOR),
+    BOSS_STAGE_MAX_HITS = 100,
+    BOSS_STAGE_BONUS_SCORE = 10000,
     SHIP_WIDTH = 50, SHIP_HEIGHT = 50, SHIP_BOTTOM_MARGIN = 30, SHIP_MOVE_SPEED = 10,
     COOP_SHIP_HORIZONTAL_OFFSET_FACTOR = 0.15,
 
@@ -146,6 +152,22 @@ let isShowingCaptureMessage = false;
 let captureMessageStartTime = 0;
 let capturedBossIdWithMessage = null;
 let enemies = [];
+// --- BOSS STAGE GLOBALS ---
+let isBossStage = false;
+let bossStagePhase = 'none';
+let bossStageBoss = null;
+let bossStageBossHealth = BOSS_STAGE_MAX_HITS;
+let bossStageBossMaxHealth = BOSS_STAGE_MAX_HITS;
+let bossStageSpawnQueue = [];
+let bossStageSpawnIndex = 0;
+let bossStageLastSpawnTime = 0;
+let bossStageSpawnInterval = 90;
+let isShowingBossStageMessage = false;
+let bossStageMessageStartTime = 0;
+let isShowingBossDefeatedMessage = false;
+let bossDefeatedMessageStartTime = 0;
+let bossStageTargetY = 0;
+let bossStageReturnCount = 0;
 let normalWaveEntrancePaths = {}; let challengingStagePaths = {};
 let currentWaveDefinition = null; let isEntrancePhaseActive = false;
 let enemySpawnTimeouts = []; let totalEnemiesScheduledForWave = 0; let enemiesSpawnedThisWave = 0;
@@ -342,20 +364,20 @@ const
     MAX_ENEMY_BULLET_SPEED = 6,
     BASE_ENEMY_ATTACK_SPEED = 5.5,
     MAX_ENEMY_ATTACK_SPEED = 8.0,
-    BASE_MAX_ATTACKING_ENEMIES = 10,
-    MAX_MAX_ATTACKING_ENEMIES = 22,
+    BASE_MAX_ATTACKING_ENEMIES = 6,
+    MAX_MAX_ATTACKING_ENEMIES = 15,
     BASE_GRID_MOVE_SPEED = 0.3,
     MAX_GRID_MOVE_SPEED = 0.7,
     BASE_GRID_BREATH_CYCLE_MS = 2000,
     MIN_GRID_BREATH_CYCLE_MS = 1000,
     BASE_ENEMY_BULLET_BURST_COUNT = 1,
     MAX_ENEMY_BULLET_BURST_COUNT = 3,
-    BASE_ENEMY_AIM_FACTOR = 0.75,
-    MAX_ENEMY_AIM_FACTOR = 0.95,
+    BASE_ENEMY_AIM_FACTOR = 0.55,
+    MAX_ENEMY_AIM_FACTOR = 0.75,
     BASE_BEE_GROUP_ATTACK_PROBABILITY = 0.05,
     MAX_BEE_GROUP_ATTACK_PROBABILITY = 0.40,
     BASE_BEE_TRIPLE_ATTACK_PROBABILITY = 0.10,
-    MAX_BEE_TRIPLE_ATTACK_PROBABILITY = 0.50,
+    MAX_BEE_TRIPLE_ATTACK_PROBABILITY = 0.30,
 
     // --- Bestaande constanten ---
     PLAYER_BULLET_WIDTH = 5, PLAYER_BULLET_HEIGHT = 15, PLAYER_BULLET_SPEED = 14,
@@ -836,7 +858,7 @@ function drawStars() { /* ... ongewijzigd ... */ try { if (!starryCtx || !starry
 /** Draws the retro perspective grid. */
 function drawRetroGrid() { /* ... ongewijzigd ... */ try { if (!retroGridCtx || !retroGridCanvas || retroGridCanvas.width === 0 || retroGridCanvas.height === 0) return; if (!isPaused || isShowingPortraitMessage) { gridOffsetY -= GRID_SPEED; } const width = retroGridCanvas.width; const height = retroGridCanvas.height; retroGridCtx.clearRect(0, 0, width, height); const horizonY = Math.round(height * GRID_HORIZON_Y_FACTOR); const vanishingPointX = width / 2; const perspectiveHeight = height - horizonY; retroGridCtx.lineWidth = GRID_LINE_WIDTH; const fixedLineWidth = width * GRID_HORIZONTAL_LINE_WIDTH_FACTOR; const fixedLineStartX = vanishingPointX - fixedLineWidth / 2; const fixedLineEndX = vanishingPointX + fixedLineWidth / 2; const fadeStartY = horizonY + perspectiveHeight * 0.1; const fadeEndY = height; const fadeRange = Math.max(1, fadeEndY - fadeStartY); retroGridCtx.strokeStyle = GRID_LINE_COLOR_FIXED; retroGridCtx.beginPath(); retroGridCtx.moveTo(fixedLineStartX, horizonY); retroGridCtx.lineTo(fixedLineEndX, horizonY); retroGridCtx.stroke(); let normalizedOffset = gridOffsetY % GRID_BASE_SPACING; if (normalizedOffset > 0) { normalizedOffset -= GRID_BASE_SPACING; } let currentDrawY = horizonY - normalizedOffset; if (currentDrawY <= horizonY) currentDrawY += GRID_BASE_SPACING; while (currentDrawY < height + GRID_BASE_SPACING) { let progress = Math.max(0, Math.min(1, (currentDrawY - horizonY) / perspectiveHeight)); if (currentDrawY > horizonY && currentDrawY <= height + GRID_LINE_WIDTH*2) { let currentAlpha; if (currentDrawY <= fadeStartY) { currentAlpha = GRID_MIN_ALPHA; } else if (currentDrawY >= fadeEndY) { currentAlpha = GRID_BASE_ALPHA; } else { const fadeProgress = (currentDrawY - fadeStartY) / fadeRange; currentAlpha = GRID_MIN_ALPHA + (GRID_BASE_ALPHA - GRID_MIN_ALPHA) * fadeProgress; } currentAlpha = Math.max(0, Math.min(GRID_BASE_ALPHA, currentAlpha)); if (currentAlpha > 0.01) { retroGridCtx.strokeStyle = `rgba(${GRID_RGB_PART}, ${currentAlpha.toFixed(3)})`; retroGridCtx.beginPath(); retroGridCtx.moveTo(fixedLineStartX, Math.round(currentDrawY)); retroGridCtx.lineTo(fixedLineEndX, Math.round(currentDrawY)); retroGridCtx.stroke(); } } let nextSpacing = GRID_BASE_SPACING * Math.pow(1 + progress * 1.5, GRID_SPACING_POWER); currentDrawY += Math.max(1, nextSpacing); } retroGridCtx.strokeStyle = GRID_LINE_COLOR_FIXED; retroGridCtx.beginPath(); const numLinesHalf = Math.floor(GRID_NUM_PERSPECTIVE_LINES / 2); const horizonSpreadWidth = width * GRID_HORIZON_SPREAD_FACTOR; const maxSpreadAtBottom = width * GRID_BOTTOM_SPREAD_FACTOR; for (let i = 0; i <= numLinesHalf; i++) { let spreadProgress = Math.pow(i / numLinesHalf, GRID_PERSPECTIVE_POWER); let startX_R = vanishingPointX + spreadProgress * (horizonSpreadWidth / 2); let startX_L = vanishingPointX - spreadProgress * (horizonSpreadWidth / 2); let bottomX_R = vanishingPointX + spreadProgress * (maxSpreadAtBottom / 2); let bottomX_L = vanishingPointX - spreadProgress * (maxSpreadAtBottom / 2); retroGridCtx.moveTo(startX_R, horizonY); retroGridCtx.lineTo(bottomX_R, height); if (i > 0) { retroGridCtx.moveTo(startX_L, horizonY); retroGridCtx.lineTo(bottomX_L, height); } } retroGridCtx.stroke(); } catch (e) { console.error("Error in drawRetroGrid:", e); } }
 
-/** Berekent een punt op een kubische Bézier curve. */
+/** Berekent een punt op een kubische BÃƒÂ©zier curve. */
 function calculateBezierPoint(t, p0, p1, p2, p3) { /* ... ongewijzigd ... */ const u = 1 - t; const tt = t * t; const uu = u * u; const uuu = uu * u; const ttt = tt * t; let p = uuu * p0; p += 3 * uu * t * p1; p += 3 * u * tt * p2; p += ttt * p3; return p; }
 
 /** Defines the Bezier curve paths for normal wave enemy entrances. */
@@ -1292,7 +1314,7 @@ let soundPausedStates = {}; // Wordt niet meer gebruikt op dezelfde manier met W
 function pauseAllSounds() {
     if (audioContext && audioContext.state === 'running') {
         // audioContext.suspend().then(() => console.log("AudioContext suspended for pause.")).catch(e => console.error("Error suspending AudioContext:", e));
-        // Laten we audioContext.suspend() voor nu even uitcommentariëren om te zien of dat een probleem is.
+        // Laten we audioContext.suspend() voor nu even uitcommentariÃƒÂ«ren om te zien of dat een probleem is.
         // Het direct stoppen van sounds zou effectiever moeten zijn.
     }
     // <<< GEWIJZIGD: Stop alle geluiden individueel, inclusief menu muziek, door te itereren over soundSources. >>>

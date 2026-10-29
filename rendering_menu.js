@@ -893,7 +893,24 @@ function handleCanvasClick(event) {
 
 
 // --- Rendering Functies ---
-function createExplosion(x, y) { try { playSound('explosionSound', false, 0.4); let particles = []; for (let i = 0; i < EXPLOSION_PARTICLE_COUNT; i++) { const angle = Math.random() * Math.PI * 2; const speed = Math.random() * (EXPLOSION_MAX_SPEED - EXPLOSION_MIN_SPEED) + EXPLOSION_MIN_SPEED; particles.push({ x: x, y: y, vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed, radius: EXPLOSION_PARTICLE_RADIUS, alpha: 1.0 }); } explosions.push({ creationTime: Date.now(), duration: EXPLOSION_DURATION, particles: particles }); } catch (e) { console.error("Error creating explosion:", e); } }
+function createExplosion(x, y, w, h) { 
+    try { 
+        const isBig = (typeof w !== 'undefined' && w > 100);
+        if (!isBig) playSound('explosionSound', false, 0.4);
+        let particles = []; 
+        let count = isBig ? EXPLOSION_PARTICLE_COUNT * 5 : EXPLOSION_PARTICLE_COUNT;
+        let speedMin = isBig ? EXPLOSION_MIN_SPEED * 2.5 : EXPLOSION_MIN_SPEED;
+        let speedMax = isBig ? EXPLOSION_MAX_SPEED * 3 : EXPLOSION_MAX_SPEED;
+        let radius = isBig ? EXPLOSION_PARTICLE_RADIUS * 3 : EXPLOSION_PARTICLE_RADIUS;
+        let duration = isBig ? EXPLOSION_DURATION * 1.8 : EXPLOSION_DURATION;
+        for (let i = 0; i < count; i++) { 
+            const angle = Math.random() * Math.PI * 2; 
+            const speed = Math.random() * (speedMax - speedMin) + speedMin; 
+            particles.push({ x: x, y: y, vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed, radius: radius * (0.8 + Math.random()*0.6), alpha: 1.0 }); 
+        } 
+        explosions.push({ creationTime: Date.now(), duration: duration, particles: particles }); 
+    } catch (e) { console.error("Error creating explosion:", e); } 
+}
 
 
 // --- EINDE deel 2      van 4 dit codeblok ---
@@ -926,7 +943,7 @@ function renderHitSparks() { if (!gameCtx || !hitSparks || hitSparks.length === 
 
 
 /**
- * Tekent de volledige game scène.
+ * Tekent de volledige game scÃ¨ne.
  */
 function renderGame() {
     try {
@@ -953,7 +970,7 @@ function renderGame() {
             const platiniColor = "red";
 
             const messageStructure = [
-                { text: "⚠️ Disclaimer", font: disclaimerTitleFont, color: disclaimerTitleColor, skipAfter: 0.75 },
+                { text: "âš ï¸ Disclaimer", font: disclaimerTitleFont, color: disclaimerTitleColor, skipAfter: 0.75 },
                 { text: "This is an unofficial", font: disclaimerTextFont, color: disclaimerTextColor },
                 { text: "fan remake of Galaga,", font: disclaimerTextFont, color: disclaimerTextColor, skipAfter: 1 },
                 { text: "Created out of love", font: disclaimerTextFont, color: disclaimerTextColor },
@@ -1690,6 +1707,79 @@ function renderGame() {
 
                  if (!isShowingCoopPlayersReady) {
                     enemies.forEach(e => { if (e && e.y < gameCanvas.height + e.height * 2 && e.y > -e.height * 2) { gameCtx.save(); try { let currentEnemyImage = null; let fallbackColor = "grey"; const useSecondFrame = !isPaused && (now % (ENEMY_ANIMATION_INTERVAL_MS * 2)) >= ENEMY_ANIMATION_INTERVAL_MS; if (e.type === ENEMY3_TYPE) { currentEnemyImage = useSecondFrame ? bossGalagaImage2 : bossGalagaImage; fallbackColor = "purple"; } else if (e.type === ENEMY2_TYPE) { currentEnemyImage = useSecondFrame ? butterflyImage2 : butterflyImage; fallbackColor = "cyan"; } else { currentEnemyImage = useSecondFrame ? beeImage2 : beeImage; fallbackColor = "red"; } const drawX = Math.round(e.x); const drawY = Math.round(e.y); const drawW = e.width; const drawH = e.height; const needsTint = (e.type === ENEMY3_TYPE && e.isDamaged); const shouldRotateEnemy = !isPaused && (e.state === 'attacking' || e.state === 'following_bezier_path' || e.state === 'following_entrance_path') && e.y > -e.height * 0.5 && (Math.abs(e.velocityX) > 0.1 || Math.abs(e.velocityY) > 0.1); const shouldDrawCapturedShipAnim = e.state === 'showing_capture_message' && e.type === ENEMY3_TYPE && e.hasCapturedShip && e.capturedShipDimensions && typeof e.capturedShipX === 'number' && typeof e.capturedShipY === 'number' && typeof e.captureAnimationRotation === 'number'; const shouldDrawStaticCapturedShip = e.state !== 'showing_capture_message' && e.type === ENEMY3_TYPE && e.hasCapturedShip && e.capturedShipDimensions; const capturedW = (shouldDrawCapturedShipAnim || shouldDrawStaticCapturedShip) ? e.capturedShipDimensions.width : 0; const capturedH = (shouldDrawCapturedShipAnim || shouldDrawStaticCapturedShip) ? e.capturedShipDimensions.height : 0; let capturedX = 0; let capturedY = 0; if (shouldDrawCapturedShipAnim) { capturedX = Math.round(e.capturedShipX); capturedY = Math.round(e.capturedShipY); } else if (shouldDrawStaticCapturedShip) { capturedX = Math.round(e.x + CAPTURED_SHIP_OFFSET_X); capturedY = Math.round(e.y + CAPTURED_SHIP_OFFSET_Y); } const drawEnemyAndTint = (imgX, imgY, imgW, imgH) => { if (typeof currentEnemyImage !== 'undefined' && currentEnemyImage.complete && currentEnemyImage.naturalHeight !== 0) { gameCtx.drawImage(currentEnemyImage, imgX, imgY, imgW, imgH); } else { gameCtx.fillStyle = fallbackColor; gameCtx.fillRect(imgX, imgY, imgW, imgH); } if (needsTint) { gameCtx.globalCompositeOperation = 'source-atop'; gameCtx.fillStyle = 'rgba(0, 0, 139, 0.5)'; gameCtx.fillRect(imgX, imgY, imgW, imgH); gameCtx.globalCompositeOperation = 'source-over'; } }; if (shouldRotateEnemy) { const centerX = drawX + drawW / 2; const centerY = drawY + drawH / 2; gameCtx.translate(centerX, centerY); let angle = Math.atan2(e.velocityY, e.velocityX) + Math.PI / 2; if (e.type === ENEMY3_TYPE && e.state === 'attacking') angle += Math.PI; gameCtx.rotate(angle); drawEnemyAndTint(-drawW / 2, -drawH / 2, drawW, drawH); if (shouldDrawStaticCapturedShip && typeof shipImage !== 'undefined' && shipImage.complete) { gameCtx.globalAlpha = 0.8; const rotatedOffsetX = CAPTURED_SHIP_OFFSET_X; const rotatedOffsetY = CAPTURED_SHIP_OFFSET_Y; gameCtx.drawImage(shipImage, rotatedOffsetX - capturedW / 2, rotatedOffsetY - capturedH / 2, capturedW, capturedH); gameCtx.globalAlpha = 1.0; gameCtx.save(); gameCtx.fillStyle = CAPTURED_SHIP_TINT_COLOR; gameCtx.globalCompositeOperation = 'source-atop'; gameCtx.fillRect(rotatedOffsetX - capturedW / 2, rotatedOffsetY - capturedH / 2, capturedW, capturedH); gameCtx.restore(); } gameCtx.rotate(-angle); gameCtx.translate(-centerX, -centerY); } else { drawEnemyAndTint(drawX, drawY, drawW, drawH); if (shouldDrawStaticCapturedShip && typeof shipImage !== 'undefined' && shipImage.complete) { gameCtx.globalAlpha = 0.8; gameCtx.drawImage(shipImage, capturedX, capturedY, capturedW, capturedH); gameCtx.globalAlpha = 1.0; gameCtx.save(); gameCtx.fillStyle = CAPTURED_SHIP_TINT_COLOR; gameCtx.globalCompositeOperation = 'source-atop'; gameCtx.fillRect(capturedX, capturedY, capturedW, capturedH); gameCtx.restore(); } } if (shouldDrawCapturedShipAnim && typeof shipImage !== 'undefined' && shipImage.complete) { gameCtx.save(); const animCenterX = capturedX + capturedW / 2; const animCenterY = capturedY + capturedH / 2; gameCtx.translate(animCenterX, animCenterY); gameCtx.rotate(e.captureAnimationRotation); gameCtx.globalAlpha = 0.8; gameCtx.drawImage(shipImage, -capturedW / 2, -capturedH / 2, capturedW, capturedH); gameCtx.globalAlpha = 1.0; gameCtx.save(); gameCtx.fillStyle = CAPTURED_SHIP_TINT_COLOR; gameCtx.globalCompositeOperation = 'source-atop'; gameCtx.fillRect(-capturedW / 2, -capturedH / 2, capturedW, capturedH); gameCtx.restore(); gameCtx.restore(); } } catch (drawError) { console.error(`Error drawing enemy:`, drawError); gameCtx.fillStyle = "orange"; gameCtx.fillRect(Math.round(e.x), Math.round(e.y), e.width, e.height); } finally { gameCtx.restore(); } } });
+                     // --- BOSS STAGE BOSS RENDERING ---
+                     if (typeof isBossStage !== 'undefined' && isBossStage && typeof bossStageBoss !== 'undefined' && bossStageBoss) {
+                         gameCtx.save();
+                         try {
+                             const b = bossStageBoss;
+                             const isEnemy2Boss = (typeof bossStageVariant !== 'undefined' && bossStageVariant === 'enemy2');
+                             const isEnemy3Boss = (typeof bossStageVariant !== 'undefined' && bossStageVariant === 'enemy3');
+                             let img = null;
+                             if (isEnemy3Boss) {
+                                 img = (typeof bossGalagaImage !== 'undefined' && bossGalagaImage.complete) ? bossGalagaImage : null;
+                             } else if (isEnemy2Boss) {
+                                 img = (typeof butterflyImage !== 'undefined' && butterflyImage.complete) ? butterflyImage : null;
+                             } else {
+                                 img = (typeof beeImage !== 'undefined' && beeImage.complete) ? beeImage : null;
+                             }
+                             // Use second frame animation
+                             const useSecond = !isPaused && (now % 400) >= 200;
+                             if (useSecond) {
+                                 if (isEnemy3Boss) {
+                                     if (typeof bossGalagaImage2 !== 'undefined' && bossGalagaImage2.complete) img = bossGalagaImage2;
+                                 } else if (isEnemy2Boss) {
+                                     if (typeof butterflyImage2 !== 'undefined' && butterflyImage2.complete) img = butterflyImage2;
+                                 } else {
+                                     if (typeof beeImage2 !== 'undefined' && beeImage2.complete) img = beeImage2;
+                                 }
+                             }
+                             const drawX = Math.round(b.x);
+                             const drawY = Math.round(b.y);
+                             const drawW = b.width;
+                             const drawH = b.height;
+                             if (img) {
+                                 if (b.isDamagedFlash) {
+                                 gameCtx.globalAlpha = 0.6;
+                                 gameCtx.filter = 'brightness(200%)';
+                             } else if (b.isBluePhase || b.isDamaged) {
+                                 if ((typeof bossStageVariant !== 'undefined' && bossStageVariant === 'enemy3') || b.type === ENEMY3_TYPE) {
+                                     gameCtx.filter = 'hue-rotate(180deg) saturate(1.5) brightness(1.2)';
+                                 } else {
+                                     gameCtx.globalAlpha = 0.6;
+                                     gameCtx.filter = 'brightness(200%)';
+                                 }
+                             }
+                                 gameCtx.drawImage(img, drawX, drawY, drawW, drawH);
+                                 gameCtx.filter = 'none';
+                                 gameCtx.globalAlpha = 1.0;
+                             } else {
+                                 gameCtx.fillStyle = b.isDamaged ? "white" : "blue";
+                                 gameCtx.fillRect(drawX, drawY, drawW, drawH);
+                             }
+                             // Small green health bar directly above boss when on 30% position
+                             if (bossStagePhase === 'entering' || bossStagePhase === 'bouncing' || bossStagePhase === 'spawning' || bossStagePhase === 'returning' || bossStagePhase === 'fighting') {
+                                 const barW = drawW * 0.8;
+                                 const barH = 8;
+                                 const barX = drawX + (drawW - barW)/2;
+                                 const barY = drawY - 14;
+                                 // background
+                                 gameCtx.fillStyle = "rgba(0,0,0,0.6)";
+                                 gameCtx.fillRect(barX-2, barY-2, barW+4, barH+4);
+                                 // health
+                                 const pct = (typeof bossStageBossHealth !== 'undefined' ? bossStageBossHealth : 10) / (typeof bossStageBossMaxHealth !== 'undefined' ? bossStageBossMaxHealth : 10);
+                                 let col = "#00FF00";
+                                 if (pct < 0.3) col = "#FF0000";
+                                 else if (pct < 0.6) col = "#FFFF00";
+                                 gameCtx.fillStyle = col;
+                                 gameCtx.fillRect(barX, barY, barW * pct, barH);
+                                 // border
+                                 gameCtx.strokeStyle = "white";
+                                 gameCtx.lineWidth = 1;
+                                 gameCtx.strokeRect(barX-2, barY-2, barW+4, barH+4);
+                             }
+                         } catch(e){ console.error("Boss draw error", e); }
+                         gameCtx.restore();
+                     }
                  }
                  if (captureBeamActive && capturingBossId && captureBeamProgress > 0 && !isShowingCoopPlayersReady) { gameCtx.save(); const pulseAlpha = 0.4 + (Math.sin(now * CAPTURE_BEAM_PULSE_SPEED) + 1) / 2 * 0.6; const fadeAlpha = captureBeamProgress; gameCtx.globalAlpha = fadeAlpha * pulseAlpha; const capturingBoss = enemies.find(e => e.id === capturingBossId); if (capturingBoss) { const beamSourceX = capturingBoss.x + BOSS_WIDTH / 2; const beamVisualStartY = capturingBoss.y + BOSS_HEIGHT; const beamVisualEndY = gameCanvas.height - LIFE_ICON_MARGIN_BOTTOM - LIFE_ICON_SIZE - 10; const topWidth = BOSS_WIDTH * CAPTURE_BEAM_WIDTH_TOP_FACTOR; const bottomWidth = SHIP_WIDTH * CAPTURE_BEAM_WIDTH_BOTTOM_FACTOR; if (beamVisualStartY < beamVisualEndY) { const grad = gameCtx.createLinearGradient(beamSourceX, beamVisualStartY, beamSourceX, beamVisualEndY); grad.addColorStop(0, CAPTURE_BEAM_COLOR_START); grad.addColorStop(1, CAPTURE_BEAM_COLOR_END); gameCtx.fillStyle = grad; gameCtx.beginPath(); gameCtx.moveTo(beamSourceX - topWidth / 2, beamVisualStartY); gameCtx.lineTo(beamSourceX + topWidth / 2, beamVisualStartY); gameCtx.lineTo(beamSourceX + bottomWidth / 2, beamVisualEndY); gameCtx.lineTo(beamSourceX - bottomWidth / 2, beamVisualEndY); gameCtx.closePath(); gameCtx.fill(); } } gameCtx.restore(); }
                  if (!isShowingCoopPlayersReady) { renderExplosions(); renderFloatingScores(); renderHitSparks(); }
@@ -1701,7 +1791,16 @@ function renderGame() {
                  const clearBonusText = `BONUS ${scoreEarnedThisCS}`;
                  const lineSpacingGameOver = RESULTS_LINE_V_SPACING_SINGLE;
 
-                 if (isPaused) {
+                 if (typeof isShowingBossStageMessage !== 'undefined' && isShowingBossStageMessage) {
+                    const blink = (now % 200) < 100 ? "" : "BOSS STAGE";
+                    if (blink) drawCanvasText(blink, midScreenX, midScreenY, INTRO_TEXT_FONT, "#FF0000", 'center', 'middle', true);
+                    else drawCanvasText("BOSS STAGE", midScreenX, midScreenY, INTRO_TEXT_FONT, "#FFFF00", 'center', 'middle', true);
+                    messageDrawnThisCycle = true;
+                 } else if (typeof isShowingBossDefeatedMessage !== 'undefined' && isShowingBossDefeatedMessage) {
+                    drawCanvasText("BOSS DEFEATED!", midScreenX, midScreenY - 20, INTRO_TEXT_FONT, "#00FF00", 'center', 'middle', true);
+                    drawCanvasText("+" + (typeof getBossStageBonusForVariant === 'function' ? getBossStageBonusForVariant(bossStageVariant) : (typeof BOSS_STAGE_BONUS_SCORE !== 'undefined' ? BOSS_STAGE_BONUS_SCORE : 10000)), midScreenX, midScreenY + 20, INTRO_TEXT_FONT, "#FFFFFF", 'center', 'middle', true);
+                    messageDrawnThisCycle = true;
+                 } else if (isPaused) {
                     drawCanvasText("PAUSED", midScreenX, midScreenY, PAUSE_TEXT_FONT, PAUSE_TEXT_COLOR, 'center', 'middle', PAUSE_TEXT_SHADOW);
                     messageDrawnThisCycle = true;
                  }
@@ -1759,7 +1858,14 @@ function renderGame() {
                                  if (isManualControl && isPlayerTwoAI && selectedGameMode === 'normal' && currentPlayer === 2) introText = "AI PLAYER 2";
                             }
                         }
-                        else if (introStep === 2) { introText = "STAGE " + level; }
+                        else if (introStep === 2) { 
+                            if (typeof isBossStage !== 'undefined' && isBossStage) {
+                                introText = "BOSS STAGE"; 
+                                introColor = INTRO_TEXT_COLOR_NORMAL;
+                            } else {
+                                introText = "STAGE " + level; 
+                            }
+                        }
                         else if (introStep === 3) { introText = "CHALLENGING STAGE"; introColor = INTRO_TEXT_COLOR_CS_TEXT; if (!csIntroSoundPlayed) { playSound('entranceSound', false, 0.4); csIntroSoundPlayed = true; } }
                         if (introText) { drawCanvasText(introText, midScreenX, midScreenY, INTRO_TEXT_FONT, introColor, 'center', 'middle', true); messageDrawnThisCycle = true; }
                      }
