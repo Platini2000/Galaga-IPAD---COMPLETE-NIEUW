@@ -55,7 +55,23 @@ function generateAttackPathInternal(enemy) { // Hernoemd naar Internal
         const initialP0 = { x: enemy.x, y: enemy.y };
         const upwardArcHeight = Math.min(canvasH * 0.06, enemyHeight * 1.8);
         const upwardArcWidth = Math.min(canvasW * 0.04, enemyWidth * 1.2);
-        const diveDirection = (enemy.x + enemyWidth / 2 < canvasW / 2) ? 1 : -1;
+        let baseDiveDirection = (enemy.x + enemyWidth / 2 < canvasW / 2) ? 1 : -1;
+
+        // --- NIEUW: Spiegel-logica voor hoofd-bossen (ENEMY3 en BOSS_STAGE_BOSS) ---
+        // Om en om spiegelen voor beter schermgebruik
+        let diveDirection = baseDiveDirection;
+        const isMainBoss = (enemy.type === ENEMY3_TYPE || enemy.type === BOSS_STAGE_BOSS_TYPE);
+        if (isMainBoss) {
+            if (typeof enemy._mirrorToggle === 'undefined') {
+                enemy._mirrorToggle = false;
+                enemy._bossAttackCount = 0;
+            }
+            if (enemy._mirrorToggle) {
+                diveDirection = -baseDiveDirection;
+            }
+            enemy._mirrorToggle = !enemy._mirrorToggle;
+            enemy._bossAttackCount++;
+        }
         const upwardEndPoint = {
             x: initialP0.x - diveDirection * upwardArcWidth * 0.6,
             y: initialP0.y - upwardArcHeight
@@ -533,7 +549,7 @@ window.isAllEnemiesInGridForSimultaneous = isAllEnemiesInGridForSimultaneous;
 
 
 function getBossStageVariantForLevel(lvl) {
-    // DEFINITIEF: 6 = bees (100 hits / 10k), 12 = enemy2 (200 hits / 20k), 18 = enemy3 (300 hits / 30k), herhalend elke 18
+    // DEFINITIEF: 6 = bees (500 hits / 10k), 12 = enemy2 (1000 hits / 20k), 18 = enemy3 (1500 hits / 30k), herhalend elke 18
     if (lvl === 6) return 'bees';
     if (lvl === 12) return 'enemy2';
     if (lvl === 18) return 'enemy3';
@@ -553,9 +569,9 @@ function getBossStageBonusForVariant(variant) {
 window.getBossStageBonusForVariant = getBossStageBonusForVariant;
 
 function getBossStageMaxHitsForVariant(variant) {
-    if (variant === 'enemy2') return 200;
-    if (variant === 'enemy3') return 300;
-    return 100;
+    if (variant === 'enemy2') return 1000;
+    if (variant === 'enemy3') return 1500;
+    return 500;
 }
 window.getBossStageMaxHitsForVariant = getBossStageMaxHitsForVariant;
 
@@ -688,7 +704,7 @@ function startFullGridWave() {
                     let enemyWidth = (enemyType === ENEMY1_TYPE) ? ENEMY1_WIDTH : (enemyType === ENEMY3_TYPE ? BOSS_WIDTH : ENEMY_WIDTH);
                     let enemyHeight = (enemyType === ENEMY1_TYPE) ? ENEMY1_HEIGHT : (enemyType === ENEMY3_TYPE ? BOSS_HEIGHT : ENEMY_HEIGHT);
                     const { x: targetGridX, y: targetGridY } = getCurrentGridSlotPosition(enemyDef.gridRow, enemyDef.gridCol, enemyWidth);
-                    const newEnemy = { x: targetGridX, y: targetGridY, width: enemyWidth, height: enemyHeight, targetGridX, targetGridY, speed: 0, state: 'in_grid', gridRow: enemyDef.gridRow, gridCol: enemyDef.gridCol, type: enemyType, health: enemyHealth, isDamaged: false, velocityX: 0, velocityY: 0, attackPathStep: 0, initialY: 0, initialX: 0, diveDirection: 1, lastFiredTime: 0, targetX1: 0, targetY1: 0, targetX2: 0, targetY2: 0, targetX3: 0, targetY3: 0, attackPathSegments: [], attackPathSegmentIndex: 0, attackPathT: 0, attackStartTime: 0, attackFormationOffsetX: 0, attackGroupId: null, entrancePathId: null, pathSegmentIndex: 0, pathT: 0, squadronId: squadronIndex, squadronEnemyIndex: enemyIndex, id: `enemy-grid-${squadronIndex}-${enemyIndex}-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`, justReturned: false, canFireThisDive: false, attackType: 'normal', hasCapturedShip: (enemyType === ENEMY3_TYPE) ? false : undefined, capturedShipX: undefined, capturedShipY: undefined, capturedShipLastFiredTime: (enemyType === ENEMY3_TYPE) ? 0 : undefined, captureStartTime: 0, capturePrepareTimeout: null, pathSpeedMultiplier: 1.0, captureDiveInitiationTime: 0 };
+                    const newEnemy = { x: targetGridX, y: targetGridY, width: enemyWidth, height: enemyHeight, targetGridX, targetGridY, speed: 0, state: 'in_grid', gridRow: enemyDef.gridRow, gridCol: enemyDef.gridCol, type: enemyType, health: enemyHealth, isDamaged: false, velocityX: 0, velocityY: 0, attackPathStep: 0, initialY: 0, initialX: 0, diveDirection: 1, lastFiredTime: 0, targetX1: 0, targetY1: 0, targetX2: 0, targetY2: 0, targetX3: 0, targetY3: 0, attackPathSegments: [], attackPathSegmentIndex: 0, attackPathT: 0, attackStartTime: 0, attackFormationOffsetX: 0, attackGroupId: null, entrancePathId: null, pathSegmentIndex: 0, pathT: 0, squadronId: squadronIndex, squadronEnemyIndex: enemyIndex, id: `enemy-grid-${squadronIndex}-${enemyIndex}-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`, justReturned: false, canFireThisDive: false, attackType: 'normal', hasCapturedShip: (enemyType === ENEMY3_TYPE) ? false : undefined, capturedShipX: undefined, capturedShipY: undefined, capturedShipLastFiredTime: (enemyType === ENEMY3_TYPE) ? 0 : undefined, capturedPlayerId: undefined, capturedPlayerNum: undefined, captureStartTime: 0, capturePrepareTimeout: null, pathSpeedMultiplier: 1.0, captureDiveInitiationTime: 0 };
                     enemies.push(newEnemy);
                     totalEnemiesPlaced++;
                 } catch (placementError) { console.error(`Full Grid error:`, placementError); }
@@ -771,7 +787,7 @@ function startBossStageWave() {
         bossStageVariant = 'bees';
         bossStageEnemyType = ENEMY1_TYPE;
     }
-    // Max hits per variant: 100 / 200 / 300 - ALTIJD VOL BIJ START
+    // Max hits per variant: 500 / 1000 / 1500 - ALTIJD VOL BIJ START
     let bossMaxHitsForThisStage = BOSS_STAGE_MAX_HITS;
     if (typeof getBossStageMaxHitsForVariant === 'function') {
         bossMaxHitsForThisStage = getBossStageMaxHitsForVariant(bossStageVariant);
@@ -847,12 +863,12 @@ function spawnOneBossStageBee() {
             enemyTypeToSpawn = ENEMY3_TYPE;
             enemyWidth = BOSS_WIDTH;
             enemyHeight = BOSS_HEIGHT;
-            enemyHealth = ENEMY3_MAX_HITS; // 2 hits, blauw na 1e hit zoals normale enemy3
+            enemyHealth = 3; // BOSS MODE: 3 hits, blauw na 2e hit
         } else if (isEnemy2Variant) {
             enemyTypeToSpawn = ENEMY2_TYPE;
             enemyWidth = ENEMY_WIDTH;
             enemyHeight = ENEMY_HEIGHT;
-            enemyHealth = 1;
+            enemyHealth = 2; // BOSS MODE: 2 hits, geen kleurverandering
         } else {
             enemyTypeToSpawn = ENEMY1_TYPE;
             enemyWidth = ENEMY1_WIDTH;
@@ -1080,11 +1096,27 @@ function updateBossStageLogic(now) {
                     bossStageBoss.nextAttackTime = now + 600;
                 }
             }
-            // Boss schiet minder
+            // Boss schiet minder - MET SPRAY: enemy2=2 kogels, enemy3=3 kogels per duik
             if (bossStageBoss.state === 'attacking' && bossStageBoss.canFireThisDive) {
                 const diffBoss = (typeof getBossStageDifficulty === 'function' ? getBossStageDifficulty(bossStageVariant) : {bossShotInterval:1200, bossNextAttackDelay:1500, bossSpeedFactor:1.0});
                 if (now - (bossStageBoss.lastFiredTime||0) > diffBoss.bossShotInterval) {
-                    createBulletSimple(bossStageBoss);
+                    let sprayCount = 1;
+                    if (typeof bossStageVariant !== 'undefined') {
+                        if (bossStageVariant === 'enemy2') sprayCount = 2;
+                        else if (bossStageVariant === 'enemy3') sprayCount = 3;
+                    } else if (typeof bossStageEnemyType !== 'undefined') {
+                        if (bossStageEnemyType === ENEMY2_TYPE) sprayCount = 2;
+                        else if (bossStageEnemyType === ENEMY3_TYPE) sprayCount = 3;
+                    }
+                    for (let s = 0; s < sprayCount; s++) {
+                        // lichte spreiding voor spray
+                        const spreadOffset = (sprayCount > 1) ? (s - (sprayCount-1)/2) * 12 : 0; // -6, +6 etc
+                        const overridePos = {
+                            x: bossStageBoss.x + bossStageBoss.width/2 + spreadOffset,
+                            y: bossStageBoss.y + bossStageBoss.height * 0.7
+                        };
+                        createBulletSimple(bossStageBoss, overridePos);
+                    }
                     bossStageBoss.lastFiredTime = now;
                     bossStageBoss.canFireThisDive = false;
                     playSound('enemyShootSound', false, 0.5);
@@ -1112,18 +1144,76 @@ function updateBossStageLogic(now) {
     }
 }
 
-function handleBossStageBossHit() {
+function handleBossStageBossHit(shootingPlayerId = null) {
     if (!bossStageBoss) return;
     bossStageBossHealth--;
     if (bossStageBossHealth < 0) bossStageBossHealth = 0;
     
-    // Voor grote enemy3 boss: bij 150 hits (helft van 300) wordt hij blauw zoals normale enemy3 na 1e hit
+    // --- Score per hit ALLEEN voor hoofdboss, MET vliegende score ---
+    let hitPoints = 10;
+    try {
+        if (typeof bossStageVariant !== 'undefined') {
+            if (bossStageVariant === 'enemy2') hitPoints = 20;
+            else if (bossStageVariant === 'enemy3') hitPoints = 30;
+            else if (bossStageVariant === 'bees' || bossStageVariant === 'enemy1') hitPoints = 10;
+        }
+        if (typeof bossStageEnemyType !== 'undefined') {
+            if (bossStageEnemyType === ENEMY2_TYPE) hitPoints = 20;
+            else if (bossStageEnemyType === ENEMY3_TYPE) hitPoints = 30;
+            else if (bossStageEnemyType === ENEMY1_TYPE) hitPoints = 10;
+        }
+
+        if (isTwoPlayerMode && selectedGameMode === 'coop') {
+            if (shootingPlayerId === 'player2' || shootingPlayerId === 'ai_p2') {
+                player2Score += hitPoints;
+                if (player2Score > highScore) { highScore = player2Score; highScoreHolderId = shootingPlayerId || 'player2'; }
+            } else {
+                player1Score += hitPoints;
+                if (player1Score > highScore) { highScore = player1Score; highScoreHolderId = shootingPlayerId || 'player1'; }
+            }
+            score = Math.max(player1Score, player2Score);
+        } else if (isTwoPlayerMode && selectedGameMode === 'normal') {
+            if (currentPlayer === 1) {
+                player1Score += hitPoints;
+                score = player1Score;
+                if (player1Score > highScore) { highScore = player1Score; highScoreHolderId = 'player1'; }
+            } else {
+                player2Score += hitPoints;
+                score = player2Score;
+                if (player2Score > highScore) { highScore = player2Score; highScoreHolderId = shootingPlayerId || 'player2'; }
+            }
+        } else {
+            score += hitPoints;
+            player1Score = score;
+            if (score > highScore) { highScore = score; highScoreHolderId = shootingPlayerId || 'player1'; }
+        }
+        if (typeof checkAndAwardExtraLife === 'function') {
+            if (shootingPlayerId === 'player2' || (isTwoPlayerMode && selectedGameMode === 'normal' && currentPlayer === 2)) {
+                checkAndAwardExtraLife(2);
+            } else {
+                checkAndAwardExtraLife(1);
+            }
+        }
+        // VLIEGENDE SCORE - correcte manier zoals in handleEnemyHit
+        const now = Date.now();
+        const scoreColor = (typeof FLOATING_SCORE_COLOR_ACTIVE !== 'undefined') ? FLOATING_SCORE_COLOR_ACTIVE : "red";
+        if (typeof floatingScores !== 'undefined' && bossStageBoss) {
+            floatingScores.push({ 
+                text: hitPoints.toString(), 
+                x: bossStageBoss.x + bossStageBoss.width / 2, 
+                y: bossStageBoss.y + bossStageBoss.height * 0.2, 
+                color: scoreColor, 
+                creationTime: now, 
+                displayStartTime: now + (typeof FLOATING_SCORE_APPEAR_DELAY !== 'undefined' ? FLOATING_SCORE_APPEAR_DELAY : 0)
+            });
+        }
+    } catch(e) { console.error("Boss hit score error", e); }
+    
     if (typeof bossStageVariant !== 'undefined' && bossStageVariant === 'enemy3') {
-        if (bossStageBossHealth <= 150) {
-            bossStageBoss.isBluePhase = true; // persistent blauw na 150 hits
+        if (bossStageBossHealth <= 750) {
+            bossStageBoss.isBluePhase = true;
         }
     }
-    // Flash + normale KLEINE explosie bij raken
     bossStageBoss.isDamagedFlash = true;
     bossStageBoss.isDamaged = true;
     setTimeout(()=>{ if(bossStageBoss) { bossStageBoss.isDamagedFlash = false; bossStageBoss.isDamaged = bossStageBoss.isBluePhase ? true : false; } }, 150);
@@ -1131,7 +1221,6 @@ function handleBossStageBossHit() {
         const hx = bossStageBoss.x + bossStageBoss.width/2 + (Math.random()-0.5)*bossStageBoss.width*0.4;
         const hy = bossStageBoss.y + bossStageBoss.height/2 + (Math.random()-0.5)*bossStageBoss.height*0.4;
         createExplosion(hx, hy);
-        // ook kleine hit sound voor feedback
         playSound('bossHit1Sound', false, 0.5);
     }
     
@@ -1298,7 +1387,7 @@ function scheduleSingleEntranceSquadron(squadronData, sqIdx, startDelay) { if (i
     let spawnCanContinue = false;
     if (isTwoPlayerMode && selectedGameMode === 'coop') { spawnCanContinue = (player1Lives > 0 && !isPlayer1ShipCaptured) || (player2Lives > 0 && !isPlayer2ShipCaptured); }
     else { spawnCanContinue = playerLives > 0 && !isShipCaptured; }
-    if (isPaused || !isInGameState || !isEntrancePhaseActive || isChallengingStage || isWaveTransitioning || !spawnCanContinue || isFullGridWave) { enemiesSpawnedThisWave++; if(squadronCompletionStatus[sqIdx]) { squadronCompletionStatus[sqIdx].completed++; } return; } try { let enemyType = enemyDef.type; let enemyHealth = (enemyType === ENEMY3_TYPE) ? ENEMY3_MAX_HITS : 1; let enemyWidth, enemyHeight; if (enemyType === ENEMY1_TYPE) { enemyWidth = ENEMY1_WIDTH; enemyHeight = ENEMY1_HEIGHT; } else if (enemyType === ENEMY3_TYPE) { enemyWidth = BOSS_WIDTH; enemyHeight = BOSS_HEIGHT; } else { enemyWidth = ENEMY_WIDTH; enemyHeight = ENEMY_HEIGHT; } let startX = 0, startY = 0; if (pathSegments && pathSegments[0]?.p0) { startX = pathSegments[0].p0.x; startY = pathSegments[0].p0.y; } else { throw new Error(`Invalid start segment for squadron path ${pathId}`); } let targetGridX, targetGridY; try { const { x: finalTargetX, y: finalTargetY } = getCurrentGridSlotPosition(enemyDef.gridRow, enemyDef.gridCol, enemyWidth); targetGridX = finalTargetX; targetGridY = finalTargetY; } catch(e) { console.error(`Error getting target grid pos for new enemy ${enemyDef.type} at [${enemyDef.gridRow},${enemyDef.gridCol}]`, e); targetGridX = gameCanvas?.width / 2 || 200; targetGridY = ENEMY_TOP_MARGIN + enemyDef.gridRow * (ENEMY_HEIGHT + ENEMY_V_SPACING); } let initialPathT = 0; const isPairingSquadron = useWave2SpawnTiming; const isSecondInPairCheck = isPairingSquadron && (enemyIndex % 2 !== 0); if (isSecondInPairCheck) { initialPathT = -ENTRANCE_PAIR_PATH_T_OFFSET; } else { initialPathT = -enemyIndex * PATH_T_OFFSET_PER_ENEMY; } const newEnemy = { x: startX, y: startY, width: enemyWidth, height: enemyHeight, targetGridX: targetGridX, targetGridY: targetGridY, speed: 0, state: 'following_entrance_path', gridRow: enemyDef.gridRow, gridCol: enemyDef.gridCol, type: enemyType, health: enemyHealth, isDamaged: false, velocityX: 0, velocityY: 0, attackPathStep: 0, initialY: 0, initialX: 0, diveDirection: 1, lastFiredTime: 0, targetX1: 0, targetY1: 0, targetX2: 0, targetY2: 0, targetX3: 0, targetY3: 0, attackPathSegments: [], attackPathSegmentIndex: 0, attackPathT: 0, attackStartTime: 0, attackFormationOffsetX: 0, attackGroupId: null, entrancePathId: pathId, pathSegmentIndex: 0, pathT: initialPathT, squadronId: sqIdx, squadronEnemyIndex: enemyIndex, id: `enemy-entr-${sqIdx}-${enemyIndex}-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`, justReturned: false, canFireThisDive: false, attackType: 'normal', hasCapturedShip: (enemyType === ENEMY3_TYPE) ? false : undefined, capturedShipX: undefined, capturedShipY: undefined, capturedShipLastFiredTime: (enemyType === ENEMY3_TYPE) ? 0 : undefined, captureStartTime: 0, capturePrepareTimeout: null, pathSpeedMultiplier: 1.0, captureDiveInitiationTime: 0 }; enemies.push(newEnemy); enemiesSpawnedThisWave++; if(squadronCompletionStatus[sqIdx]) { squadronCompletionStatus[sqIdx].completed++; } if (enemyIndex === 0) { let fireDelayMs = 1500; if (sqIdx === 0 || sqIdx === 1) { fireDelayMs = 250; } const firstEnemyId = newEnemy.id; const firstEnemyFireTimeout = setTimeout(() => { const tIdx = enemySpawnTimeouts.indexOf(firstEnemyFireTimeout); if(tIdx > -1) enemySpawnTimeouts.splice(tIdx, 1);
+    if (isPaused || !isInGameState || !isEntrancePhaseActive || isChallengingStage || isWaveTransitioning || !spawnCanContinue || isFullGridWave) { enemiesSpawnedThisWave++; if(squadronCompletionStatus[sqIdx]) { squadronCompletionStatus[sqIdx].completed++; } return; } try { let enemyType = enemyDef.type; let enemyHealth = (enemyType === ENEMY3_TYPE) ? ENEMY3_MAX_HITS : 1; let enemyWidth, enemyHeight; if (enemyType === ENEMY1_TYPE) { enemyWidth = ENEMY1_WIDTH; enemyHeight = ENEMY1_HEIGHT; } else if (enemyType === ENEMY3_TYPE) { enemyWidth = BOSS_WIDTH; enemyHeight = BOSS_HEIGHT; } else { enemyWidth = ENEMY_WIDTH; enemyHeight = ENEMY_HEIGHT; } let startX = 0, startY = 0; if (pathSegments && pathSegments[0]?.p0) { startX = pathSegments[0].p0.x; startY = pathSegments[0].p0.y; } else { throw new Error(`Invalid start segment for squadron path ${pathId}`); } let targetGridX, targetGridY; try { const { x: finalTargetX, y: finalTargetY } = getCurrentGridSlotPosition(enemyDef.gridRow, enemyDef.gridCol, enemyWidth); targetGridX = finalTargetX; targetGridY = finalTargetY; } catch(e) { console.error(`Error getting target grid pos for new enemy ${enemyDef.type} at [${enemyDef.gridRow},${enemyDef.gridCol}]`, e); targetGridX = gameCanvas?.width / 2 || 200; targetGridY = ENEMY_TOP_MARGIN + enemyDef.gridRow * (ENEMY_HEIGHT + ENEMY_V_SPACING); } let initialPathT = 0; const isPairingSquadron = useWave2SpawnTiming; const isSecondInPairCheck = isPairingSquadron && (enemyIndex % 2 !== 0); if (isSecondInPairCheck) { initialPathT = -ENTRANCE_PAIR_PATH_T_OFFSET; } else { initialPathT = -enemyIndex * PATH_T_OFFSET_PER_ENEMY; } const newEnemy = { x: startX, y: startY, width: enemyWidth, height: enemyHeight, targetGridX: targetGridX, targetGridY: targetGridY, speed: 0, state: 'following_entrance_path', gridRow: enemyDef.gridRow, gridCol: enemyDef.gridCol, type: enemyType, health: enemyHealth, isDamaged: false, velocityX: 0, velocityY: 0, attackPathStep: 0, initialY: 0, initialX: 0, diveDirection: 1, lastFiredTime: 0, targetX1: 0, targetY1: 0, targetX2: 0, targetY2: 0, targetX3: 0, targetY3: 0, attackPathSegments: [], attackPathSegmentIndex: 0, attackPathT: 0, attackStartTime: 0, attackFormationOffsetX: 0, attackGroupId: null, entrancePathId: pathId, pathSegmentIndex: 0, pathT: initialPathT, squadronId: sqIdx, squadronEnemyIndex: enemyIndex, id: `enemy-entr-${sqIdx}-${enemyIndex}-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`, justReturned: false, canFireThisDive: false, attackType: 'normal', hasCapturedShip: (enemyType === ENEMY3_TYPE) ? false : undefined, capturedShipX: undefined, capturedShipY: undefined, capturedShipLastFiredTime: (enemyType === ENEMY3_TYPE) ? 0 : undefined, capturedPlayerId: undefined, capturedPlayerNum: undefined, captureStartTime: 0, capturePrepareTimeout: null, pathSpeedMultiplier: 1.0, captureDiveInitiationTime: 0 }; enemies.push(newEnemy); enemiesSpawnedThisWave++; if(squadronCompletionStatus[sqIdx]) { squadronCompletionStatus[sqIdx].completed++; } if (enemyIndex === 0) { let fireDelayMs = 1500; if (sqIdx === 0 || sqIdx === 1) { fireDelayMs = 250; } const firstEnemyId = newEnemy.id; const firstEnemyFireTimeout = setTimeout(() => { const tIdx = enemySpawnTimeouts.indexOf(firstEnemyFireTimeout); if(tIdx > -1) enemySpawnTimeouts.splice(tIdx, 1);
     let fireCanContinue = false; if (isTwoPlayerMode && selectedGameMode === 'coop') { fireCanContinue = (player1Lives > 0 && !isPlayer1ShipCaptured) || (player2Lives > 0 && !isPlayer2ShipCaptured); } else { fireCanContinue = playerLives > 0 && !isShipCaptured; }
     if (typeof isSimultaneousAssaultWave !== 'undefined' && isSimultaneousAssaultWave) return;
     if (isPaused || !isInGameState || !fireCanContinue || isChallengingStage || isWaveTransitioning || isFullGridWave) return; fireFixedEnemyBurst(firstEnemyId, null, 0, 3); }, fireDelayMs); enemySpawnTimeouts.push(firstEnemyFireTimeout); } } catch (spawnError) { console.error(`Entrance Wave: Error during enemy spawn execution (Sq ${sqIdx}, Idx ${enemyIndex}, Path ${pathId}):`, spawnError); enemiesSpawnedThisWave++; if(squadronCompletionStatus[sqIdx]) { squadronCompletionStatus[sqIdx].completed++; } } }, individualSpawnDelay); enemySpawnTimeouts.push(enemyTimeoutId); }); } catch (squadronProcessError) { console.error(`Entrance Wave: Error processing enemies for squadron ${sqIdx} (Path ${pathId}):`, squadronProcessError); if(squadronData?.enemies?.length > 0) { enemiesSpawnedThisWave += squadronData.enemies.length; if(squadronCompletionStatus[sqIdx]) { squadronCompletionStatus[sqIdx].completed = squadronCompletionStatus[sqIdx].total; } } } }, startDelay); enemySpawnTimeouts.push(squadronStartTimeoutId); return true; };
@@ -1399,7 +1488,7 @@ function startChallengingStageSequence() { currentWaveDefinition = []; isEntranc
     let csGameCanContinue = false; if (isTwoPlayerMode && selectedGameMode === 'coop') { csGameCanContinue = player1Lives > 0 || player2Lives > 0; } else { csGameCanContinue = playerLives > 0; }
     if (!isPaused && isInGameState && isEntrancePhaseActive && isChallengingStage && !isWaveTransitioning && csGameCanContinue) { try { const pathId = squadronData.pathId; const pathSource = challengingStagePaths; const pathSegments = pathSource[pathId]; if (!pathSegments || pathSegments.length === 0) { console.error(`CS: Path ${pathId} for squadron ${squadronIndex} invalid! Skipping.`); enemiesSpawnedThisWave += squadronData.enemies.length; return; } let spawnDelayBetweenEnemies = CS_ENEMY_SPAWN_DELAY_IN_SQUADRON; if (squadronIndex >= 2 && squadronIndex <= 3) { spawnDelayBetweenEnemies = CS_HORIZONTAL_FLYBY_SPAWN_DELAY; } else if (squadronIndex >= 4) { spawnDelayBetweenEnemies = CS_LOOP_ATTACK_SPAWN_DELAY; } squadronData.enemies.forEach((enemyDef, enemyIndex) => { if (!enemyDef || !enemyDef.type) { console.error(`CS: Invalid enemy def in squadron ${squadronIndex}, index ${enemyIndex}. Skipping.`); enemiesSpawnedThisWave++; return; } const spawnDelay = enemyIndex * spawnDelayBetweenEnemies; const enemyTimeoutId = setTimeout(() => { const enIdx = enemySpawnTimeouts.indexOf(enemyTimeoutId); if (enIdx > -1) enemySpawnTimeouts.splice(enIdx, 1);
     let csSpawnCanContinue = false; if (isTwoPlayerMode && selectedGameMode === 'coop') { csSpawnCanContinue = player1Lives > 0 || player2Lives > 0; } else { csSpawnCanContinue = playerLives > 0; }
-    if (isPaused || !isInGameState || !isEntrancePhaseActive || !isChallengingStage || isWaveTransitioning || !csSpawnCanContinue ) { enemiesSpawnedThisWave++; return; } try { let enemyType = enemyDef.type; let enemyHealth = (enemyType === ENEMY3_TYPE) ? ENEMY3_MAX_HITS : 1; let enemyWidth, enemyHeight; if (enemyType === ENEMY1_TYPE) { enemyWidth = ENEMY1_WIDTH; enemyHeight = ENEMY1_HEIGHT; } else if (enemyType === ENEMY3_TYPE) { enemyWidth = BOSS_WIDTH; enemyHeight = BOSS_HEIGHT; } else { enemyWidth = ENEMY_WIDTH; enemyHeight = ENEMY_HEIGHT; } let startX = 0, startY = 0; if (pathSegments[0]?.p0) { startX = pathSegments[0].p0.x; startY = pathSegments[0].p0.y; } else { throw new Error(`Invalid start segment for path ${pathId}`); } if (squadronIndex === 0 || squadronIndex === 1) { startX += CS3_START_SHIFT_X; } const initialPathT_CS = -enemyIndex * PATH_T_OFFSET_PER_ENEMY; const newEnemy = { x: startX, y: startY, width: enemyWidth, height: enemyHeight, targetGridX: 0, targetGridY: 0, speed: 0, state: 'following_bezier_path', gridRow: -1, gridCol: -1, type: enemyType, health: enemyHealth, isDamaged: false, velocityX: 0, velocityY: 0, attackPathStep: 0, initialY: 0, initialX: 0, diveDirection: 1, lastFiredTime: 0, targetX1: 0, targetY1: 0, targetX2: 0, targetY2: 0, targetX3: 0, targetY3: 0, attackPathSegments: [], attackPathSegmentIndex: 0, attackPathT: 0, attackStartTime: 0, attackFormationOffsetX: 0, attackGroupId: null, entrancePathId: pathId, pathSegmentIndex: 0, pathT: initialPathT_CS, squadronId: squadronIndex, id: `enemy-cs-${squadronIndex}-${enemyIndex}-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`, justReturned: false, canFireThisDive: false, attackType: 'normal', hasCapturedShip: (enemyType === ENEMY3_TYPE) ? false : undefined, capturedShipX: undefined, capturedShipY: undefined, capturedShipLastFiredTime: (enemyType === ENEMY3_TYPE) ? 0 : undefined, captureStartTime: 0, capturePrepareTimeout: null, pathSpeedMultiplier: currentSpeedMultiplier, captureDiveInitiationTime: 0 }; enemies.push(newEnemy); enemiesSpawnedThisWave++; } catch (spawnError) { console.error(`CS: Error during enemy spawn execution (Sq ${squadronIndex}, Idx ${enemyIndex}, Path ${pathId}):`, spawnError); enemiesSpawnedThisWave++; } }, spawnDelay); enemySpawnTimeouts.push(enemyTimeoutId); totalTimeoutsScheduled++; }); } catch (squadronSpawnError) { console.error(`CS: Error setting up spawns for squadron ${squadronIndex}:`, squadronSpawnError); enemiesSpawnedThisWave += squadronData.enemies.length;} } else { if(squadronData?.enemies?.length > 0) { enemiesSpawnedThisWave += squadronData.enemies.length; } } }, startDelay); enemySpawnTimeouts.push(squadronStartTimeoutId); }); } else { console.warn("CS: No squadrons generated. Skipping CS sequence."); isWaveTransitioning = true; setTimeout(() => { if ((isInGameState || (!isInGameState && ((isTwoPlayerMode && selectedGameMode === 'coop' && (player1Lives > 0 || player2Lives > 0)) || (!isTwoPlayerMode && playerLives > 0)))) && typeof resetWave === 'function') { resetWave(); } }, NEXT_WAVE_DELAY_AFTER_MESSAGE); } }
+    if (isPaused || !isInGameState || !isEntrancePhaseActive || !isChallengingStage || isWaveTransitioning || !csSpawnCanContinue ) { enemiesSpawnedThisWave++; return; } try { let enemyType = enemyDef.type; let enemyHealth = (enemyType === ENEMY3_TYPE) ? ENEMY3_MAX_HITS : 1; let enemyWidth, enemyHeight; if (enemyType === ENEMY1_TYPE) { enemyWidth = ENEMY1_WIDTH; enemyHeight = ENEMY1_HEIGHT; } else if (enemyType === ENEMY3_TYPE) { enemyWidth = BOSS_WIDTH; enemyHeight = BOSS_HEIGHT; } else { enemyWidth = ENEMY_WIDTH; enemyHeight = ENEMY_HEIGHT; } let startX = 0, startY = 0; if (pathSegments[0]?.p0) { startX = pathSegments[0].p0.x; startY = pathSegments[0].p0.y; } else { throw new Error(`Invalid start segment for path ${pathId}`); } if (squadronIndex === 0 || squadronIndex === 1) { startX += CS3_START_SHIFT_X; } const initialPathT_CS = -enemyIndex * PATH_T_OFFSET_PER_ENEMY; const newEnemy = { x: startX, y: startY, width: enemyWidth, height: enemyHeight, targetGridX: 0, targetGridY: 0, speed: 0, state: 'following_bezier_path', gridRow: -1, gridCol: -1, type: enemyType, health: enemyHealth, isDamaged: false, velocityX: 0, velocityY: 0, attackPathStep: 0, initialY: 0, initialX: 0, diveDirection: 1, lastFiredTime: 0, targetX1: 0, targetY1: 0, targetX2: 0, targetY2: 0, targetX3: 0, targetY3: 0, attackPathSegments: [], attackPathSegmentIndex: 0, attackPathT: 0, attackStartTime: 0, attackFormationOffsetX: 0, attackGroupId: null, entrancePathId: pathId, pathSegmentIndex: 0, pathT: initialPathT_CS, squadronId: squadronIndex, id: `enemy-cs-${squadronIndex}-${enemyIndex}-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`, justReturned: false, canFireThisDive: false, attackType: 'normal', hasCapturedShip: (enemyType === ENEMY3_TYPE) ? false : undefined, capturedShipX: undefined, capturedShipY: undefined, capturedShipLastFiredTime: (enemyType === ENEMY3_TYPE) ? 0 : undefined, capturedPlayerId: undefined, capturedPlayerNum: undefined, captureStartTime: 0, capturePrepareTimeout: null, pathSpeedMultiplier: currentSpeedMultiplier, captureDiveInitiationTime: 0 }; enemies.push(newEnemy); enemiesSpawnedThisWave++; } catch (spawnError) { console.error(`CS: Error during enemy spawn execution (Sq ${squadronIndex}, Idx ${enemyIndex}, Path ${pathId}):`, spawnError); enemiesSpawnedThisWave++; } }, spawnDelay); enemySpawnTimeouts.push(enemyTimeoutId); totalTimeoutsScheduled++; }); } catch (squadronSpawnError) { console.error(`CS: Error setting up spawns for squadron ${squadronIndex}:`, squadronSpawnError); enemiesSpawnedThisWave += squadronData.enemies.length;} } else { if(squadronData?.enemies?.length > 0) { enemiesSpawnedThisWave += squadronData.enemies.length; } } }, startDelay); enemySpawnTimeouts.push(squadronStartTimeoutId); }); } else { console.warn("CS: No squadrons generated. Skipping CS sequence."); isWaveTransitioning = true; setTimeout(() => { if ((isInGameState || (!isInGameState && ((isTwoPlayerMode && selectedGameMode === 'coop' && (player1Lives > 0 || player2Lives > 0)) || (!isTwoPlayerMode && playerLives > 0)))) && typeof resetWave === 'function') { resetWave(); } }, NEXT_WAVE_DELAY_AFTER_MESSAGE); } }
 
 
 /**
@@ -1572,7 +1661,20 @@ function handleEnemyHit(enemy, shootingPlayerId = null) {
     const sparkX = enemy.x + enemyWidthForCalc / 2; const sparkY = enemy.y + enemyHeightForCalc * 0.2;
     createHitSparks(sparkX, sparkY);
     enemy.health--;
-    if (enemy.type === ENEMY3_TYPE) { enemy.isDamaged = (enemy.health < ENEMY3_MAX_HITS); }
+    // BOSS MODE small enemies: enemy2=2 hits geen kleur, enemy3=3 hits blauw na 2e
+    if (typeof isBossStage !== 'undefined' && isBossStage) {
+        if (enemy.type === ENEMY3_TYPE) {
+            enemy.isDamaged = (enemy.health === 1);
+            if (enemy.health <= 1) enemy.isBluePhase = true;
+        } else if (enemy.type === ENEMY2_TYPE) {
+            enemy.isDamaged = false;
+            enemy.isBluePhase = false;
+        } else {
+            enemy.isDamaged = false;
+        }
+    } else {
+        if (enemy.type === ENEMY3_TYPE) { enemy.isDamaged = (enemy.health < ENEMY3_MAX_HITS); }
+    }
 
     if (enemy.health <= 0) {
         destroyed = true;
@@ -1581,34 +1683,23 @@ function handleEnemyHit(enemy, shootingPlayerId = null) {
         }
 
         if (bossHadCapturedShipInitially && bossHadDimensionsInitially) {
+            // FIX FAIRNESS V3: degene die gebeamd is krijgt ALTIJD dual - gebruikt stored id want isShipCaptured is al false na respawn
             let fallingShipTargetPlayerId = null;
-            if (wasPartnershipCapturedByThisBoss && partnerWhoWasCapturedId) {
+            if (enemy.capturedPlayerId) {
+                fallingShipTargetPlayerId = enemy.capturedPlayerId;
+            } else if (wasPartnershipCapturedByThisBoss && partnerWhoWasCapturedId) {
                 fallingShipTargetPlayerId = partnerWhoWasCapturedId;
+            } else if (enemy.capturedPlayerNum) {
+                fallingShipTargetPlayerId = enemy.capturedPlayerNum === 1 ? 'player1' : 'player2';
+            } else if (isTwoPlayerMode && selectedGameMode === 'coop') {
+                if (isPlayer1ShipCaptured) fallingShipTargetPlayerId = 'player1';
+                else if (isPlayer2ShipCaptured) fallingShipTargetPlayerId = 'player2';
+                else fallingShipTargetPlayerId = 'player1';
             } else {
-                let assignedByAIDualRule = false;
-                if (isCoopAIDemoActive) {
-                    if (shootingPlayerId === 'player1' && player1IsDualShipActive) {
-                        fallingShipTargetPlayerId = 'player2';
-                        assignedByAIDualRule = true;
-                    } else if (shootingPlayerId === 'player2' && player2IsDualShipActive) {
-                        fallingShipTargetPlayerId = 'player1';
-                        assignedByAIDualRule = true;
-                    }
-                } else if (isPlayerTwoAI && selectedOnePlayerGameVariant === '1P_VS_AI_COOP') {
-                    if (shootingPlayerId === 'ai_p2' && player2IsDualShipActive) {
-                        fallingShipTargetPlayerId = 'player1';
-                        assignedByAIDualRule = true;
-                    } else if (shootingPlayerId === 'player1' && player1IsDualShipActive) {
-                        fallingShipTargetPlayerId = 'ai_p2';
-                        assignedByAIDualRule = true;
-                    }
-                }
-                if (!assignedByAIDualRule) {
-                    fallingShipTargetPlayerId = shootingPlayerId;
-                }
-            }
-            if (fallingShipTargetPlayerId === null && shootingPlayerId) {
-                fallingShipTargetPlayerId = shootingPlayerId;
+                if (isShipCaptured) fallingShipTargetPlayerId = (isTwoPlayerMode && selectedGameMode === 'normal') ? (currentPlayer === 1 ? 'player1' : 'player2') : 'player1';
+                else if (isPlayer1ShipCaptured) fallingShipTargetPlayerId = 'player1';
+                else if (isPlayer2ShipCaptured) fallingShipTargetPlayerId = 'player2';
+                else fallingShipTargetPlayerId = 'player1';
             }
 
             if (enemy.capturedShipDimensions) {
@@ -1626,10 +1717,10 @@ function handleEnemyHit(enemy, shootingPlayerId = null) {
                     });
                 }
             } else { console.error("[handleEnemyHit] CRITICAL: Boss destroyed, had ship initially but dimensions missing!"); }
-            enemy.hasCapturedShip = false; enemy.capturedShipDimensions = null;
+            enemy.hasCapturedShip = false; enemy.capturedShipDimensions = null; enemy.capturedPlayerId = null; enemy.capturedPlayerNum = null;
         } else if (bossHadCapturedShipInitially && !bossHadDimensionsInitially) {
             console.error(`[handleEnemyHit] CRITICAL: Boss ${enemy.id} destroyed, had ship initially but dimensions missing! Resetting state anyway.`);
-            enemy.hasCapturedShip = false; enemy.capturedShipDimensions = null;
+            enemy.hasCapturedShip = false; enemy.capturedShipDimensions = null; enemy.capturedPlayerId = null; enemy.capturedPlayerNum = null;
         }
 
         if (isChallengingStage) {
@@ -3522,8 +3613,9 @@ function moveEntities(overrideP1Left = null, overrideP1Right = null) {
                     const bossRect = { x: bossStageBoss.x, y: bossStageBoss.y, width: bossStageBoss.width, height: bossStageBoss.height };
                     const bulletRect = { x: b.x, y: b.y, width: b.width, height: b.height };
                     if (checkCollision(bulletRect, bossRect)) {
+                        const shooterId = b.playerId || null;
                         bullets.splice(i, 1);
-                        handleBossStageBossHit();
+                        handleBossStageBossHit(shooterId);
                         bulletHit = true;
                     }
                 }
@@ -3776,7 +3868,7 @@ function moveEntities(overrideP1Left = null, overrideP1Right = null) {
                             if (isTwoPlayerMode && selectedGameMode === 'coop') { if (ship1 && player1Lives > 0 && !isPlayer1ShipCaptured && checkCollision(ship1, beamBoundingBox)) { shipHitObject = ship1; playerHitId = 1; } else if (ship2 && player2Lives > 0 && !isPlayer2ShipCaptured && checkCollision(ship2, beamBoundingBox)) { shipHitObject = ship2; playerHitId = 2; }
                             } else { if (ship && playerLives > 0 && !isShipCaptured && checkCollision(ship, beamBoundingBox)) { shipHitObject = ship; playerHitId = currentPlayer; } }
                             if (shipHitObject) {
-                                enemy.capturedShipDimensions = { width: shipHitObject.width, height: shipHitObject.height }; enemy.hasCapturedShip = true; stopSound('captureSound');
+                                enemy.capturedShipDimensions = { width: shipHitObject.width, height: shipHitObject.height }; enemy.hasCapturedShip = true; enemy.capturedPlayerId = (playerHitId === 1 ? 'player1' : 'player2'); enemy.capturedPlayerNum = playerHitId; stopSound('captureSound');
                                 enemy.state = 'showing_capture_message'; enemy.targetGridX = null; enemy.targetGridY = null; enemy.initialCaptureAnimationY = shipHitObject.y; enemy.captureAnimationRotation = 0;
                                 isShowingCaptureMessage = true; captureMessageStartTime = now; capturedBossIdWithMessage = enemy.id; playSound('shipCapturedSound', false, 0.3);
                                 csCurrentChainHits = 0; csCurrentChainScore = 0; csLastHitTime = 0; csLastChainHitPosition = null; normalWaveCurrentChainHits = 0; normalWaveCurrentChainScore = 0; normalWaveLastHitTime = 0; normalWaveLastHitPosition = null;
