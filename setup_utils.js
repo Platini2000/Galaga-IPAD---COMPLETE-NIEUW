@@ -17,7 +17,7 @@ const
     BOSS_STAGE_SCALE_FACTOR = 2.0,
     BOSS_STAGE_BOSS_WIDTH = Math.round(ENEMY1_WIDTH * BOSS_STAGE_SCALE_FACTOR),
     BOSS_STAGE_BOSS_HEIGHT = Math.round(ENEMY1_HEIGHT * BOSS_STAGE_SCALE_FACTOR),
-    BOSS_STAGE_MAX_HITS = 100,
+    BOSS_STAGE_MAX_HITS = 500,
     BOSS_STAGE_BONUS_SCORE = 10000,
     SHIP_WIDTH = 50, SHIP_HEIGHT = 50, SHIP_BOTTOM_MARGIN = 30, SHIP_MOVE_SPEED = 10,
     COOP_SHIP_HORIZONTAL_OFFSET_FACTOR = 0.15,
@@ -1381,9 +1381,31 @@ function processSingleController(gamepad, previousButtonStates) { const currentB
 /**
  * Functie om de *definitieve* game over sequence te starten
  */
+/**
+ * Functie om de *definitieve* game over sequence te starten
+ * FIX: Altijd direct naar score menu, ook als er nog aanvallende vijanden in de lucht zijn
+ */
 function triggerFinalGameOverSequence() {
     if (isInGameState && gameOverSequenceStartTime === 0) {
-        isPaused = false; isShowingDemoText = false; isShowingIntro = false; isWaveTransitioning = false; showCsHitsMessage = false; showExtraLifeMessage = false; showPerfectMessage = false; showCSClearMessage = false; showCsHitsForClearMessage = false; showCsScoreForClearMessage = false; showReadyMessage = false; showCsBonusScoreMessage = false; isShowingPlayerGameOverMessage = false; isEntrancePhaseActive = false; isCsCompletionDelayActive = false; csCompletionDelayStartTime = 0; csCompletionResultIsPerfect = false; csIntroSoundPlayed = false;
+        isPaused = false; isShowingDemoText = false; isShowingIntro = false; isWaveTransitioning = false; showCsHitsMessage = false; showExtraLifeMessage = false; showPerfectMessage = false; showCSClearMessage = false; showCsHitsForClearMessage = false; showCsScoreForClearMessage = false; showReadyMessage = false; showCsBonusScoreMessage = false; 
+        isShowingPlayerGameOverMessage = false; 
+        isPlayer1ShowingGameOverMessage = false;
+        isPlayer2ShowingGameOverMessage = false;
+        isEntrancePhaseActive = false; isCsCompletionDelayActive = false; csCompletionDelayStartTime = 0; csCompletionResultIsPerfect = false; csIntroSoundPlayed = false;
+        
+        // FIX: Stop alle enemy activiteit direct
+        if (typeof isSimultaneousAssaultWave !== 'undefined') isSimultaneousAssaultWave = false;
+        if (typeof clearCSController === 'function') clearCSController();
+        if (typeof window !== 'undefined' && window.clearCSController) window.clearCSController();
+        if (typeof isBossStage !== 'undefined') isBossStage = false;
+        if (typeof bossStagePhase !== 'undefined') bossStagePhase = 'none';
+        if (typeof enemySpawnTimeouts !== 'undefined' && Array.isArray(enemySpawnTimeouts)) { enemySpawnTimeouts.forEach(clearTimeout); }
+        if (typeof enemySpawnTimeouts !== 'undefined') enemySpawnTimeouts = [];
+        if (typeof currentWaveDefinition !== 'undefined') currentWaveDefinition = [];
+        if (typeof isFullGridWave !== 'undefined') isFullGridWave = false;
+        if (typeof totalEnemiesScheduledForWave !== 'undefined') totalEnemiesScheduledForWave = 0;
+        if (typeof enemiesSpawnedThisWave !== 'undefined') enemiesSpawnedThisWave = 0;
+
         if (isManualControl) { saveHighScore(); }
 
         const soundsToStopOnFinalGameOver = Object.keys(soundPaths).filter(id => id !== 'gameOverSound' && id !== 'resultsMusicSound');
@@ -1393,17 +1415,22 @@ function triggerFinalGameOverSequence() {
         const now = Date.now();
         playSound('gameOverSound', false, 0.4);
 
-        if ((isTwoPlayerMode && selectedGameMode === 'normal' && player1Lives <= 0 && player2Lives <= 0) ||
-            (selectedOnePlayerGameVariant === '1P_VS_AI_NORMAL' && player1Lives <= 0 && player2Lives <= 0) ) {
-            gameOverSequenceStartTime = now - GAME_OVER_DURATION;
-        } else {
-            gameOverSequenceStartTime = now;
-        }
+        gameOverSequenceStartTime = now;
 
-        bullets = []; enemyBullets = []; explosions = []; fallingShips = []; isDualShipActive = false;
+        // FIX: Ruim ALLES op, inclusief vijanden die nog aanvallen
+        enemies = [];
+        bullets = []; enemyBullets = []; explosions = []; fallingShips = []; 
+        floatingScores = [];
+        isDualShipActive = false;
         player1IsDualShipActive = false; player2IsDualShipActive = false;
         isShowingResultsScreen = false;
+        isShipCaptured = false;
+        isPlayer1ShipCaptured = false;
+        isPlayer2ShipCaptured = false;
+        captureBeamActive = false;
         previousButtonStates = []; previousGameButtonStates = []; previousDemoButtonStates = []; previousGameButtonStatesP2 = [];
+        
+        console.log("[FIX] triggerFinalGameOverSequence: alle vijanden opgeruimd, direct naar score menu");
     }
 }
 

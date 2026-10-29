@@ -36,7 +36,47 @@ function shouldSkipShipCollisionForSimultaneous(enemy) {
     }
     return false;
 }
+
 window.shouldSkipShipCollisionForSimultaneous = shouldSkipShipCollisionForSimultaneous;
+
+// FIX: Centrale check - als alle levens op zijn, forceer direct game over ongeacht aanvallende vijanden
+function forceGameOverIfAllDead() {
+    try {
+        if (isTwoPlayerMode && selectedGameMode === 'coop') {
+            if (player1Lives <= 0 && player2Lives <= 0) {
+                if (gameOverSequenceStartTime === 0) {
+                    console.log("[FIX] Coop both dead - force final game over");
+                    isPlayer1ShowingGameOverMessage = false;
+                    isPlayer2ShowingGameOverMessage = false;
+                    triggerFinalGameOverSequence();
+                }
+                return true;
+            }
+        } else if (isTwoPlayerMode && selectedGameMode === 'normal') {
+            if (player1Lives <= 0 && player2Lives <= 0) {
+                if (gameOverSequenceStartTime === 0) {
+                    console.log("[FIX] 2P Normal both dead - force final");
+                    isShowingPlayerGameOverMessage = false;
+                    triggerFinalGameOverSequence();
+                }
+                return true;
+            }
+        } else {
+            // 1P Classic, 1P vs AI, etc - single pool playerLives
+            if (playerLives <= 0) {
+                if (gameOverSequenceStartTime === 0) {
+                    console.log("[FIX] Single player dead - force final");
+                    isShowingPlayerGameOverMessage = false;
+                    triggerFinalGameOverSequence();
+                }
+                return true;
+            }
+        }
+    } catch(e) { console.error("forceGameOverIfAllDead error", e); }
+    return false;
+}
+window.forceGameOverIfAllDead = forceGameOverIfAllDead;
+
 
 function generateAttackPathInternal(enemy) { // Hernoemd naar Internal
     try {
@@ -376,6 +416,8 @@ window.resetGame = resetGameInternal;
  * Reset de state voor een nieuwe wave (ronde).
  */
 function resetWaveInternal() {
+    if (typeof clearCSController === 'function') clearCSController();
+    if (typeof window !== 'undefined' && window.csControllerIntervalId) { clearInterval(window.csControllerIntervalId); window.csControllerIntervalId=null; }
     // FIXED V8: Als we net een CS hebben afgerond, verhoog teller NU (voordat nieuwe wave type wordt bepaald)
     // isChallengingStage is nog de oude waarde (van de wave die we verlaten) op dit moment
     if (typeof isChallengingStage !== 'undefined' && isChallengingStage) {
@@ -569,8 +611,6 @@ function getBossStageBonusForVariant(variant) {
 window.getBossStageBonusForVariant = getBossStageBonusForVariant;
 
 function getBossStageMaxHitsForVariant(variant) {
-    if (variant === 'enemy2') return 1000;
-    if (variant === 'enemy3') return 1500;
     return 500;
 }
 window.getBossStageMaxHitsForVariant = getBossStageMaxHitsForVariant;
@@ -930,7 +970,7 @@ function updateBossStageLogic(now) {
         return;
     }
     
-    if (isShowingBossDefeatedMessage && now - bossDefeatedMessageStartTime > 2500) {
+    if (isShowingBossDefeatedMessage && now - bossDefeatedMessageStartTime > 3000) { // FIX: altijd 3 sec
         isShowingBossDefeatedMessage = false;
     }
     
@@ -1112,22 +1152,70 @@ function updateBossStageLogic(now) {
             if (bossStageBoss.state === 'attacking' && bossStageBoss.canFireThisDive) {
                 const diffBoss = (typeof getBossStageDifficulty === 'function' ? getBossStageDifficulty(bossStageVariant) : {bossShotInterval:1200, bossNextAttackDelay:1500, bossSpeedFactor:1.0});
                 if (now - (bossStageBoss.lastFiredTime||0) > diffBoss.bossShotInterval) {
-                    let sprayCount = 1;
+                    let sprayCount = 2;
                     if (typeof bossStageVariant !== 'undefined') {
-                        if (bossStageVariant === 'enemy2') sprayCount = 2;
-                        else if (bossStageVariant === 'enemy3') sprayCount = 3;
+                        if (bossStageVariant === 'enemy2') sprayCount = 4;
+                        else if (bossStageVariant === 'enemy3') sprayCount = 6;
+                        else sprayCount = 2;
                     } else if (typeof bossStageEnemyType !== 'undefined') {
-                        if (bossStageEnemyType === ENEMY2_TYPE) sprayCount = 2;
-                        else if (bossStageEnemyType === ENEMY3_TYPE) sprayCount = 3;
+                        if (bossStageEnemyType === ENEMY2_TYPE) sprayCount = 4;
+                        else if (bossStageEnemyType === ENEMY3_TYPE) sprayCount = 6;
+                        else sprayCount = 2;
                     }
-                    for (let s = 0; s < sprayCount; s++) {
-                        // lichte spreiding voor spray
-                        const spreadOffset = (sprayCount > 1) ? (s - (sprayCount-1)/2) * 12 : 0; // -6, +6 etc
-                        const overridePos = {
-                            x: bossStageBoss.x + bossStageBoss.width/2 + spreadOffset,
-                            y: bossStageBoss.y + bossStageBoss.height * 0.7
-                        };
-                        createBulletSimple(bossStageBoss, overridePos);
+                    // NIEUW: Echte spread richting schip - enemy1=2, enemy2=4, enemy3=6 kogels BREED
+                    // Bepaal target schip zoals in createBulletSimple
+                    let _spreadTargetShip = null;
+                    if (isTwoPlayerMode && selectedGameMode === 'coop') {
+                        const p1Active = ship1 && player1Lives > 0 && !isPlayer1WaitingForRespawn && !isPlayer1ShipCaptured;
+                        const p2Active = ship2 && player2Lives > 0 && !isPlayer2WaitingForRespawn && !isPlayer2ShipCaptured;
+                        if (p1Active && p2Active) _spreadTargetShip = Math.random() < 0.5 ? ship1 : ship2;
+                        else if (p1Active) _spreadTargetShip = ship1;
+                        else if (p2Active) _spreadTargetShip = ship2;
+                    } else {
+                        if (ship && playerLives > 0 && !isShipCaptured && !isWaitingForRespawn) _spreadTargetShip = ship;
+                    }
+                    if (_spreadTargetShip) {
+                        const _startX = bossStageBoss.x + bossStageBoss.width/2;
+                        const _startY = bossStageBoss.y + bossStageBoss.height * 0.7;
+                        const _dx = (_spreadTargetShip.x + _spreadTargetShip.width/2) - _startX;
+                        const _dy = (_spreadTargetShip.y + _spreadTargetShip.height/2) - _startY;
+                        const _baseAngle = Math.atan2(_dy, _dx);
+                        const _effSpeed = (typeof scaleValue === 'function' && typeof BASE_ENEMY_BULLET_SPEED !== 'undefined') ? scaleValue(level, BASE_ENEMY_BULLET_SPEED, MAX_ENEMY_BULLET_SPEED) : 4;
+                        let _degStep = 32;
+                        if (sprayCount === 2) _degStep = 48; // enemy1 eindboss: 2 kogels HEEL breed - dekt halve scherm
+                        else if (sprayCount === 4) _degStep = 32; // enemy2 eindboss: 4 kogels verdeeld over bijna hele breedte
+                        else if (sprayCount === 6) _degStep = 26; // enemy3 eindboss: 6 kogels over VOLLEDIGE onderkant
+                        const _degToRad = Math.PI/180;
+                        for (let s = 0; s < sprayCount; s++) {
+                            const _angleOffset = (s - (sprayCount-1)/2) * _degStep * _degToRad;
+                            const _angle = _baseAngle + _angleOffset;
+                            const _vx = Math.cos(_angle) * _effSpeed;
+                            const _vy = Math.sin(_angle) * _effSpeed;
+                            // Extra: fysieke X-offset zodat kogels al verdeeld starten over boss breedte
+                            // Zorg dat kogels altijd naar beneden gaan, maar wel BREED verdeeld over scherm onder
+                            let _finalVy = _vy > 0 ? _vy : Math.abs(_vy);
+                            // Clamp minimale downward speed zodat kogels niet te horizontaal gaan en toch scherm onder bereiken
+                            const _minDown = _effSpeed * 0.45;
+                            if (_finalVy < _minDown) _finalVy = _minDown;
+                            const _finalVx = _vx * 1.35; // Extra horizontale spreiding voor dekking over hele breedte
+                            const _xSpread = (s - (sprayCount-1)/2) * (bossStageBoss.width * 0.18);
+                            enemyBullets.push({
+                                x: _startX + _xSpread - ENEMY_BULLET_WIDTH/2,
+                                y: _startY,
+                                width: ENEMY_BULLET_WIDTH,
+                                height: ENEMY_BULLET_HEIGHT,
+                                vx: _finalVx,
+                                vy: _finalVy > 0 ? _finalVy : _effSpeed,
+                                type: bossStageBoss.type
+                            });
+                        }
+                    } else {
+                        // Fallback als geen schip gevonden: oude methode
+                        for (let s = 0; s < sprayCount; s++) {
+                            const spreadOffset = (sprayCount > 1) ? (s - (sprayCount-1)/2) * 12 : 0;
+                            const overridePos = { x: bossStageBoss.x + bossStageBoss.width/2 + spreadOffset, y: bossStageBoss.y + bossStageBoss.height * 0.7 };
+                            createBulletSimple(bossStageBoss, overridePos);
+                        }
                     }
                     bossStageBoss.lastFiredTime = now;
                     bossStageBoss.canFireThisDive = false;
@@ -1221,8 +1309,13 @@ function handleBossStageBossHit(shootingPlayerId = null) {
         }
     } catch(e) { console.error("Boss hit score error", e); }
     
+    // --- KLEURWISSEL enemy3 eindbaas: blauw na 250 hits van 500 ---
     if (typeof bossStageVariant !== 'undefined' && bossStageVariant === 'enemy3') {
-        if (bossStageBossHealth <= 750) {
+        const halfHealth = (typeof bossStageBossMaxHealth !== 'undefined' ? bossStageBossMaxHealth : 500) / 2;
+        if (bossStageBossHealth <= halfHealth) {
+            if (!bossStageBoss.isBluePhase) {
+                console.log("[BOSS] enemy3 bereikt 250 hits - wordt BLAUW! Health:", bossStageBossHealth);
+            }
             bossStageBoss.isBluePhase = true;
         }
     }
@@ -1284,7 +1377,7 @@ function triggerBossStageDefeat() {
     
     bossStageBoss = null;
     
-    // After short delay, go to next wave - tekst weg bij volgende stage
+    // FIX: Bonus text altijd exact 3000ms in beeld
     setTimeout(()=>{
         isShowingBossDefeatedMessage = false;
         bossDefeatedMessageStartTime = 0;
@@ -1293,7 +1386,7 @@ function triggerBossStageDefeat() {
             console.log("[BOSS] Defeated, going to level", level);
             resetWaveInternal();
         }
-    }, 2600);
+    }, 3000);
 }
 
 window.updateBossStageLogic = updateBossStageLogic;
@@ -1458,49 +1551,202 @@ function scheduleEntranceFlightWave() {
 /**
  * Start de sequentie voor een Challenging Stage.
  */
-function startChallengingStageSequence() { currentWaveDefinition = []; isEntrancePhaseActive = false; enemySpawnTimeouts.forEach(clearTimeout); enemySpawnTimeouts = []; totalEnemiesScheduledForWave = 0; enemiesSpawnedThisWave = 0; squadronEntranceFiringStatus = {}; if (Object.keys(challengingStagePaths).length === 0) { defineChallengingStagePaths(); } if (Object.keys(challengingStagePaths).length === 0) { console.error("CRITICAL: Failed to define CS paths!"); isWaveTransitioning = true; setTimeout(() => { if ((isInGameState || (!isInGameState && ((isTwoPlayerMode && selectedGameMode === 'coop' && (player1Lives > 0 || player2Lives > 0)) || (!isTwoPlayerMode && playerLives > 0)))) && typeof resetWave === 'function') { resetWave(); } }, NEXT_WAVE_DELAY_AFTER_MESSAGE); return; } const fixedPathSequence = [ 'CS3_DiveLoopL_Sharp', 'CS3_DiveLoopR_Sharp', 'CS_HorizontalFlyByL', 'CS_HorizontalFlyByR' ]; const loopAttackPaths = [ 'CS_LoopAttack_TL', 'CS_LoopAttack_TR', 'CS_LoopAttack_BL', 'CS_LoopAttack_BR' ]; const requiredPaths = [...fixedPathSequence, ...loopAttackPaths]; for (const pathId of requiredPaths) { if (!challengingStagePaths.hasOwnProperty(pathId)) { console.error(`CRITICAL: Required CS path "${pathId}" not found! Aborting CS.`); isWaveTransitioning = true; setTimeout(() => { if ((isInGameState || (!isInGameState && ((isTwoPlayerMode && selectedGameMode === 'coop' && (player1Lives > 0 || player2Lives > 0)) || (!isTwoPlayerMode && playerLives > 0)))) && typeof resetWave === 'function') { resetWave(); } }, NEXT_WAVE_DELAY_AFTER_MESSAGE); return; } } const BASE_SEQUENCE = [...fixedPathSequence, ...loopAttackPaths];
+
+/**
+ * Start de sequentie voor een Challenging Stage.
+ * V38 - GEEN PAUZES: volgende wave komt zodra vorige weg is (geschoten of eruit).
+ * Paren behouden: DiveLoop Sharp L+R samen, FlyBy L+R samen, rest om en om.
+ */
+let csGroups = [];
+let csCurrentGroupIdx = 0;
+let csControllerIntervalId = null;
+
+function clearCSController() {
+    if (csControllerIntervalId) { clearInterval(csControllerIntervalId); csControllerIntervalId = null; }
+}
+
+function spawnCSGroupInternal(groupSquadronIndices, effectiveBaseSpeedMultiplier) {
+    const CS3_START_SHIFT_X = -28;
+    groupSquadronIndices.forEach(squadronIndex => {
+        const squadronData = currentWaveDefinition[squadronIndex];
+        if (!squadronData) return;
+        const pathId = squadronData.pathId;
+        const isFlyBy = pathId.includes('FlyBy');
+        let currentSpeedMultiplier = effectiveBaseSpeedMultiplier;
+        if (isFlyBy) {
+            currentSpeedMultiplier *= CS_HORIZONTAL_FLYBY_SPEED_FACTOR;
+        }
+        let spawnDelayBetweenEnemies = CS_ENEMY_SPAWN_DELAY_IN_SQUADRON;
+        if (pathId.includes('FlyBy')) {
+            spawnDelayBetweenEnemies = CS_HORIZONTAL_FLYBY_SPAWN_DELAY;
+        } else if (pathId.includes('LoopAttack')) {
+            spawnDelayBetweenEnemies = CS_LOOP_ATTACK_SPAWN_DELAY;
+        }
+        const pathSource = challengingStagePaths;
+        const pathSegments = pathSource[pathId];
+        if (!pathSegments || pathSegments.length === 0) {
+            console.error(`CS: Path ${pathId} invalid!`);
+            enemiesSpawnedThisWave += squadronData.enemies.length;
+            return;
+        }
+        squadronData.enemies.forEach((enemyDef, enemyIndex) => {
+            if (!enemyDef || !enemyDef.type) {
+                enemiesSpawnedThisWave++;
+                return;
+            }
+            const spawnDelay = enemyIndex * spawnDelayBetweenEnemies;
+            const enemyTimeoutId = setTimeout(() => {
+                const enIdx = enemySpawnTimeouts.indexOf(enemyTimeoutId);
+                if (enIdx > -1) enemySpawnTimeouts.splice(enIdx, 1);
+                let csSpawnCanContinue = false;
+                if (isTwoPlayerMode && selectedGameMode === 'coop') { csSpawnCanContinue = player1Lives > 0 || player2Lives > 0; } else { csSpawnCanContinue = playerLives > 0; }
+                if (isPaused || !isInGameState || !isEntrancePhaseActive || !isChallengingStage || isWaveTransitioning || !csSpawnCanContinue) {
+                    enemiesSpawnedThisWave++;
+                    return;
+                }
+                try {
+                    let enemyType = enemyDef.type;
+                    let enemyHealth = (enemyType === ENEMY3_TYPE) ? ENEMY3_MAX_HITS : 1;
+                    let enemyWidth, enemyHeight;
+                    if (enemyType === ENEMY1_TYPE) { enemyWidth = ENEMY1_WIDTH; enemyHeight = ENEMY1_HEIGHT; }
+                    else if (enemyType === ENEMY3_TYPE) { enemyWidth = BOSS_WIDTH; enemyHeight = BOSS_HEIGHT; }
+                    else { enemyWidth = ENEMY_WIDTH; enemyHeight = ENEMY_HEIGHT; }
+                    let startX = 0, startY = 0;
+                    if (pathSegments[0]?.p0) { startX = pathSegments[0].p0.x; startY = pathSegments[0].p0.y; }
+                    else { throw new Error(`Invalid start segment for path ${pathId}`); }
+                    if (squadronIndex === 0 || squadronIndex === 1) { startX += CS3_START_SHIFT_X; }
+                    const initialPathT_CS = -enemyIndex * PATH_T_OFFSET_PER_ENEMY;
+                    const newEnemy = { x: startX, y: startY, width: enemyWidth, height: enemyHeight, targetGridX: 0, targetGridY: 0, speed: 0, state: 'following_bezier_path', gridRow: -1, gridCol: -1, type: enemyType, health: enemyHealth, isDamaged: false, velocityX: 0, velocityY: 0, attackPathStep: 0, initialY: 0, initialX: 0, diveDirection: 1, lastFiredTime: 0, targetX1: 0, targetY1: 0, targetX2: 0, targetY2: 0, targetX3: 0, targetY3: 0, attackPathSegments: [], attackPathSegmentIndex: 0, attackPathT: 0, attackStartTime: 0, attackFormationOffsetX: 0, attackGroupId: null, entrancePathId: pathId, pathSegmentIndex: 0, pathT: initialPathT_CS, squadronId: squadronIndex, id: `enemy-cs-${squadronIndex}-${enemyIndex}-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`, justReturned: false, canFireThisDive: false, attackType: 'normal', hasCapturedShip: (enemyType === ENEMY3_TYPE) ? false : undefined, capturedShipX: undefined, capturedShipY: undefined, capturedShipLastFiredTime: (enemyType === ENEMY3_TYPE) ? 0 : undefined, capturedPlayerId: undefined, capturedPlayerNum: undefined, captureStartTime: 0, capturePrepareTimeout: null, pathSpeedMultiplier: currentSpeedMultiplier, captureDiveInitiationTime: 0 };
+                    enemies.push(newEnemy);
+                    enemiesSpawnedThisWave++;
+                } catch (spawnError) {
+                    console.error(`CS: Error during enemy spawn`, spawnError);
+                    enemiesSpawnedThisWave++;
+                }
+            }, spawnDelay);
+            enemySpawnTimeouts.push(enemyTimeoutId);
+        });
+    });
+}
+
+function startCSController(effectiveBaseSpeedMultiplier) {
+    clearCSController();
+    csControllerIntervalId = setInterval(() => {
+        if (!isChallengingStage || !isEntrancePhaseActive || isPaused || !isInGameState || isWaveTransitioning) return;
+        let gameCanContinue = false;
+        if (isTwoPlayerMode && selectedGameMode === 'coop') { gameCanContinue = player1Lives > 0 || player2Lives > 0; } else { gameCanContinue = playerLives > 0; }
+        if (!gameCanContinue) return;
+        // Zodra er geen vijanden meer zijn (weggeschoten of uit beeld), volgende wave
+        if (enemies.length === 0) {
+            if (csCurrentGroupIdx < csGroups.length) {
+                console.log(`[CS] Wave cleared -> spawning next group ${csCurrentGroupIdx} (${csGroups[csCurrentGroupIdx].map(i=>currentWaveDefinition[i].pathId).join('+')})`);
+                spawnCSGroupInternal(csGroups[csCurrentGroupIdx], effectiveBaseSpeedMultiplier);
+                csCurrentGroupIdx++;
+            } else {
+                // Alle groepen gespawned en leeg -> laat bestaande allSpawnsProcessed logica afhandelen
+                // Maar we zetten hier alvast entrance op false als alles gespawned is
+                if (enemiesSpawnedThisWave >= totalEnemiesScheduledForWave) {
+                    // wacht op laatste check in main loop
+                }
+            }
+        }
+    }, 100);
+    window.csControllerIntervalId = csControllerIntervalId;
+}
+
+function startChallengingStageSequence() {
+    currentWaveDefinition = [];
+    isEntrancePhaseActive = false;
+    enemySpawnTimeouts.forEach(clearTimeout);
+    enemySpawnTimeouts = [];
+    clearCSController();
+    totalEnemiesScheduledForWave = 0;
+    enemiesSpawnedThisWave = 0;
+    squadronEntranceFiringStatus = {};
+    if (Object.keys(challengingStagePaths).length === 0) { defineChallengingStagePaths(); }
+    if (Object.keys(challengingStagePaths).length === 0) {
+        console.error("CRITICAL: Failed to define CS paths!");
+        isWaveTransitioning = true;
+        setTimeout(() => { if ((isInGameState || (!isInGameState && ((isTwoPlayerMode && selectedGameMode === 'coop' && (player1Lives > 0 || player2Lives > 0)) || (!isTwoPlayerMode && playerLives > 0)))) && typeof resetWave === 'function') { resetWave(); } }, NEXT_WAVE_DELAY_AFTER_MESSAGE);
+        return;
+    }
+    const fixedPathSequence = [ 'CS3_DiveLoopL_Sharp', 'CS3_DiveLoopR_Sharp', 'CS_HorizontalFlyByL', 'CS_HorizontalFlyByR' ];
+    const loopAttackPaths = [ 'CS_LoopAttack_TL', 'CS_LoopAttack_TR', 'CS_LoopAttack_BL', 'CS_LoopAttack_BR' ];
+    const requiredPaths = [...fixedPathSequence, ...loopAttackPaths];
+    for (const pathId of requiredPaths) {
+        if (!challengingStagePaths.hasOwnProperty(pathId)) {
+            console.error(`CRITICAL: Required CS path "${pathId}" not found!`);
+            isWaveTransitioning = true;
+            setTimeout(() => { if ((isInGameState || (!isInGameState && ((isTwoPlayerMode && selectedGameMode === 'coop' && (player1Lives > 0 || player2Lives > 0)) || (!isTwoPlayerMode && playerLives > 0)))) && typeof resetWave === 'function') { resetWave(); } }, NEXT_WAVE_DELAY_AFTER_MESSAGE);
+            return;
+        }
+    }
+    const BASE_SEQUENCE = [...fixedPathSequence, ...loopAttackPaths];
     const shift = (completedChallengingStagesCount * 2) % BASE_SEQUENCE.length;
     console.log(`[CS START] Level ${level} Count=${completedChallengingStagesCount} Shift=${shift} First=${BASE_SEQUENCE[shift]} Full=${[...BASE_SEQUENCE.slice(shift), ...BASE_SEQUENCE.slice(0, shift)].join(',')}`);
     const finalPathIdsForStage = [
         ...BASE_SEQUENCE.slice(shift),
         ...BASE_SEQUENCE.slice(0, shift)
-    ]; currentWaveDefinition = []; for (let i = 0; i < CHALLENGING_STAGE_SQUADRON_COUNT; i++) { const pathId = finalPathIdsForStage[i]; const squadron = { pathId: pathId, enemies: [] }; for (let j = 0; j < CHALLENGING_STAGE_SQUADRON_SIZE; j++) { let enemyType = (j < Math.floor(CHALLENGING_STAGE_SQUADRON_SIZE / 2)) ? ENEMY1_TYPE : ENEMY2_TYPE; squadron.enemies.push({ type: enemyType, entrancePathId: pathId }); } currentWaveDefinition.push(squadron); } challengingStageTotalEnemies = CHALLENGING_STAGE_ENEMY_COUNT; totalEnemiesScheduledForWave = challengingStageTotalEnemies; enemiesSpawnedThisWave = 0; if (currentWaveDefinition.length > 0) { isEntrancePhaseActive = true; enemySpawnTimeouts = []; let totalTimeoutsScheduled = 0; const CS3_START_SHIFT_X = -28; const csLevelIndex = Math.floor(Math.max(0, level - 3) / 4) + 1; const effectiveBaseSpeedMultiplier = scaleValue(csLevelIndex, BASE_CS_SPEED_MULTIPLIER, MAX_CS_SPEED_MULTIPLIER);         currentWaveDefinition.forEach((squadronData, squadronIndex) => {
-            // V37b: Eerste 2 van boven samen, langzamer achter elkaar
-            const pathId = squadronData.pathId;
-            const isFlyBy = pathId.includes('FlyBy');
-            const isSharp = pathId.includes('Sharp');
+    ];
+    currentWaveDefinition = [];
+    for (let i = 0; i < CHALLENGING_STAGE_SQUADRON_COUNT; i++) {
+        const pathId = finalPathIdsForStage[i];
+        const squadron = { pathId: pathId, enemies: [] };
+        for (let j = 0; j < CHALLENGING_STAGE_SQUADRON_SIZE; j++) {
+            let enemyType = (j < Math.floor(CHALLENGING_STAGE_SQUADRON_SIZE / 2)) ? ENEMY1_TYPE : ENEMY2_TYPE;
+            squadron.enemies.push({ type: enemyType, entrancePathId: pathId });
+        }
+        currentWaveDefinition.push(squadron);
+    }
+    challengingStageTotalEnemies = CHALLENGING_STAGE_ENEMY_COUNT;
+    totalEnemiesScheduledForWave = challengingStageTotalEnemies;
+    enemiesSpawnedThisWave = 0;
 
-            let startDelay = 0;
-            if (squadronIndex === 0) {
-                startDelay = 0; // 1e van boven
-            } else if (squadronIndex === 1) {
-                startDelay = 0; // 2e SAMEN met 1e
-            } else {
-                const prevPathId = currentWaveDefinition[squadronIndex - 1]?.pathId || '';
-                const prevIsFlyBy = prevPathId.includes('FlyBy');
-                const prevIsSharp = prevPathId.includes('Sharp');
-                if (isFlyBy && prevIsFlyBy) {
-                    // FlyBy L en R altijd samen
-                    startDelay = currentWaveDefinition[squadronIndex - 1]._computedDelay ?? ((squadronIndex - 1) * CHALLENGING_STAGE_SQUADRON_INTERVAL * 1.3);
-                } else if (isSharp && prevIsSharp) {
-                    // L-Sharp+R-Sharp altijd samen
-                    startDelay = currentWaveDefinition[squadronIndex - 1]._computedDelay ?? ((squadronIndex - 1) * CHALLENGING_STAGE_SQUADRON_INTERVAL * 1.3);
-                } else {
-                    // Rest om en om, langzamer (1.3 ipv 0.7) zodat wave weg is voor volgende komt
-                    startDelay = (squadronIndex - 1) * (CHALLENGING_STAGE_SQUADRON_INTERVAL * 1.3);
-                }
-            }
-            squadronData._computedDelay = startDelay;
+    // === BOUW GROEPEN: Sharp paar, FlyBy paar, rest om en om ===
+    csGroups = [];
+    let idx = 0;
+    while (idx < currentWaveDefinition.length) {
+        const currPath = currentWaveDefinition[idx].pathId;
+        const nextPath = currentWaveDefinition[idx+1]?.pathId || '';
+        const currIsSharp = currPath.includes('Sharp');
+        const nextIsSharp = nextPath.includes('Sharp');
+        const currIsFlyBy = currPath.includes('FlyBy');
+        const nextIsFlyBy = nextPath.includes('FlyBy');
+        if (currIsSharp && nextIsSharp) {
+            csGroups.push([idx, idx+1]);
+            idx += 2;
+        } else if (currIsFlyBy && nextIsFlyBy) {
+            csGroups.push([idx, idx+1]);
+            idx += 2;
+        } else {
+            csGroups.push([idx]);
+            idx += 1;
+        }
+    }
+    console.log(`[CS GROUPS] ${csGroups.map(g=>g.map(i=>currentWaveDefinition[i].pathId).join('+')).join(' | ')}`);
 
-            let currentSpeedMultiplier = effectiveBaseSpeedMultiplier;
-            // Snelheid altijd op basis van path type
-            if (isFlyBy) {
-                currentSpeedMultiplier *= CS_HORIZONTAL_FLYBY_SPEED_FACTOR; // 0.35 = langzaam zoals in stage 3
-            } const squadronStartTimeoutId = setTimeout(() => { const sqIdx = enemySpawnTimeouts.indexOf(squadronStartTimeoutId); if (sqIdx > -1) enemySpawnTimeouts.splice(sqIdx, 1);
-    let csGameCanContinue = false; if (isTwoPlayerMode && selectedGameMode === 'coop') { csGameCanContinue = player1Lives > 0 || player2Lives > 0; } else { csGameCanContinue = playerLives > 0; }
-    if (!isPaused && isInGameState && isEntrancePhaseActive && isChallengingStage && !isWaveTransitioning && csGameCanContinue) { try { const pathId = squadronData.pathId; const pathSource = challengingStagePaths; const pathSegments = pathSource[pathId]; if (!pathSegments || pathSegments.length === 0) { console.error(`CS: Path ${pathId} for squadron ${squadronIndex} invalid! Skipping.`); enemiesSpawnedThisWave += squadronData.enemies.length; return; } let spawnDelayBetweenEnemies = CS_ENEMY_SPAWN_DELAY_IN_SQUADRON; if (squadronIndex >= 2 && squadronIndex <= 3) { spawnDelayBetweenEnemies = CS_HORIZONTAL_FLYBY_SPAWN_DELAY; } else if (squadronIndex >= 4) { spawnDelayBetweenEnemies = CS_LOOP_ATTACK_SPAWN_DELAY; } squadronData.enemies.forEach((enemyDef, enemyIndex) => { if (!enemyDef || !enemyDef.type) { console.error(`CS: Invalid enemy def in squadron ${squadronIndex}, index ${enemyIndex}. Skipping.`); enemiesSpawnedThisWave++; return; } const spawnDelay = enemyIndex * spawnDelayBetweenEnemies; const enemyTimeoutId = setTimeout(() => { const enIdx = enemySpawnTimeouts.indexOf(enemyTimeoutId); if (enIdx > -1) enemySpawnTimeouts.splice(enIdx, 1);
-    let csSpawnCanContinue = false; if (isTwoPlayerMode && selectedGameMode === 'coop') { csSpawnCanContinue = player1Lives > 0 || player2Lives > 0; } else { csSpawnCanContinue = playerLives > 0; }
-    if (isPaused || !isInGameState || !isEntrancePhaseActive || !isChallengingStage || isWaveTransitioning || !csSpawnCanContinue ) { enemiesSpawnedThisWave++; return; } try { let enemyType = enemyDef.type; let enemyHealth = (enemyType === ENEMY3_TYPE) ? ENEMY3_MAX_HITS : 1; let enemyWidth, enemyHeight; if (enemyType === ENEMY1_TYPE) { enemyWidth = ENEMY1_WIDTH; enemyHeight = ENEMY1_HEIGHT; } else if (enemyType === ENEMY3_TYPE) { enemyWidth = BOSS_WIDTH; enemyHeight = BOSS_HEIGHT; } else { enemyWidth = ENEMY_WIDTH; enemyHeight = ENEMY_HEIGHT; } let startX = 0, startY = 0; if (pathSegments[0]?.p0) { startX = pathSegments[0].p0.x; startY = pathSegments[0].p0.y; } else { throw new Error(`Invalid start segment for path ${pathId}`); } if (squadronIndex === 0 || squadronIndex === 1) { startX += CS3_START_SHIFT_X; } const initialPathT_CS = -enemyIndex * PATH_T_OFFSET_PER_ENEMY; const newEnemy = { x: startX, y: startY, width: enemyWidth, height: enemyHeight, targetGridX: 0, targetGridY: 0, speed: 0, state: 'following_bezier_path', gridRow: -1, gridCol: -1, type: enemyType, health: enemyHealth, isDamaged: false, velocityX: 0, velocityY: 0, attackPathStep: 0, initialY: 0, initialX: 0, diveDirection: 1, lastFiredTime: 0, targetX1: 0, targetY1: 0, targetX2: 0, targetY2: 0, targetX3: 0, targetY3: 0, attackPathSegments: [], attackPathSegmentIndex: 0, attackPathT: 0, attackStartTime: 0, attackFormationOffsetX: 0, attackGroupId: null, entrancePathId: pathId, pathSegmentIndex: 0, pathT: initialPathT_CS, squadronId: squadronIndex, id: `enemy-cs-${squadronIndex}-${enemyIndex}-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`, justReturned: false, canFireThisDive: false, attackType: 'normal', hasCapturedShip: (enemyType === ENEMY3_TYPE) ? false : undefined, capturedShipX: undefined, capturedShipY: undefined, capturedShipLastFiredTime: (enemyType === ENEMY3_TYPE) ? 0 : undefined, capturedPlayerId: undefined, capturedPlayerNum: undefined, captureStartTime: 0, capturePrepareTimeout: null, pathSpeedMultiplier: currentSpeedMultiplier, captureDiveInitiationTime: 0 }; enemies.push(newEnemy); enemiesSpawnedThisWave++; } catch (spawnError) { console.error(`CS: Error during enemy spawn execution (Sq ${squadronIndex}, Idx ${enemyIndex}, Path ${pathId}):`, spawnError); enemiesSpawnedThisWave++; } }, spawnDelay); enemySpawnTimeouts.push(enemyTimeoutId); totalTimeoutsScheduled++; }); } catch (squadronSpawnError) { console.error(`CS: Error setting up spawns for squadron ${squadronIndex}:`, squadronSpawnError); enemiesSpawnedThisWave += squadronData.enemies.length;} } else { if(squadronData?.enemies?.length > 0) { enemiesSpawnedThisWave += squadronData.enemies.length; } } }, startDelay); enemySpawnTimeouts.push(squadronStartTimeoutId); }); } else { console.warn("CS: No squadrons generated. Skipping CS sequence."); isWaveTransitioning = true; setTimeout(() => { if ((isInGameState || (!isInGameState && ((isTwoPlayerMode && selectedGameMode === 'coop' && (player1Lives > 0 || player2Lives > 0)) || (!isTwoPlayerMode && playerLives > 0)))) && typeof resetWave === 'function') { resetWave(); } }, NEXT_WAVE_DELAY_AFTER_MESSAGE); } }
+    if (currentWaveDefinition.length > 0) {
+        isEntrancePhaseActive = true;
+        enemySpawnTimeouts = [];
+        const csLevelIndex = Math.floor(Math.max(0, level - 3) / 4) + 1;
+        const effectiveBaseSpeedMultiplier = scaleValue(csLevelIndex, BASE_CS_SPEED_MULTIPLIER, MAX_CS_SPEED_MULTIPLIER);
+
+        csCurrentGroupIdx = 0;
+        // Spawn eerste groep meteen (geen rust)
+        if (csGroups.length > 0) {
+            spawnCSGroupInternal(csGroups[0], effectiveBaseSpeedMultiplier);
+            csCurrentGroupIdx = 1;
+        }
+        // Controller die volgende groepen spawnt zodra vorige weg is
+        startCSController(effectiveBaseSpeedMultiplier);
+    } else {
+        console.warn("CS: No squadrons generated. Skipping CS sequence.");
+        isWaveTransitioning = true;
+        setTimeout(() => { if ((isInGameState || (!isInGameState && ((isTwoPlayerMode && selectedGameMode === 'coop' && (player1Lives > 0 || player2Lives > 0)) || (!isTwoPlayerMode && playerLives > 0)))) && typeof resetWave === 'function') { resetWave(); } }, NEXT_WAVE_DELAY_AFTER_MESSAGE);
+    }
+}
+window.startChallengingStageSequence = startChallengingStageSequence;
+window.clearCSController = clearCSController;
 
 
 /**
@@ -2605,6 +2851,85 @@ function aiControl() {
             aiPreviousDodgeDirection = 0;
         }
 
+        // --- BOSS STAGE AI LOGIC - VEILIGHEID EERST, DAN BOSS AANVALLEN ---
+        if (typeof isBossStage !== 'undefined' && isBossStage && typeof bossStageBoss !== 'undefined' && bossStageBoss && bossStagePhase === 'fighting' && bossStageBoss.isVisible !== false && !isInvincibleForAI && !isShowingBlockingMessage) {
+            const bossCenterX = bossStageBoss.x + bossStageBoss.width / 2;
+            const bossTargetX = bossCenterX - effectiveShipWidth / 2;
+            targetEnemyForAI = bossStageBoss;
+            const BOSS_AI_LOOKAHEAD_Y = SHIP_HEIGHT * 14.0;
+            const BOSS_AI_BULLET_PROJ_MS = 750;
+            const BOSS_AI_SAFETY_X = effectiveShipWidth * 1.25;
+            const BOSS_AI_SAFETY_Y = SHIP_HEIGHT * 0.9;
+            let bossThreats = [];
+            for (const bullet of enemyBullets) {
+                if (bullet.y < activeShipForAI.y + BOSS_AI_LOOKAHEAD_Y && bullet.y + bullet.height > activeShipForAI.y - SHIP_HEIGHT * 4) {
+                    const framesToProj = BOSS_AI_BULLET_PROJ_MS / 16.67;
+                    let projX = bullet.x + bullet.vx * framesToProj;
+                    let projY = bullet.y + bullet.vy * framesToProj;
+                    let isFromAbove = bullet.vy > 0;
+                    let safetyX = BOSS_AI_SAFETY_X * (isFromAbove ? 2.0 : 1.0);
+                    let safetyY = BOSS_AI_SAFETY_Y * (isFromAbove ? 2.8 : 1.0);
+                    bossThreats.push({
+                        x: projX - bullet.width/2 - safetyX,
+                        y: projY - bullet.height/2 - safetyY,
+                        width: bullet.width + 2*safetyX,
+                        height: bullet.height + 2*safetyY,
+                        isFromAbove: isFromAbove
+                    });
+                }
+            }
+            if (bossStageBoss.state === 'attacking') {
+                bossThreats.push({
+                    x: bossStageBoss.x - effectiveShipWidth*0.3,
+                    y: bossStageBoss.y - SHIP_HEIGHT*0.2,
+                    width: bossStageBoss.width + effectiveShipWidth*0.6,
+                    height: bossStageBoss.height + SHIP_HEIGHT*0.6,
+                    isFromAbove: true
+                });
+            }
+            if (bossThreats.length > 0) {
+                isDodgingThreat = true;
+                let bestX = currentSmoothedShipXForAI;
+                let minColl = Infinity;
+                let maxSafeDist = -1;
+                const steps = 7;
+                const stepSize = effectiveShipWidth * 0.85;
+                for (let i = -steps; i <= steps; i++) {
+                    let testX = currentSmoothedShipXForAI + i * stepSize;
+                    testX = Math.max(AI_EDGE_BUFFER*1.5, Math.min(canvasWidth - effectiveShipWidth - AI_EDGE_BUFFER*1.5, testX));
+                    const shipRect = { x: testX, y: activeShipForAI.y, width: effectiveShipWidth, height: activeShipForAI.height };
+                    let coll = 0;
+                    let minDist = Infinity;
+                    for (const th of bossThreats) {
+                        if (checkCollision(shipRect, th)) coll++;
+                        const dist = Math.abs((shipRect.x + shipRect.width/2) - (th.x + th.width/2)) - (shipRect.width/2 + th.width/2);
+                        if (dist < minDist) minDist = dist;
+                    }
+                    if (coll < minColl || (coll === minColl && minDist > maxSafeDist)) {
+                        minColl = coll;
+                        maxSafeDist = minDist;
+                        bestX = testX;
+                        if (i !== 0) aiPreviousDodgeDirection = Math.sign(i);
+                    } else if (coll === minColl && minDist === maxSafeDist) {
+                        if (Math.abs(testX - bossTargetX) < Math.abs(bestX - bossTargetX)) bestX = testX;
+                    }
+                }
+                dodgeTargetX = bestX;
+                desiredTargetX = bestX;
+                if (minColl === 0) {
+                    desiredTargetX = desiredTargetX * 0.65 + bossTargetX * 0.35;
+                    if (aiPreviousDodgeDirection !== 0) aiDodgeCommitEndTime = now + 220;
+                } else {
+                    aiDodgeCommitEndTime = now + 300;
+                }
+            } else {
+                isDodgingThreat = false;
+                const wiggle = Math.sin(now/280)*12;
+                desiredTargetX = Math.max(AI_EDGE_BUFFER, Math.min(canvasWidth - effectiveShipWidth - AI_EDGE_BUFFER, bossTargetX + wiggle));
+                aiPreviousDodgeDirection = 0;
+            }
+            shouldTryShoot_AI = true;
+        } else
         // --- CHALLENGING STAGE AI LOGIC ---
         if (isChallengingStage && activeShipForAI) {
             isDodgingThreat = false; // Geen ontwijking in CS
@@ -2736,7 +3061,12 @@ function aiControl() {
             } else { aiPreviousDodgeDirection = 0; aiDodgeCommitEndTime = 0; }
         } else { aiPreviousDodgeDirection = 0; aiDodgeCommitEndTime = 0; } // Einde isInvincible/isShowingBlockingMessage check
 
-        if (isDodgingThreat && !isChallengingStage) { // Alleen toepassen als niet CS
+        const isBossFightActiveForSingleAI = (typeof isBossStage !== 'undefined' && isBossStage && typeof bossStagePhase !== 'undefined' && bossStagePhase === 'fighting');
+        if (isBossFightActiveForSingleAI) {
+            // In boss fight: behoud boss target en blijf vuren tijdens ontwijken
+            if (!targetEnemyForAI && typeof bossStageBoss !== 'undefined' && bossStageBoss) targetEnemyForAI = bossStageBoss;
+            shouldTryShoot_AI = true;
+        } else if (isDodgingThreat && !isChallengingStage) { // Alleen toepassen als niet CS en niet boss
             isMovingToCapture = false; aiIsCurrentlyTargetingCaptureBoss = false; isTargetingThreeSecondRuleBoss = false; isMovingForOwnFallingShip = false; targetEnemyForAI = null;
             const isNearEdge = desiredTargetX < AI_EDGE_BUFFER * 2.5 || desiredTargetX > canvasWidth - effectiveShipWidth - AI_EDGE_BUFFER * 2.5;
             if (Math.abs(desiredTargetX - currentSmoothedShipXForAI) > effectiveShipWidth * 0.10 && !isNearEdge) {
@@ -2753,7 +3083,7 @@ function aiControl() {
                 targetEnemyForAI = generalTargetWhileDodging;
             }
             shouldTryShoot_AI = (targetEnemyForAI !== null);
-        } else if (!isChallengingStage) { // Alleen toepassen als niet CS
+        } else if (!isChallengingStage && !isBossFightActiveForSingleAI) { // Alleen toepassen als niet CS en niet boss
             if (fallingShips.length > 0 && !isShipCapturedForAI && !isWaitingForRespawn && !isDualActiveForAI ) {
                 let closestFallingShip = null; let minDist = Infinity;
                 for (const fs of fallingShips) {
@@ -2983,14 +3313,16 @@ function calculateAIDesiredState(currentShip, currentSmoothedX, isShipDual, game
     const activeCapturingBoss = gameEnemies.find(e => e.id === capturingBossId && e.type === ENEMY3_TYPE);
 
     let dodgeTargetX = currentSmoothedX;
+    const isBossFightActive = (typeof isBossStage !== 'undefined' && isBossStage && typeof bossStagePhase !== 'undefined' && bossStagePhase === 'fighting');
     if (!isChallengingStage && !isShipInvincible) {
-        const AI_DANGER_LOOKAHEAD_Y_COOP = SHIP_HEIGHT * 9.0;
-        const AI_BULLET_PROJECTION_MS_COOP = 550;
-        const AI_ENEMY_PROJECTION_MS_COOP = 350;
-        const AI_THREAT_SAFETY_MARGIN_X_BULLET_BASE = effectiveShipWidth * 0.6;
-        const AI_THREAT_SAFETY_MARGIN_Y_BULLET_BASE = SHIP_HEIGHT * 0.4;
-        const AI_THREAT_SAFETY_MARGIN_X_ENEMY = effectiveShipWidth * 0.6;
-        const AI_THREAT_SAFETY_MARGIN_Y_ENEMY = SHIP_HEIGHT * 0.6;
+        // BOSS FIGHT: veel grotere lookahead en safety margins
+        const AI_DANGER_LOOKAHEAD_Y_COOP = isBossFightActive ? SHIP_HEIGHT * 15.0 : SHIP_HEIGHT * 9.0;
+        const AI_BULLET_PROJECTION_MS_COOP = isBossFightActive ? 800 : 550;
+        const AI_ENEMY_PROJECTION_MS_COOP = isBossFightActive ? 500 : 350;
+        const AI_THREAT_SAFETY_MARGIN_X_BULLET_BASE = effectiveShipWidth * (isBossFightActive ? 1.35 : 0.6);
+        const AI_THREAT_SAFETY_MARGIN_Y_BULLET_BASE = SHIP_HEIGHT * (isBossFightActive ? 1.0 : 0.4);
+        const AI_THREAT_SAFETY_MARGIN_X_ENEMY = effectiveShipWidth * (isBossFightActive ? 1.2 : 0.6);
+        const AI_THREAT_SAFETY_MARGIN_Y_ENEMY = SHIP_HEIGHT * (isBossFightActive ? 1.1 : 0.6);
 
         let allProjectedThreats = [];
 
@@ -3316,29 +3648,45 @@ function calculateAIDesiredState(currentShip, currentSmoothedX, isShipDual, game
         }
     }
 
-    // BOSS STAGE: AI moet boss willen opvreten - maar wel kogels ontwijken - VEILIGHEID EERST
+    // BOSS STAGE: VEILIGHEID EERST, DAN DIRECT TERUG VUREN OP EINDBAAS
     if (typeof isBossStage !== 'undefined' && isBossStage && typeof bossStageBoss !== 'undefined' && bossStageBoss && typeof bossStagePhase !== 'undefined' && bossStagePhase === 'fighting') {
         try {
             if (bossStageBoss.isVisible !== false) {
                 const bossCenterX = bossStageBoss.x + bossStageBoss.width/2;
-                if (typeof effectiveShipWidth !== 'undefined' && typeof AI_EDGE_BUFFER !== 'undefined' && typeof gameCanvas !== 'undefined' && gameCanvas) {
-                    // VEILIGHEID EERST: alleen op boss mikken als we NIET aan het ontwijken zijn
-                    targetEnemyForAI = bossStageBoss;
-                    if (typeof isDodgingThreatCurrentFrame === 'undefined' || !isDodgingThreatCurrentFrame) {
-                        const nowWiggle = typeof currentTime !== 'undefined' ? currentTime : Date.now();
-                        const wiggle = Math.sin(nowWiggle/300)*15;
-                        let tx = bossCenterX - effectiveShipWidth/2 + wiggle;
-                        tx = Math.max(AI_EDGE_BUFFER, Math.min(gameCanvas.width - effectiveShipWidth - AI_EDGE_BUFFER, tx));
-                        desiredTargetX = tx;
-                        shouldTryShoot_AI_Calc = true;
-                    }
+                const bossTargetX = bossCenterX - effectiveShipWidth/2;
+                // ALTIJD eindbaas als target
+                targetEnemyForAI = bossStageBoss;
+
+                // Als er al een dodge actief is, behoud die dodge maar VUUR WEL door
+                if (isDodgingThreatCurrentFrame) {
+                    // dodgeTargetX is al berekend in eerdere threat logic - behouden
+                    // maar wel 20% bijsturen naar boss zodat we niet te ver weg raken
+                    desiredTargetX = desiredTargetX * 0.8 + bossTargetX * 0.2;
+                    shouldTryShoot_AI_Calc = true; // BLIJVEN VUREN TIJDENS ONTWIKEN
+                } else {
+                    // Geen directe dreiging: agressief naar boss bewegen en vuren
+                    const nowWiggle = typeof currentTime !== 'undefined' ? currentTime : Date.now();
+                    const wiggle = Math.sin(nowWiggle/250)*10; // kleinere wiggle, meer accuraat
+                    let tx = bossTargetX + wiggle;
+                    tx = Math.max(AI_EDGE_BUFFER, Math.min(gameCanvas.width - effectiveShipWidth - AI_EDGE_BUFFER, tx));
+                    desiredTargetX = tx;
+                    shouldTryShoot_AI_Calc = true;
+                    // Reset dodge richting als veilig
+                    chosenDodgeDirThisFrame = 0;
                 }
+                // In boss fight: schiet ALTIJD, ongeacht capture logic die later komt
+                // (overschrijft latere false zetten, behalve geblokkeerd state)
             }
-        } catch(e) {}
+        } catch(e) { console.warn("Boss AI override error", e); }
     }
 
     if (typeof isSimultaneousAssaultWave !== "undefined" && isSimultaneousAssaultWave) { if (typeof isEntrancePhaseActive !== "undefined" && isEntrancePhaseActive && !isAllEnemiesInGridForSimultaneous()) { shouldTryShoot_AI_Calc = false; } }
     if (typeof gameEnemies !== "undefined") { const bossWithShipAttacking = gameEnemies.find(e => e && e.type === ENEMY3_TYPE && e.hasCapturedShip && (e.state === "attacking" || e.state === "diving")); if (bossWithShipAttacking) { shouldTryShoot_AI_Calc = true; targetEnemyForAI = bossWithShipAttacking; } }
+    // BOSS FIGHT FINAL OVERRIDE: altijd terugvuren op eindbaas, zelfs als andere logic het uitzet (behalve als volledig geblokkeerd)
+    if (typeof isBossStage !== 'undefined' && isBossStage && typeof bossStageBoss !== 'undefined' && bossStageBoss && bossStagePhase === 'fighting' && bossStageBoss.isVisible !== false) {
+        targetEnemyForAI = bossStageBoss;
+        shouldTryShoot_AI_Calc = true;
+    }
     desiredTargetX = Math.max(AI_EDGE_BUFFER, Math.min(gameCanvas.width - effectiveShipWidth - AI_EDGE_BUFFER, desiredTargetX));
     return { desiredTargetX, shouldTryShoot: shouldTryShoot_AI_Calc, targetEnemyForAI, chosenDodgeDir: chosenDodgeDirThisFrame, isDodging: isDodgingThreatCurrentFrame, predictedCollisions: predictedCollisionsForReturn };
 }
@@ -3397,6 +3745,14 @@ function findAndDetachEnemy() {
 function triggerImmediateCaptureDive() {
     try {
         if (isChallengingStage || captureAttemptMadeThisLevel) {
+            return;
+        }
+        // REGEL: Als er 2 dual ships zijn (coop beide dual) -> geen capture door boss 3
+        if (isTwoPlayerMode && selectedGameMode === 'coop' && player1IsDualShipActive && player2IsDualShipActive) {
+            return;
+        }
+        // REGEL: Dual ship mag nooit in beamer -> als 1P dual is, ook geen capture dive starten
+        if (!isTwoPlayerMode && isDualShipActive) {
             return;
         }
 
@@ -3673,8 +4029,15 @@ function moveEntities(overrideP1Left = null, overrideP1Right = null) {
             if (bulletHit) continue;
             for (let j = enemies.length - 1; j >= 0; j--) {
                 const enemy = enemies[j]; if (!enemy) { enemies.splice(j,1); continue; }
-                if (enemy.type === ENEMY3_TYPE && enemy.state === 'capturing') {
-                    continue;
+                // FIX beamer: enemy3 onkwetsbaar zolang beamer actief is EN zolang hij net gecaptured heeft en weggaat met schip
+                // Pas weer kwetsbaar als hij terug in grid staat (in_grid) of aanvalt met schip
+                if (enemy.type === ENEMY3_TYPE) {
+                    if (enemy.state === 'capturing' || enemy.state === 'preparing_capture' || enemy.state === 'diving_to_capture_position') {
+                        continue;
+                    }
+                    if (enemy.hasCapturedShip && (enemy.state === 'showing_capture_message' || enemy.state === 'returning')) {
+                        continue;
+                    }
                 }
                 const enemyRect = { x: enemy.x, y: enemy.y, width: (enemy.type === ENEMY3_TYPE) ? BOSS_WIDTH : ((enemy.type === ENEMY1_TYPE) ? ENEMY1_WIDTH : ENEMY_WIDTH), height: (enemy.type === ENEMY3_TYPE) ? BOSS_HEIGHT : ((enemy.type === ENEMY1_TYPE) ? ENEMY1_HEIGHT : ENEMY_HEIGHT) };
                 const bulletRect = { x: b.x, y: b.y, width: b.width, height: b.height };
@@ -3914,12 +4277,23 @@ function moveEntities(overrideP1Left = null, overrideP1Right = null) {
                     captureBeamProgress = Math.max(0, Math.min(1, captureBeamProgress));
                     if (captureBeamActive && captureBeamProgress >= 0.95) {
                         const beamTopWidth = BOSS_WIDTH * CAPTURE_BEAM_WIDTH_TOP_FACTOR; const beamBottomWidth = SHIP_WIDTH * CAPTURE_BEAM_WIDTH_BOTTOM_FACTOR; const beamCenterX = enemy.x + currentEnemyWidthCorrected / 2; const beamVisualTopY = enemy.y + currentEnemyHeightCorrected; const beamVisualBottomY = gameCanvas.height - LIFE_ICON_MARGIN_BOTTOM - LIFE_ICON_SIZE - 10; const boxWidth = Math.max(beamTopWidth, beamBottomWidth); const boxX = beamCenterX - boxWidth / 2; const boxY = beamVisualTopY; const boxHeight = beamVisualBottomY - beamVisualTopY;
-                        if (boxHeight > 0) { const beamBoundingBox = { x: boxX, y: boxY, width: boxWidth, height: boxHeight }; let shipHitObject = null; let playerHitId = 0;
-                            if (isTwoPlayerMode && selectedGameMode === 'coop') { if (ship1 && player1Lives > 0 && !isPlayer1ShipCaptured && checkCollision(ship1, beamBoundingBox)) { shipHitObject = ship1; playerHitId = 1; } else if (ship2 && player2Lives > 0 && !isPlayer2ShipCaptured && checkCollision(ship2, beamBoundingBox)) { shipHitObject = ship2; playerHitId = 2; }
-                            } else { if (ship && playerLives > 0 && !isShipCaptured && checkCollision(ship, beamBoundingBox)) { shipHitObject = ship; playerHitId = currentPlayer; } }
+                        if (boxHeight > 0) {
+                            // REGEL: Als er 2 dual ships zijn -> helemaal geen capture
+                            if (isTwoPlayerMode && selectedGameMode === 'coop' && player1IsDualShipActive && player2IsDualShipActive) {
+                                captureBeamProgress = 0; captureBeamActive = false; capturingBossId = null; stopSound('captureSound');
+                                enemy.state = 'returning'; break;
+                            }
+                            const beamBoundingBox = { x: boxX, y: boxY, width: boxWidth, height: boxHeight }; let shipHitObject = null; let playerHitId = 0;
+                            // REGEL: Dual ship mag nooit in de beamer stappen
+                            if (isTwoPlayerMode && selectedGameMode === 'coop') {
+                                if (ship1 && player1Lives > 0 && !isPlayer1ShipCaptured && !player1IsDualShipActive && checkCollision(ship1, beamBoundingBox)) { shipHitObject = ship1; playerHitId = 1; }
+                                else if (ship2 && player2Lives > 0 && !isPlayer2ShipCaptured && !player2IsDualShipActive && checkCollision(ship2, beamBoundingBox)) { shipHitObject = ship2; playerHitId = 2; }
+                            } else {
+                                if (ship && playerLives > 0 && !isShipCaptured && !isDualShipActive && checkCollision(ship, beamBoundingBox)) { shipHitObject = ship; playerHitId = currentPlayer; }
+                            }
                             if (shipHitObject) {
                                 enemy.capturedShipDimensions = { width: shipHitObject.width, height: shipHitObject.height }; enemy.hasCapturedShip = true; enemy.capturedPlayerId = (playerHitId === 1 ? 'player1' : 'player2'); enemy.capturedPlayerNum = playerHitId; stopSound('captureSound');
-                                enemy.state = 'showing_capture_message'; enemy.targetGridX = null; enemy.targetGridY = null; enemy.initialCaptureAnimationY = shipHitObject.y; enemy.captureAnimationRotation = 0;
+                                enemy.captureStartTime = 0; enemy.state = 'showing_capture_message'; enemy.targetGridX = null; enemy.targetGridY = null; enemy.initialCaptureAnimationY = shipHitObject.y; enemy.captureAnimationRotation = 0;
                                 isShowingCaptureMessage = true; captureMessageStartTime = now; capturedBossIdWithMessage = enemy.id; playSound('shipCapturedSound', false, 0.3);
                                 csCurrentChainHits = 0; csCurrentChainScore = 0; csLastHitTime = 0; csLastChainHitPosition = null; normalWaveCurrentChainHits = 0; normalWaveCurrentChainScore = 0; normalWaveLastHitTime = 0; normalWaveLastHitPosition = null;
                                 handlePlayerShipCollision(playerHitId, false, now, true);
@@ -4080,9 +4454,6 @@ function handlePlayerShipCollision(playerNumber, hitDualPart, collisionTime, was
 
                 if (player1Lives <= 0) {
                     player1Lives = 0;
-                    isPlayer1ShowingGameOverMessage = true;
-                    player1GameOverMessageStartTime = now;
-                    playSound('gameOverSound', false, 0.4);
                     ship1 = null;
                     player1NeedsRespawnAfterCapture = false;
                     if (aiPlayerActivelySeekingCaptureById === 'p1') aiPlayerActivelySeekingCaptureById = null;
@@ -4090,6 +4461,16 @@ function handlePlayerShipCollision(playerNumber, hitDualPart, collisionTime, was
                     if (capturedBossIdWithMessage && enemies.find(e => e.id === capturedBossIdWithMessage)) {
                         const boss = enemies.find(e => e.id === capturedBossIdWithMessage);
                         if (boss) { boss.hasCapturedShip = false; boss.capturedShipDimensions = null; }
+                    }
+                    // FIX: Check of beide spelers dood zijn -> direct game over
+                    if (player2Lives <= 0) {
+                        isPlayer1ShowingGameOverMessage = false;
+                        isPlayer2ShowingGameOverMessage = false;
+                        if (gameOverSequenceStartTime === 0) triggerFinalGameOverSequence();
+                    } else {
+                        isPlayer1ShowingGameOverMessage = true;
+                        player1GameOverMessageStartTime = now;
+                        playSound('gameOverSound', false, 0.4);
                     }
                 } else {
                     player1NeedsRespawnAfterCapture = true;
@@ -4108,12 +4489,18 @@ function handlePlayerShipCollision(playerNumber, hitDualPart, collisionTime, was
                     player1Lives--;
                     if (player1Lives <= 0) {
                         player1Lives = 0;
-                        isPlayer1ShowingGameOverMessage = true;
-                        player1GameOverMessageStartTime = now;
-                        playSound('gameOverSound', false, 0.4);
                         ship1 = null;
                         if (aiPlayerActivelySeekingCaptureById === 'p1') aiPlayerActivelySeekingCaptureById = null;
                         if (isCoopAIDemoActive) coopAICaptureDiveAnticipationActive = false;
+                        if (player2Lives <= 0) {
+                            isPlayer1ShowingGameOverMessage = false;
+                            isPlayer2ShowingGameOverMessage = false;
+                            if (gameOverSequenceStartTime === 0) triggerFinalGameOverSequence();
+                        } else {
+                            isPlayer1ShowingGameOverMessage = true;
+                            player1GameOverMessageStartTime = now;
+                            playSound('gameOverSound', false, 0.4);
+                        }
                     } else {
                         isPlayer1Invincible = true; player1InvincibilityEndTime = now + INVINCIBILITY_DURATION_MS;
                         isPlayer1WaitingForRespawn = true; player1RespawnTime = now + RESPAWN_DELAY_MS;
@@ -4134,9 +4521,6 @@ function handlePlayerShipCollision(playerNumber, hitDualPart, collisionTime, was
 
                 if (player2Lives <= 0) {
                     player2Lives = 0;
-                    isPlayer2ShowingGameOverMessage = true;
-                    player2GameOverMessageStartTime = now;
-                    playSound('gameOverSound', false, 0.4);
                     ship2 = null;
                     player2NeedsRespawnAfterCapture = false;
                     if (aiPlayerActivelySeekingCaptureById === 'p2' || aiPlayerActivelySeekingCaptureById === 'ai_p2') aiPlayerActivelySeekingCaptureById = null;
@@ -4144,6 +4528,15 @@ function handlePlayerShipCollision(playerNumber, hitDualPart, collisionTime, was
                     if (capturedBossIdWithMessage && enemies.find(e => e.id === capturedBossIdWithMessage)) {
                         const boss = enemies.find(e => e.id === capturedBossIdWithMessage);
                         if (boss) { boss.hasCapturedShip = false; boss.capturedShipDimensions = null; }
+                    }
+                    if (player1Lives <= 0) {
+                        isPlayer1ShowingGameOverMessage = false;
+                        isPlayer2ShowingGameOverMessage = false;
+                        if (gameOverSequenceStartTime === 0) triggerFinalGameOverSequence();
+                    } else {
+                        isPlayer2ShowingGameOverMessage = true;
+                        player2GameOverMessageStartTime = now;
+                        playSound('gameOverSound', false, 0.4);
                     }
                 } else {
                     player2NeedsRespawnAfterCapture = true;
@@ -4162,12 +4555,18 @@ function handlePlayerShipCollision(playerNumber, hitDualPart, collisionTime, was
                     player2Lives--;
                     if (player2Lives <= 0) {
                         player2Lives = 0;
-                        isPlayer2ShowingGameOverMessage = true;
-                        player2GameOverMessageStartTime = now;
-                        playSound('gameOverSound', false, 0.4);
                         ship2 = null;
                         if (aiPlayerActivelySeekingCaptureById === 'p2' || aiPlayerActivelySeekingCaptureById === 'ai_p2') aiPlayerActivelySeekingCaptureById = null;
                         if (isCoopAIDemoActive) coopAICaptureDiveAnticipationActive = false;
+                        if (player1Lives <= 0) {
+                            isPlayer1ShowingGameOverMessage = false;
+                            isPlayer2ShowingGameOverMessage = false;
+                            if (gameOverSequenceStartTime === 0) triggerFinalGameOverSequence();
+                        } else {
+                            isPlayer2ShowingGameOverMessage = true;
+                            player2GameOverMessageStartTime = now;
+                            playSound('gameOverSound', false, 0.4);
+                        }
                     } else {
                         isPlayer2Invincible = true; player2InvincibilityEndTime = now + INVINCIBILITY_DURATION_MS;
                         isPlayer2WaitingForRespawn = true; player2RespawnTime = now + RESPAWN_DELAY_MS;
@@ -4302,7 +4701,7 @@ function triggerGridFiring() {
         // --- NIEUW V10: Simultaneous Assault regels ---
         if (typeof isSimultaneousAssaultWave !== 'undefined' && isSimultaneousAssaultWave) {
             if (!isAllEnemiesInGridForSimultaneous()) return; // geen kogels tijdens invliegen
-            if (enemies.some(en => en && en.type === ENEMY3_TYPE && (en.isCapturing || en.captureStartTime > 0))) return; // respect boss capture
+            if (enemies.some(en => en && en.type === ENEMY3_TYPE && ['capturing','preparing_capture','diving_to_capture_position','showing_capture_message'].includes(en.state))) return; // respect boss capture - FIX
         }
 
         const effectiveFireInterval = scaleValue(level, BASE_GRID_FIRE_INTERVAL, MIN_GRID_FIRE_INTERVAL);
@@ -4580,15 +4979,37 @@ function runSingleGameUpdate(timestamp) {
                 if (player1Lives <= 0 && player2Lives <= 0 && gameOverSequenceStartTime === 0) {
                     triggerFinalGameOverSequence();
                 }
+                // FIX: als beide dood, niet nog moveEntities doen met aanvallende vijanden
+                if (player1Lives <= 0 && player2Lives <= 0) {
+                    // direct stoppen met bewegen, render final
+                    if (gameOverSequenceStartTime > 0) {
+                        renderGame();
+                        return;
+                    }
+                }
                 if (isManualControl || isCoopAIDemoActive || (isPlayerTwoAI && selectedOnePlayerGameVariant === '1P_VS_AI_COOP')) handlePlayerInput();
-                if (typeof moveEntities === 'function') moveEntities();
+                // FIX: moveEntities alleen als er nog een speler leeft
+                if (player1Lives > 0 || player2Lives > 0) {
+                    if (typeof moveEntities === 'function') moveEntities();
+                }
                 renderGame();
                 if (gameOverSequenceStartTime > 0 || player1Lives > 0 || player2Lives > 0) {
                     return;
                 }
             } else if (isPlayer1ShowingGameOverMessage || isPlayer2ShowingGameOverMessage) {
+                // FIX: als beide spelers al dood zijn tijdens message, direct final triggeren
+                if (player1Lives <= 0 && player2Lives <= 0) {
+                    isPlayer1ShowingGameOverMessage = false;
+                    isPlayer2ShowingGameOverMessage = false;
+                    if (gameOverSequenceStartTime === 0) triggerFinalGameOverSequence();
+                    renderGame();
+                    return;
+                }
                 if (isManualControl || isCoopAIDemoActive || (isPlayerTwoAI && selectedOnePlayerGameVariant === '1P_VS_AI_COOP')) handlePlayerInput();
-                if (typeof moveEntities === 'function') moveEntities();
+                if (typeof moveEntities === 'function') {
+                    // FIX: alleen move als er nog iemand leeft
+                    if (player1Lives > 0 || player2Lives > 0) moveEntities();
+                }
                 renderGame();
                 return;
             }
@@ -5098,6 +5519,7 @@ function runSingleGameUpdate(timestamp) {
                         stopSound('entranceSound');
                         enemiesSpawnedThisWave = 0; totalEnemiesScheduledForWave = 0;
                         enemySpawnTimeouts.forEach(clearTimeout); enemySpawnTimeouts = [];
+                        if (typeof clearCSController === 'function') clearCSController();
                         gridJustCompleted = true;
 
                         if (!isChallengingStage && !isFullGridWave) {
@@ -5120,7 +5542,7 @@ function runSingleGameUpdate(timestamp) {
             if (!isWaveTransitioning && activePlayersForLogic && !inNormalIntro && !isShowingCaptureMessage && !isEntrancePhaseActive) {
                 let allEnemiesGone = enemies.length === 0; let noFallingShips = fallingShips.length === 0; let waveConsideredComplete = false;
                 if (isBossStage) { waveConsideredComplete = false; } // Boss handled separately
-                else if (isChallengingStage) { if (allEnemiesGone && !isEntrancePhaseActive) waveConsideredComplete = true; }
+                else if (isChallengingStage) { if (allEnemiesGone && !isEntrancePhaseActive) { waveConsideredComplete = true; if (typeof clearCSController === 'function') clearCSController(); } }
                 else { if (allEnemiesGone && !isEntrancePhaseActive && noFallingShips) waveConsideredComplete = true; }
 
                 if (waveConsideredComplete) {
