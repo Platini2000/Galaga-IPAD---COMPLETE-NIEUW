@@ -2782,12 +2782,20 @@ function aiControl() {
                         if (dy < 0 && enemy.state !== 'attacking' && enemy.state !== 'diving_to_capture_position' && enemy.state !== 'following_bezier_path') continue;
                         currentScore = (canvasHeight - enemy.y) * 2 - Math.abs(dx) * 3 - dy;
                         if (enemy.state === 'attacking' || enemy.state === 'diving_to_capture_position') currentScore += 3000;
-                        if (enemy.type === ENEMY3_TYPE && !enemy.isDamaged && !enemy.hasCapturedShip) currentScore -= 1500;
-                        if (enemy.type === ENEMY3_TYPE && enemy.isDamaged && !enemy.hasCapturedShip) currentScore += 1000;
+                        // BOSS STAGE ENEMY3 FIX: in boss stages met enemy3 kleine vijanden geen respect tonen, direct aanvallen
+                        const isBossEnemy3ModeForScore = (typeof isBossStage !== 'undefined' && isBossStage && typeof bossStageVariant !== 'undefined' && bossStageVariant === 'enemy3');
+                        if (isBossEnemy3ModeForScore && enemy.type === ENEMY3_TYPE && !enemy.hasCapturedShip) {
+                            // Geen penalty, juist bonus in grid zodat ze direct beschoten worden
+                            currentScore += 2500;
+                            if (enemy.state === 'in_grid') currentScore += 1500;
+                        } else {
+                            if (enemy.type === ENEMY3_TYPE && !enemy.isDamaged && !enemy.hasCapturedShip) currentScore -= 1500;
+                            if (enemy.type === ENEMY3_TYPE && enemy.isDamaged && !enemy.hasCapturedShip) currentScore += 1000;
+                        }
                         if (enemy.type === ENEMY3_TYPE && enemy.hasCapturedShip) currentScore += 5000;
                         if (currentScore > bestTargetScore) { bestTargetScore = currentScore; targetEnemyForAI = enemy; }
                     }
-                    if (targetEnemyForAI) { const enemyMidX = targetEnemyForAI.x + targetEnemyForAI.width / 2; desiredTargetX = enemyMidX - (effectiveShipWidth / 2); const ALIGNMENT_MULTIPLIER = 1.8; let alignmentThresholdForShooting = (targetEnemyForAI.state === 'in_grid' || targetEnemyForAI.state === 'preparing_capture' ? effectiveShipWidth * (GRID_SHOOT_ALIGNMENT_FACTOR * ALIGNMENT_MULTIPLIER) : effectiveShipWidth * (FINAL_SHOOT_ALIGNMENT_THRESHOLD * ALIGNMENT_MULTIPLIER)); if (Math.abs(shipCenterX - enemyMidX) < alignmentThresholdForShooting) { shouldTryShoot_AI = true; } }
+                    if (targetEnemyForAI) { const enemyMidX = targetEnemyForAI.x + targetEnemyForAI.width / 2; desiredTargetX = enemyMidX - (effectiveShipWidth / 2); const ALIGNMENT_MULTIPLIER = 1.8; const isBossEnemy3SingleAlign = (typeof isBossStage !== 'undefined' && isBossStage && typeof bossStageVariant !== 'undefined' && bossStageVariant === 'enemy3' && targetEnemyForAI.type === ENEMY3_TYPE && !targetEnemyForAI.hasCapturedShip); let alignmentThresholdForShooting = (targetEnemyForAI.state === 'in_grid' || targetEnemyForAI.state === 'preparing_capture' ? effectiveShipWidth * (GRID_SHOOT_ALIGNMENT_FACTOR * ALIGNMENT_MULTIPLIER) : effectiveShipWidth * (FINAL_SHOOT_ALIGNMENT_THRESHOLD * ALIGNMENT_MULTIPLIER)); if (isBossEnemy3SingleAlign) { alignmentThresholdForShooting = effectiveShipWidth * 2.5; shouldTryShoot_AI = true; } else if (Math.abs(shipCenterX - enemyMidX) < alignmentThresholdForShooting) { shouldTryShoot_AI = true; } }
                     else { desiredTargetX = targetCenterShipX; shouldTryShoot_AI = false; }
                 }
             }
@@ -2815,17 +2823,24 @@ function aiControl() {
                     canActuallyShootTarget = false;
                 }
                 if (targetEnemyForAI) {
-                    if (targetEnemyForAI.type === ENEMY3_TYPE && !targetEnemyForAI.hasCapturedShip) {
-                        const isProblematicStateForBaldBoss = isEntrancePhaseActive || ['in_grid', 'preparing_capture', 'diving_to_capture_position', 'capturing'].includes(targetEnemyForAI.state);
-                        const isThisAIsCaptureTarget = (targetEnemyForAI.id === capturingBossId && aiIsCurrentlyTargetingCaptureBoss);
-                        if (isProblematicStateForBaldBoss && !isThisAIsCaptureTarget && !isTargetingThreeSecondRuleBoss) {
+                    const isBossEnemy3ModeForShoot = (typeof isBossStage !== 'undefined' && isBossStage && typeof bossStageVariant !== 'undefined' && bossStageVariant === 'enemy3');
+                    // In BOSS STAGE enemy3: altijd vuren op kleine enemy3 in grid, geen respect, geen capture
+                    if (isBossEnemy3ModeForShoot && targetEnemyForAI.type === ENEMY3_TYPE && !targetEnemyForAI.hasCapturedShip) {
+                        // Alleen dodgen en kogels ontwijken blijft actief, vuren mag altijd
+                        canActuallyShootTarget = true;
+                    } else {
+                        if (targetEnemyForAI.type === ENEMY3_TYPE && !targetEnemyForAI.hasCapturedShip) {
+                            const isProblematicStateForBaldBoss = isEntrancePhaseActive || ['in_grid', 'preparing_capture', 'diving_to_capture_position', 'capturing'].includes(targetEnemyForAI.state);
+                            const isThisAIsCaptureTarget = (targetEnemyForAI.id === capturingBossId && aiIsCurrentlyTargetingCaptureBoss);
+                            if (isProblematicStateForBaldBoss && !isThisAIsCaptureTarget && !isTargetingThreeSecondRuleBoss) {
+                                canActuallyShootTarget = false;
+                            }
+                        }
+                        if (targetEnemyForAI.type === ENEMY3_TYPE &&
+                            targetEnemyForAI.captureDiveInitiationTime && targetEnemyForAI.captureDiveInitiationTime > 0 &&
+                            (now - targetEnemyForAI.captureDiveInitiationTime < AI_CAPTURE_DIVE_SHOOT_STOP_DURATION_MS)) {
                             canActuallyShootTarget = false;
                         }
-                    }
-                    if (targetEnemyForAI.type === ENEMY3_TYPE &&
-                        targetEnemyForAI.captureDiveInitiationTime && targetEnemyForAI.captureDiveInitiationTime > 0 &&
-                        (now - targetEnemyForAI.captureDiveInitiationTime < AI_CAPTURE_DIVE_SHOOT_STOP_DURATION_MS)) {
-                        canActuallyShootTarget = false;
                     }
                 } else {
                     canActuallyShootTarget = false;
@@ -3203,16 +3218,32 @@ function calculateAIDesiredState(currentShip, currentSmoothedX, isShipDual, game
                     let laneBonus=0; if(isThisACoopAIMode&&!(isCoopAIDemoActive&&aiPlayerActivelySeekingCaptureById&&aiPlayerActivelySeekingCaptureById!==shipIdentifier)){if(shipIdentifier==='p1'&&eCX<gameCanvas.width/2)laneBonus=5000;else if((shipIdentifier==='ai_p2'||shipIdentifier==='player2')&&eCX>=gameCanvas.width/2)laneBonus=5000;}
                     score=laneBonus+(canvasHeight-enemy.y)*2-Math.abs(dX)*3-dY;
                     if(enemy.state==='attacking'||enemy.state==='diving_to_capture_position')score+=3000;
-                    if(enemy.type===ENEMY3_TYPE&&!enemy.isDamaged&&!enemy.hasCapturedShip)score-=1500;
-                    if(enemy.type===ENEMY3_TYPE&&enemy.isDamaged&&!enemy.hasCapturedShip)score+=1000;
+                    const isBossEnemy3ModeForCoopScore = (typeof isBossStage !== 'undefined' && isBossStage && typeof bossStageVariant !== 'undefined' && bossStageVariant === 'enemy3');
+                    if(isBossEnemy3ModeForCoopScore && enemy.type===ENEMY3_TYPE && !enemy.hasCapturedShip){
+                        score+=2500;
+                        if(enemy.state==='in_grid') score+=1500;
+                    } else {
+                        if(enemy.type===ENEMY3_TYPE&&!enemy.isDamaged&&!enemy.hasCapturedShip)score-=1500;
+                        if(enemy.type===ENEMY3_TYPE&&enemy.isDamaged&&!enemy.hasCapturedShip)score+=1000;
+                    }
                     if(enemy.type===ENEMY3_TYPE&&enemy.hasCapturedShip){if(!isLowLifeNeutral)score+=5000;else score-=10000;}
                     if(score>bestScore){bestScore=score;targetEnemyForAI=enemy;}
                 }
                 if(targetEnemyForAI){
                     desiredTargetX=(targetEnemyForAI.x+targetEnemyForAI.width/2)-effectiveShipWidth/2;
+                    const isBossEnemy3Align = (typeof isBossStage !== 'undefined' && isBossStage && typeof bossStageVariant !== 'undefined' && bossStageVariant === 'enemy3' && targetEnemyForAI.type===ENEMY3_TYPE && !targetEnemyForAI.hasCapturedShip);
                     const COOP_AI_SHOOT_ALIGNMENT_THRESHOLD_FACTOR = (isPlayerTwoAI && selectedOnePlayerGameVariant === '1P_VS_AI_COOP') ? 1.2 : 0.9;
-                    if(Math.abs(shipCenterX-(targetEnemyForAI.x+targetEnemyForAI.width/2)) < effectiveShipWidth * COOP_AI_SHOOT_ALIGNMENT_THRESHOLD_FACTOR) {
-                         shouldTryShoot_AI_Calc = true;
+                    if(isBossEnemy3Align){
+                        // Direct vuren, veel ruimere alignment in boss enemy3
+                        if(Math.abs(shipCenterX-(targetEnemyForAI.x+targetEnemyForAI.width/2)) < effectiveShipWidth * 2.5) {
+                             shouldTryShoot_AI_Calc = true;
+                        } else {
+                             shouldTryShoot_AI_Calc = true; // zelfs zonder perfecte uitlijning toch proberen
+                        }
+                    } else {
+                        if(Math.abs(shipCenterX-(targetEnemyForAI.x+targetEnemyForAI.width/2)) < effectiveShipWidth * COOP_AI_SHOOT_ALIGNMENT_THRESHOLD_FACTOR) {
+                             shouldTryShoot_AI_Calc = true;
+                        }
                     }
                 } else {desiredTargetX=targetCenterShipX;shouldTryShoot_AI_Calc=false;}
             }
@@ -3227,16 +3258,23 @@ function calculateAIDesiredState(currentShip, currentSmoothedX, isShipDual, game
         }
 
         if(targetEnemyForAI){
-            if(targetEnemyForAI.id===capturingBossId){
-                const bossMidCap=(targetEnemyForAI.state==='preparing_capture'||targetEnemyForAI.state==='diving_to_capture_position'||targetEnemyForAI.state==='capturing');
-                if(bossMidCap) shouldTryShoot_AI_Calc=false;
-            }
-            if(targetEnemyForAI.type===ENEMY3_TYPE&&!targetEnemyForAI.hasCapturedShip){
-                const probStateBald=['in_grid','preparing_capture','diving_to_capture_position','capturing'].includes(targetEnemyForAI.state)||isEntrancePhaseActive;
-                const isThisAIsCaptureTarget = (activeCapturingBoss && targetEnemyForAI.id === activeCapturingBoss.id && aiPlayerActivelySeekingCaptureById === shipIdentifier);
+            const isBossEnemy3ModeForCoopShoot = (typeof isBossStage !== 'undefined' && isBossStage && typeof bossStageVariant !== 'undefined' && bossStageVariant === 'enemy3');
+            if(isBossEnemy3ModeForCoopShoot && targetEnemyForAI.type===ENEMY3_TYPE && !targetEnemyForAI.hasCapturedShip){
+                // BOSS STAGE enemy3: altijd vuren op kleine vijanden in grid, geen respect
+                // Alleen dodgen en kogels ontwijken blijft, vuren mag altijd
+                shouldTryShoot_AI_Calc = true;
+            } else {
+                if(targetEnemyForAI.id===capturingBossId){
+                    const bossMidCap=(targetEnemyForAI.state==='preparing_capture'||targetEnemyForAI.state==='diving_to_capture_position'||targetEnemyForAI.state==='capturing');
+                    if(bossMidCap) shouldTryShoot_AI_Calc=false;
+                }
+                if(targetEnemyForAI.type===ENEMY3_TYPE&&!targetEnemyForAI.hasCapturedShip){
+                    const probStateBald=['in_grid','preparing_capture','diving_to_capture_position','capturing'].includes(targetEnemyForAI.state)||isEntrancePhaseActive;
+                    const isThisAIsCaptureTarget = (activeCapturingBoss && targetEnemyForAI.id === activeCapturingBoss.id && aiPlayerActivelySeekingCaptureById === shipIdentifier);
 
-                if(probStateBald && !isTargetingThreeSecondRuleBoss && !isTargetingPartnerRescue && !isThisAIsCaptureTarget) {
-                    shouldTryShoot_AI_Calc=false;
+                    if(probStateBald && !isTargetingThreeSecondRuleBoss && !isTargetingPartnerRescue && !isThisAIsCaptureTarget) {
+                        shouldTryShoot_AI_Calc=false;
+                    }
                 }
             }
             if(isShipDual&&isThisACoopAIMode&&targetEnemyForAI.type===ENEMY3_TYPE&&!targetEnemyForAI.hasCapturedShip){
