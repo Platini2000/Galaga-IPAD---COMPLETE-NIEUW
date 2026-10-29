@@ -1075,7 +1075,19 @@ function updateBossStageLogic(now) {
                             const diffSpeed = (typeof getBossStageDifficulty === 'function' ? getBossStageDifficulty(bossStageVariant) : {bossSpeedFactor:1.0});
                             bossStageBoss.speed = BASE_ENEMY_ATTACK_SPEED * diffSpeed.bossSpeedFactor;
                             bossStageBoss.canFireThisDive = true;
-                            playSound('bossGalagaDiveSound', false, 0.3);
+                            // FIX: Alleen voor boss stages (grotere bosses): geen BOSS duik-geluid meer
+                            // Maar wel Achtergrond-grid.mp3 (gridBackgroundSound) iets harder afspelen bij aanval
+                            try {
+                                // Stop eventuele lopende grid loop zodat we 1x harder kunnen afspelen
+                                if (typeof stopSound === 'function') {
+                                    stopSound('gridBackgroundSound');
+                                }
+                                if (typeof isGridSoundPlaying !== 'undefined') {
+                                    isGridSoundPlaying = false;
+                                }
+                                // Speel Achtergrond-grid.mp3 1x af, iets harder (0.45 vs normale 0.1 background)
+                                playSound('gridBackgroundSound', false, 0.45);
+                            } catch(e) { console.warn('Boss attack sound fix failed', e); }
                         }
                     } catch(e){ console.error("Boss attack gen failed", e); }
                 }
@@ -5271,7 +5283,11 @@ function runSingleGameUpdate(timestamp) {
                                                      setTimeout(() => {
                                                          if (isPaused) return; const currentEnemyStateDelayed = enemies.find(e => e?.id === enemyToAttack.id);
                                                          if (currentEnemyStateDelayed && currentEnemyStateDelayed.state === 'preparing_attack') {
-                                                             try { const effectiveBaseSpeed = scaleValue(level, BASE_ENEMY_ATTACK_SPEED, MAX_ENEMY_ATTACK_SPEED); let speedFactor = 1.0; if (currentEnemyStateDelayed.type === ENEMY1_TYPE) speedFactor = ENEMY1_DIVE_SPEED_FACTOR; else if (currentEnemyStateDelayed.type === ENEMY2_TYPE) speedFactor = ENEMY2_DIVE_SPEED_FACTOR; else if (currentEnemyStateDelayed.type === ENEMY3_TYPE) speedFactor = ENEMY3_ATTACK_SPEED_FACTOR; if(enemyToAttack.type === ENEMY3_TYPE) playSound('bossGalagaDiveSound', false, 0.2); else playSound('butterflyDiveSound', false, 0.2); currentEnemyStateDelayed.state = 'attacking'; currentEnemyStateDelayed.attackPathSegments = sharedPath; currentEnemyStateDelayed.attackPathSegmentIndex = 0; currentEnemyStateDelayed.attackPathT = 0; currentEnemyStateDelayed.speed = effectiveBaseSpeed * speedFactor; currentEnemyStateDelayed.lastFiredTime = 0; currentEnemyStateDelayed.canFireThisDive = true; } catch (attackStartError) { console.error(`Error starting attack for ${enemyToAttack.id}:`, attackStartError); }
+                                                             try { const effectiveBaseSpeed = scaleValue(level, BASE_ENEMY_ATTACK_SPEED, MAX_ENEMY_ATTACK_SPEED); let speedFactor = 1.0; if (currentEnemyStateDelayed.type === ENEMY1_TYPE) speedFactor = ENEMY1_DIVE_SPEED_FACTOR; else if (currentEnemyStateDelayed.type === ENEMY2_TYPE) speedFactor = ENEMY2_DIVE_SPEED_FACTOR; else if (currentEnemyStateDelayed.type === ENEMY3_TYPE) speedFactor = ENEMY3_ATTACK_SPEED_FACTOR; if (typeof isBossStage !== 'undefined' && isBossStage) {
+                        try { stopSound('gridBackgroundSound'); if(typeof isGridSoundPlaying !== 'undefined') isGridSoundPlaying = false; playSound('gridBackgroundSound', false, 0.45); } catch(e){}
+                    } else {
+                        if(enemyToAttack.type === ENEMY3_TYPE) playSound('bossGalagaDiveSound', false, 0.2); else playSound('butterflyDiveSound', false, 0.2);
+                    } currentEnemyStateDelayed.state = 'attacking'; currentEnemyStateDelayed.attackPathSegments = sharedPath; currentEnemyStateDelayed.attackPathSegmentIndex = 0; currentEnemyStateDelayed.attackPathT = 0; currentEnemyStateDelayed.speed = effectiveBaseSpeed * speedFactor; currentEnemyStateDelayed.lastFiredTime = 0; currentEnemyStateDelayed.canFireThisDive = true; } catch (attackStartError) { console.error(`Error starting attack for ${enemyToAttack.id}:`, attackStartError); }
                                                          }
                                                      }, delayIndex * GROUP_DETACH_DELAY_MS);
                                                  }
