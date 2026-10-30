@@ -5,7 +5,7 @@
 const MENU_LOGO_APPROX_HEIGHT = 85;
 const MENU_SUBTITLE_TEXT = "Written By Platini2000(c)";
 const MENU_SUBTITLE_FONT = "18px 'Arial Black', Gadget, sans-serif"; // Groter
-const MENU_SUBTITLE_COLOR = "red"; // Aangepaste kleur
+const MENU_SUBTITLE_COLOR = "rgba(144, 238, 144, 0.65)"; // was red, nu transparanter licht groen voor Platini
 const MENU_BUTTON_FONT = "22px 'Arial Black', Gadget, sans-serif";
 const MENU_BUTTON_COLOR = "white";
 const MENU_BUTTON_COLOR_HOVER = 'rgba(0, 191, 255, 0.9)'; // Deep sky blue hover
@@ -64,7 +64,7 @@ const RESULTS_LINE_V_SPACING_SINGLE = 35;
 const RESULTS_LINE_V_SPACING_DOUBLE = 90;
 const RESULTS_START_Y = 175;
 const RESULTS_FOOTER_FONT = MENU_SUBTITLE_FONT;
-const RESULTS_FOOTER_COLOR = RESULTS_HEADER_COLOR;
+const RESULTS_FOOTER_COLOR = "rgba(144, 238, 144, 0.65)"; // was red, nu transparanter licht groen voor Platini
 
 // --- Verticale Offset voor CS berichten ---
 const CS_MESSAGE_VERTICAL_OFFSET = 30;
@@ -967,7 +967,7 @@ function renderGame() {
             const rotateFont = "bold 24px 'Press Start 2P'";
             const rotateColor = "rgba(0, 191, 255, 0.9)";
             const platiniFont = `normal ${cleanFontBaseSize - 4}px Arial, sans-serif`;
-            const platiniColor = "red";
+            const platiniColor = "rgba(144, 238, 144, 0.65)"; // was red, nu transparanter licht groen
 
             const messageStructure = [
                 { text: "Disclaimer", font: disclaimerTitleFont, color: disclaimerTitleColor, skipAfter: 0.75 },
