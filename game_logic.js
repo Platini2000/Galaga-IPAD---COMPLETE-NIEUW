@@ -591,7 +591,7 @@ window.isAllEnemiesInGridForSimultaneous = isAllEnemiesInGridForSimultaneous;
 
 
 function getBossStageVariantForLevel(lvl) {
-    // DEFINITIEF: 6 = bees (500 hits / 10k), 12 = enemy2 (1000 hits / 20k), 18 = enemy3 (1500 hits / 30k), herhalend elke 18
+    // DEFINITIEF: 6 = bees (150 hits / 10k), 12 = enemy2 (150 hits / 20k), 18 = enemy3 (150 hits / 30k), herhalend elke 18 - ALLE 150
     if (lvl === 6) return 'bees';
     if (lvl === 12) return 'enemy2';
     if (lvl === 18) return 'enemy3';
@@ -611,7 +611,7 @@ function getBossStageBonusForVariant(variant) {
 window.getBossStageBonusForVariant = getBossStageBonusForVariant;
 
 function getBossStageMaxHitsForVariant(variant) {
-    return 500;
+    return 150; // ALLE eindbazen 150 hits
 }
 window.getBossStageMaxHitsForVariant = getBossStageMaxHitsForVariant;
 
@@ -827,7 +827,7 @@ function startBossStageWave() {
         bossStageVariant = 'bees';
         bossStageEnemyType = ENEMY1_TYPE;
     }
-    // Max hits per variant: 500 / 1000 / 1500 - ALTIJD VOL BIJ START
+    // Max hits per variant: 150 / 150 / 150 - ALTIJD VOL BIJ START - 150 HITS
     let bossMaxHitsForThisStage = BOSS_STAGE_MAX_HITS;
     if (typeof getBossStageMaxHitsForVariant === 'function') {
         bossMaxHitsForThisStage = getBossStageMaxHitsForVariant(bossStageVariant);
@@ -1309,12 +1309,12 @@ function handleBossStageBossHit(shootingPlayerId = null) {
         }
     } catch(e) { console.error("Boss hit score error", e); }
     
-    // --- KLEURWISSEL enemy3 eindbaas: blauw na 250 hits van 500 ---
+    // --- KLEURWISSEL enemy3 eindbaas: blauw na 75 hits van 150 (helft) ---
     if (typeof bossStageVariant !== 'undefined' && bossStageVariant === 'enemy3') {
-        const halfHealth = (typeof bossStageBossMaxHealth !== 'undefined' ? bossStageBossMaxHealth : 500) / 2;
+        const halfHealth = (typeof bossStageBossMaxHealth !== 'undefined' ? bossStageBossMaxHealth : 150) / 2;
         if (bossStageBossHealth <= halfHealth) {
             if (!bossStageBoss.isBluePhase) {
-                console.log("[BOSS] enemy3 bereikt 250 hits - wordt BLAUW! Health:", bossStageBossHealth);
+                console.log("[BOSS] enemy3 bereikt 75 hits - wordt BLAUW! Health:", bossStageBossHealth);
             }
             bossStageBoss.isBluePhase = true;
         }
@@ -1560,9 +1560,11 @@ function scheduleEntranceFlightWave() {
 let csGroups = [];
 let csCurrentGroupIdx = 0;
 let csControllerIntervalId = null;
+let csNextGroupPendingTimeoutId = null;
 
 function clearCSController() {
     if (csControllerIntervalId) { clearInterval(csControllerIntervalId); csControllerIntervalId = null; }
+    if (csNextGroupPendingTimeoutId) { clearTimeout(csNextGroupPendingTimeoutId); csNextGroupPendingTimeoutId = null; }
 }
 
 function spawnCSGroupInternal(groupSquadronIndices, effectiveBaseSpeedMultiplier) {
@@ -1636,13 +1638,19 @@ function startCSController(effectiveBaseSpeedMultiplier) {
         let gameCanContinue = false;
         if (isTwoPlayerMode && selectedGameMode === 'coop') { gameCanContinue = player1Lives > 0 || player2Lives > 0; } else { gameCanContinue = playerLives > 0; }
         if (!gameCanContinue) return;
-        // Zodra er geen vijanden meer zijn (weggeschoten of uit beeld), volgende wave
+        // Zodra er geen vijanden meer zijn (weggeschoten of uit beeld), volgende wave na 1 sec pauze
         if (enemies.length === 0) {
-            if (csCurrentGroupIdx < csGroups.length) {
-                console.log(`[CS] Wave cleared -> spawning next group ${csCurrentGroupIdx} (${csGroups[csCurrentGroupIdx].map(i=>currentWaveDefinition[i].pathId).join('+')})`);
-                spawnCSGroupInternal(csGroups[csCurrentGroupIdx], effectiveBaseSpeedMultiplier);
-                csCurrentGroupIdx++;
-            } else {
+            if (csCurrentGroupIdx < csGroups.length && !csNextGroupPendingTimeoutId) {
+                console.log(`[CS] Wave cleared -> next group ${csCurrentGroupIdx} in 1 sec (${csGroups[csCurrentGroupIdx].map(i=>currentWaveDefinition[i].pathId).join('+')})`);
+                csNextGroupPendingTimeoutId = setTimeout(() => {
+                    if (isChallengingStage && isEntrancePhaseActive && !isPaused && isInGameState && !isWaveTransitioning) {
+                        spawnCSGroupInternal(csGroups[csCurrentGroupIdx], effectiveBaseSpeedMultiplier);
+                        csCurrentGroupIdx++;
+                    }
+                    csNextGroupPendingTimeoutId = null;
+                }, 1000);
+                if (typeof enemySpawnTimeouts !== 'undefined' && csNextGroupPendingTimeoutId) enemySpawnTimeouts.push(csNextGroupPendingTimeoutId);
+            } else if (csCurrentGroupIdx >= csGroups.length) {
                 // Alle groepen gespawned en leeg -> laat bestaande allSpawnsProcessed logica afhandelen
                 // Maar we zetten hier alvast entrance op false als alles gespawned is
                 if (enemiesSpawnedThisWave >= totalEnemiesScheduledForWave) {
