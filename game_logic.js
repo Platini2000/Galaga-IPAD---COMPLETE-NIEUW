@@ -1438,6 +1438,29 @@ const createBulletSimple = (targetEnemy, overrideStartPos = null) => {
         return false;
     }
 
+    // --- FIX STAGE 4 ENTRANCE: absoluut geen kogels tijdens entree ---
+    if (typeof isEntrancePhaseActive !== 'undefined' && isEntrancePhaseActive) {
+        if (typeof isSimultaneousAssaultWave !== 'undefined' && isSimultaneousAssaultWave) {
+            // Tijdens simultaneous assault pas vuren als ALLE vijanden in grid staan
+            if (typeof isAllEnemiesInGridForSimultaneous === 'function' && !isAllEnemiesInGridForSimultaneous()) {
+                return false;
+            }
+        } else {
+            // Normale entrance flight: helemaal geen kogels tijdens entree
+            return false;
+        }
+    }
+    // Individuele enemy is nog aan het invliegen -> blokkeren
+    if (targetEnemy.isEntering || targetEnemy.state === 'following_entrance_path' || targetEnemy.state === 'moving_to_grid') {
+        return false;
+    }
+    // Tijdens simultaneous assault ook blokkeren als deze specifieke enemy nog entering is
+    if (typeof isSimultaneousAssaultWave !== 'undefined' && isSimultaneousAssaultWave) {
+        if (targetEnemy.isEntering || targetEnemy.state === 'following_entrance_path' || targetEnemy.state === 'moving_to_grid') {
+            return false;
+        }
+    }
+
     const effectiveBulletSpeed = scaleValue(level, BASE_ENEMY_BULLET_SPEED, MAX_ENEMY_BULLET_SPEED);
     const startX = overrideStartPos ? overrideStartPos.x : targetEnemy.x + targetEnemy.width / 2;
     const startY = overrideStartPos ? overrideStartPos.y : targetEnemy.y + targetEnemy.height / 2;
@@ -1781,10 +1804,32 @@ function fireEnemyBurst(enemyId, requiredState, initialDelayMs) {
  * Vuur een burst van een VAST aantal vijandelijke kogels af.
  */
 function fireFixedEnemyBurst(enemyId, requiredState, initialDelayMs, fixedBulletCount) {
+    // FIX STAGE 4: nooit vuren tijdens entree / simultaneous assault entree
+    if (typeof isEntrancePhaseActive !== 'undefined' && isEntrancePhaseActive) {
+        if (typeof isSimultaneousAssaultWave !== 'undefined' && isSimultaneousAssaultWave) {
+            if (typeof isAllEnemiesInGridForSimultaneous === 'function' && !isAllEnemiesInGridForSimultaneous()) return;
+        } else {
+            return;
+        }
+    }
+    if (typeof isSimultaneousAssaultWave !== 'undefined' && isSimultaneousAssaultWave) {
+        if (typeof isAllEnemiesInGridForSimultaneous === 'function' && !isAllEnemiesInGridForSimultaneous()) return;
+    }
     let fireFixedCanContinue = false; if (isTwoPlayerMode && selectedGameMode === 'coop') { fireFixedCanContinue = (player1Lives > 0 && !isPlayer1ShipCaptured) || (player2Lives > 0 && !isPlayer2ShipCaptured); } else { fireFixedCanContinue = playerLives > 0 && !isShipCaptured; }
     if (!enemyId || isPaused || !isInGameState || !fireFixedCanContinue || isChallengingStage || isWaveTransitioning || fixedBulletCount <= 0) { return; } for (let i = 0; i < fixedBulletCount; i++) { const totalDelay = initialDelayMs + i * ENTRANCE_FIRE_BURST_DELAY_MS; const burstTimeoutId = setTimeout(() => { try { const fireTimeoutIdx = enemySpawnTimeouts.indexOf(burstTimeoutId); if (fireTimeoutIdx > -1) { enemySpawnTimeouts.splice(fireTimeoutIdx, 1); }
     let currentFixedFireCanContinue = false; if (isTwoPlayerMode && selectedGameMode === 'coop') { currentFixedFireCanContinue = (player1Lives > 0 && !isPlayer1ShipCaptured) || (player2Lives > 0 && !isPlayer2ShipCaptured); } else { currentFixedFireCanContinue = playerLives > 0 && !isShipCaptured; }
-    if (isPaused || !isInGameState || !currentFixedFireCanContinue || isChallengingStage || isWaveTransitioning) { return; } const currentEnemy = enemies.find(e => e && e.id === enemyId); if (currentEnemy) { if (createBulletSimple(currentEnemy)) { if (i === 0) { playSound('enemyShootSound', false, 0.4); } currentEnemy.lastFiredTime = Date.now(); } } else { } } catch (fireError) { console.error(`Error during FIXED enemy burst firing (bullet ${i + 1}/${fixedBulletCount}) for ${enemyId}:`, fireError); } }, totalDelay); enemySpawnTimeouts.push(burstTimeoutId); } }
+    if (isPaused || !isInGameState || !currentFixedFireCanContinue || isChallengingStage || isWaveTransitioning) { return; }
+    if (typeof isEntrancePhaseActive !== 'undefined' && isEntrancePhaseActive) {
+        if (typeof isSimultaneousAssaultWave !== 'undefined' && isSimultaneousAssaultWave) {
+            if (typeof isAllEnemiesInGridForSimultaneous === 'function' && !isAllEnemiesInGridForSimultaneous()) return;
+        } else {
+            return;
+        }
+    }
+    const currentEnemy = enemies.find(e => e && e.id === enemyId);
+    if (currentEnemy) {
+        if (currentEnemy.isEntering || currentEnemy.state === 'following_entrance_path' || currentEnemy.state === 'moving_to_grid') return;
+        if (createBulletSimple(currentEnemy)) { if (i === 0) { playSound('enemyShootSound', false, 0.4); } currentEnemy.lastFiredTime = Date.now(); } } else { } } catch (fireError) { console.error(`Error during FIXED enemy burst firing (bullet ${i + 1}/${fixedBulletCount}) for ${enemyId}:`, fireError); } }, totalDelay); enemySpawnTimeouts.push(burstTimeoutId); } }
 
 
 /**
