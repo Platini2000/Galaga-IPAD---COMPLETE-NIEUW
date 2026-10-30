@@ -287,8 +287,8 @@ function resetGameInternal() {
         } else if (typeof window !== 'undefined' && typeof window.START_LEVEL !== 'undefined') {
             configuredLevel = parseInt(window.START_LEVEL,10) || 1;
         }
-    } catch(e) { configuredLevel = 1; }
-    if (!isFinite(configuredLevel) || configuredLevel < 1) configuredLevel = 1;
+    } catch(e) { configuredLevel = 0; }
+    if (!isFinite(configuredLevel) || configuredLevel < 0) configuredLevel = 0;
 
     score = 0;
     level = configuredLevel;
@@ -546,9 +546,29 @@ function resetWaveInternal() {
         isShowingDemoText = true;
     }
 
-    if (selectedGameMode === 'coop') { // FIX LEVEL KIEZER was level===1
-        isShowingIntro = false; 
-        introStep = 2; 
+    // DEFINITIEVE FIX - NOOIT intro skippen, rustpauze altijd
+    let cfgStart = 1;
+    try {
+        if (typeof window !== 'undefined' && typeof window.getConfiguredStartLevel === 'function') {
+            cfgStart = window.getConfiguredStartLevel();
+        }
+    } catch(e) { cfgStart = 1; }
+    if (!isFinite(cfgStart) || cfgStart < 1) cfgStart = 1;
+    const isFirstWave = (level === cfgStart);
+
+    if (selectedGameMode === 'coop' && isFirstWave) {
+        // EERSTE keer: AI PLAYERS READY + STAGE
+        isShowingCoopPlayersReady = true;
+        coopPlayersReadyStartTime = Date.now();
+        isShowingIntro = false;
+        introStep = 0;
+    } else if (selectedGameMode === 'coop') {
+        // VOLGENDE stages: alleen STAGE X / CHALLENGING / BOSS, met pauze
+        if (isBossStage) introStep = 2;
+        else if (isChallengingStage) introStep = 3;
+        else introStep = 2;
+        isShowingIntro = true;
+        if (!isManualControl) isShowingDemoText = true;
     } else if ((isTwoPlayerMode && selectedGameMode === 'normal') ||
                (isPlayerTwoAI && selectedOnePlayerGameVariant === '1P_VS_AI_NORMAL')) {
         introStep = 1;
@@ -562,7 +582,7 @@ function resetWaveInternal() {
         introStep = 3;
         isShowingIntro = true;
         if (!isManualControl) isShowingDemoText = true;
-    } else if (level === 1 && !isTwoPlayerMode) {
+    } else if (level <= 1 && !isTwoPlayerMode) {
         introStep = 1;
         isShowingIntro = true;
         if (!isManualControl) isShowingDemoText = true;
@@ -572,7 +592,7 @@ function resetWaveInternal() {
         if (!isManualControl) isShowingDemoText = true;
     }
 
-    if (isShowingIntro && !(selectedGameMode === 'coop' && level === 1)) {
+    if (isShowingIntro || isShowingCoopPlayersReady) {
         introDisplayStartTime = Date.now();
     }
     playerIntroSoundPlayed = false;
@@ -685,6 +705,7 @@ function getBossStageDifficulty(variant) {
 window.getBossStageDifficulty = getBossStageDifficulty;
 
 function getWaveTypeInternal(level) {
+    if (level <= 0) level = 1;
     // DEFINITIEF: alleen elke 6 (6,12,18,24,30,36...) - level 2 is normaal
     if (level % 6 === 0) {
         return 'boss_stage';
@@ -2445,7 +2466,7 @@ function firePlayerBullet(shooterId = null, isTapEvent = false) {
     if (typeof isSimultaneousAssaultWave !== "undefined" && isSimultaneousAssaultWave) { if (typeof isEntrancePhaseActive !== "undefined" && isEntrancePhaseActive && !isAllEnemiesInGridForSimultaneous()) return false; }
     const now = Date.now();
 
-    const inCoopLevel1IntroStrict = isTwoPlayerMode && selectedGameMode === 'coop' && level === 1 &&
+    const inCoopLevel1IntroStrict = isTwoPlayerMode && selectedGameMode === 'coop' && level <= 1 &&
                                    coopPlayersReadyStartTime > 0 && now < coopPlayersReadyStartTime + 8000;
 
     if (inCoopLevel1IntroStrict) {
@@ -2855,7 +2876,7 @@ function handlePlayerInput() {
                     if ((isTouchActiveGame && selectedFiringMode === 'rapid') || currentActivePlayerFireInputDown) {
                         localShootPressed = true;
                     }
-                    if ((gameJustStarted || (isShowingIntro && level === 1)) && (!isTwoPlayerMode || (isTwoPlayerMode && selectedGameMode === 'normal' && currentPlayer === 1)) ) {
+                    if ((gameJustStarted || (isShowingIntro && level <= 1)) && (!isTwoPlayerMode || (isTwoPlayerMode && selectedGameMode === 'normal' && currentPlayer === 1)) ) {
                          if (! (keyboardP1ShootDown || ctrlP1ShootIsRaw) && !(isTouchActiveGame && selectedFiringMode === 'single')) {
                             localShootPressed = false;
                         }
@@ -2967,10 +2988,11 @@ function aiControl() {
             const bossCenterX = bossStageBoss.x + bossStageBoss.width / 2;
             const bossTargetX = bossCenterX - effectiveShipWidth / 2;
             targetEnemyForAI = bossStageBoss;
-            const BOSS_AI_LOOKAHEAD_Y = SHIP_HEIGHT * 14.0;
-            const BOSS_AI_BULLET_PROJ_MS = 750;
-            const BOSS_AI_SAFETY_X = effectiveShipWidth * 1.25;
-            const BOSS_AI_SAFETY_Y = SHIP_HEIGHT * 0.9;
+            // AGGRESSIVE PATCH boss: minder overdreven ontwijken
+            const BOSS_AI_LOOKAHEAD_Y = SHIP_HEIGHT * 8.0;
+            const BOSS_AI_BULLET_PROJ_MS = 500;
+            const BOSS_AI_SAFETY_X = effectiveShipWidth * 0.75;
+            const BOSS_AI_SAFETY_Y = SHIP_HEIGHT * 0.5;
             let bossThreats = [];
             for (const bullet of enemyBullets) {
                 if (bullet.y < activeShipForAI.y + BOSS_AI_LOOKAHEAD_Y && bullet.y + bullet.height > activeShipForAI.y - SHIP_HEIGHT * 4) {
@@ -3101,12 +3123,13 @@ function aiControl() {
         } else if (!isInvincibleForAI && !isShowingBlockingMessage) { // <<< BEGIN ORIGINELE LOGICA VOOR NIET-CS >>>
             const currentLevelFactor = Math.min(1, level / 10);
 
-            const AI_DANGER_LOOKAHEAD_Y_LVL = SHIP_HEIGHT * (8.5 + 3.5 * currentLevelFactor);
-            const AI_BULLET_PROJECTION_MS_LVL = 500 + 300 * currentLevelFactor;
-            const AI_ENEMY_PROJECTION_MS_LVL = 300 + 150 * currentLevelFactor;
-            const AI_THREAT_SAFETY_MARGIN_X_LVL = effectiveShipWidth * (0.9 + 0.5 * currentLevelFactor);
-            const AI_THREAT_SAFETY_MARGIN_Y_BASE_LVL = SHIP_HEIGHT * (0.7 + 0.4 * currentLevelFactor);
-            const AI_DODGE_STEP_LVL = effectiveShipWidth * (1.8 + 0.8 * currentLevelFactor);
+            // AGGRESSIVE PATCH: minder bang, kleinere safety margins, kleinere dodge step -> meer in het midden blijven
+            const AI_DANGER_LOOKAHEAD_Y_LVL = SHIP_HEIGHT * (4.5 + 1.5 * currentLevelFactor);
+            const AI_BULLET_PROJECTION_MS_LVL = 350 + 150 * currentLevelFactor;
+            const AI_ENEMY_PROJECTION_MS_LVL = 200 + 80 * currentLevelFactor;
+            const AI_THREAT_SAFETY_MARGIN_X_LVL = effectiveShipWidth * (0.45 + 0.2 * currentLevelFactor);
+            const AI_THREAT_SAFETY_MARGIN_Y_BASE_LVL = SHIP_HEIGHT * (0.35 + 0.15 * currentLevelFactor);
+            const AI_DODGE_STEP_LVL = effectiveShipWidth * (0.9 + 0.3 * currentLevelFactor);
 
             let allProjectedThreats = [];
 
@@ -3193,6 +3216,7 @@ function aiControl() {
                 }
                 targetEnemyForAI = generalTargetWhileDodging;
             }
+            // AGGRESSIVE: blijf schieten ook tijdens ontwijken
             shouldTryShoot_AI = (targetEnemyForAI !== null);
         } else if (!isChallengingStage && !isBossFightActiveForSingleAI) { // Alleen toepassen als niet CS en niet boss
             if (fallingShips.length > 0 && !isShipCapturedForAI && !isWaitingForRespawn && !isDualActiveForAI ) {
@@ -3236,11 +3260,33 @@ function aiControl() {
                         if (enemy.type === ENEMY3_TYPE && enemy.hasCapturedShip) currentScore += 5000;
                         if (currentScore > bestTargetScore) { bestTargetScore = currentScore; targetEnemyForAI = enemy; }
                     }
-                    if (targetEnemyForAI) { const enemyMidX = targetEnemyForAI.x + targetEnemyForAI.width / 2; desiredTargetX = enemyMidX - (effectiveShipWidth / 2); const ALIGNMENT_MULTIPLIER = 1.8; const isBossEnemy3SingleAlign = (typeof isBossStage !== 'undefined' && isBossStage && typeof bossStageVariant !== 'undefined' && bossStageVariant === 'enemy3' && targetEnemyForAI.type === ENEMY3_TYPE && !targetEnemyForAI.hasCapturedShip); let alignmentThresholdForShooting = (targetEnemyForAI.state === 'in_grid' || targetEnemyForAI.state === 'preparing_capture' ? effectiveShipWidth * (GRID_SHOOT_ALIGNMENT_FACTOR * ALIGNMENT_MULTIPLIER) : effectiveShipWidth * (FINAL_SHOOT_ALIGNMENT_THRESHOLD * ALIGNMENT_MULTIPLIER)); if (isBossEnemy3SingleAlign) { alignmentThresholdForShooting = effectiveShipWidth * 2.5; shouldTryShoot_AI = true; } else if (Math.abs(shipCenterX - enemyMidX) < alignmentThresholdForShooting) { shouldTryShoot_AI = true; } }
+                    if (targetEnemyForAI) {
+                        const enemyMidX = targetEnemyForAI.x + targetEnemyForAI.width / 2;
+                        desiredTargetX = enemyMidX - (effectiveShipWidth / 2);
+                        const ALIGNMENT_MULTIPLIER = 3.0; // AGGRESSIVE
+                        const isBossEnemy3SingleAlign = (typeof isBossStage !== 'undefined' && isBossStage && typeof bossStageVariant !== 'undefined' && bossStageVariant === 'enemy3' && targetEnemyForAI.type === ENEMY3_TYPE && !targetEnemyForAI.hasCapturedShip);
+                        // Directe, agressieve uitlijning
+                        shouldTryShoot_AI = true;
+                    }
                     else { desiredTargetX = targetCenterShipX; shouldTryShoot_AI = false; }
                 }
             }
         } // Einde !isChallengingStage blok
+
+
+        // --- AGGRESSIVE PATCH: voorkom uitwijken naar buitenkant scherm, hou in 15%-85% zone ---
+        {
+            const minX = gameCanvas.width * 0.15;
+            const maxX = gameCanvas.width * 0.85 - effectiveShipWidth;
+            const safeMin = Math.max(AI_EDGE_BUFFER * 1.5, minX);
+            const safeMax = Math.min(gameCanvas.width - effectiveShipWidth - AI_EDGE_BUFFER * 1.5, maxX);
+            if (desiredTargetX < safeMin) desiredTargetX = safeMin + effectiveShipWidth * 0.2;
+            if (desiredTargetX > safeMax) desiredTargetX = safeMax - effectiveShipWidth * 0.2;
+            // Als targetEnemy bestaat, altijd proberen te schieten (veiligheid blijft via dodge, maar schieten mag)
+            if (targetEnemyForAI && !isMovingForOwnFallingShip && !isMovingToCapture) {
+                shouldTryShoot_AI = true;
+            }
+        }
 
         let currentAiSmoothingFactor;
         if (isChallengingStage) {
@@ -3307,7 +3353,7 @@ function aiControlCoop() {
     const now = Date.now(); const canvasWidth = gameCanvas.width;
     const p1CanAct = ship1 && player1Lives > 0 && !isPlayer1ShipCaptured && !isPlayer1WaitingForRespawn && !isPlayer1ShowingGameOverMessage && !player1NeedsRespawnAfterCapture;
     const p2CanAct = ship2 && player2Lives > 0 && !isPlayer2ShipCaptured && !isPlayer2WaitingForRespawn && !isPlayer2ShowingGameOverMessage && !player2NeedsRespawnAfterCapture;
-    const getShipBlockingState = (shipIdForBlockCheck) => { const isGameOverForThisShip = (shipIdForBlockCheck === 'p1' && isPlayer1ShowingGameOverMessage) || (shipIdForBlockCheck === 'p2' && isPlayer2ShowingGameOverMessage); return isGameOverForThisShip || showReadyMessage || isCsCompletionDelayActive || (isShowingIntro && !(level === 1 && coopPlayersReadyStartTime > 0 && (isCoopAIDemoActive || (isPlayerTwoAI && selectedOnePlayerGameVariant === '1P_VS_AI_COOP')) )); };
+    const getShipBlockingState = (shipIdForBlockCheck) => { const isGameOverForThisShip = (shipIdForBlockCheck === 'p1' && isPlayer1ShowingGameOverMessage) || (shipIdForBlockCheck === 'p2' && isPlayer2ShowingGameOverMessage); return isGameOverForThisShip || showReadyMessage || isCsCompletionDelayActive || (isShowingIntro && !(level <= 1 && coopPlayersReadyStartTime > 0 && (isCoopAIDemoActive || (isPlayerTwoAI && selectedOnePlayerGameVariant === '1P_VS_AI_COOP')) )); };
 
     if (p1CanAct && ship1 && isCoopAIDemoActive) { // Alleen voor P1 in COOP AI Demo voor nu, P1 Human in 1PvsAICoop doet zelf
         if (smoothedShip1X === undefined) smoothedShip1X = ship1.x;
@@ -3427,13 +3473,14 @@ function calculateAIDesiredState(currentShip, currentSmoothedX, isShipDual, game
     const isBossFightActive = (typeof isBossStage !== 'undefined' && isBossStage && typeof bossStagePhase !== 'undefined' && bossStagePhase === 'fighting');
     if (!isChallengingStage && !isShipInvincible) {
         // BOSS FIGHT: veel grotere lookahead en safety margins
-        const AI_DANGER_LOOKAHEAD_Y_COOP = isBossFightActive ? SHIP_HEIGHT * 15.0 : SHIP_HEIGHT * 9.0;
-        const AI_BULLET_PROJECTION_MS_COOP = isBossFightActive ? 800 : 550;
-        const AI_ENEMY_PROJECTION_MS_COOP = isBossFightActive ? 500 : 350;
-        const AI_THREAT_SAFETY_MARGIN_X_BULLET_BASE = effectiveShipWidth * (isBossFightActive ? 1.35 : 0.6);
-        const AI_THREAT_SAFETY_MARGIN_Y_BULLET_BASE = SHIP_HEIGHT * (isBossFightActive ? 1.0 : 0.4);
-        const AI_THREAT_SAFETY_MARGIN_X_ENEMY = effectiveShipWidth * (isBossFightActive ? 1.2 : 0.6);
-        const AI_THREAT_SAFETY_MARGIN_Y_ENEMY = SHIP_HEIGHT * (isBossFightActive ? 1.1 : 0.6);
+        // AGGRESSIVE PATCH coop: veel minder bang
+        const AI_DANGER_LOOKAHEAD_Y_COOP = isBossFightActive ? SHIP_HEIGHT * 8.0 : SHIP_HEIGHT * 5.0;
+        const AI_BULLET_PROJECTION_MS_COOP = isBossFightActive ? 500 : 350;
+        const AI_ENEMY_PROJECTION_MS_COOP = isBossFightActive ? 300 : 220;
+        const AI_THREAT_SAFETY_MARGIN_X_BULLET_BASE = effectiveShipWidth * (isBossFightActive ? 0.75 : 0.35);
+        const AI_THREAT_SAFETY_MARGIN_Y_BULLET_BASE = SHIP_HEIGHT * (isBossFightActive ? 0.55 : 0.25);
+        const AI_THREAT_SAFETY_MARGIN_X_ENEMY = effectiveShipWidth * (isBossFightActive ? 0.7 : 0.35);
+        const AI_THREAT_SAFETY_MARGIN_Y_ENEMY = SHIP_HEIGHT * (isBossFightActive ? 0.6 : 0.35);
 
         let allProjectedThreats = [];
 
@@ -3496,7 +3543,7 @@ function calculateAIDesiredState(currentShip, currentSmoothedX, isShipDual, game
             const uniqueDodgeOptions = [...new Set(dodgeOptions), 0];
 
             for (const dodgeDir of uniqueDodgeOptions) {
-                const dodgeAmount = (dodgeDir === 0) ? 0 : (effectiveShipWidth * 1.8 + Math.random() * effectiveShipWidth * 0.8);
+                const dodgeAmount = (dodgeDir === 0) ? 0 : (effectiveShipWidth * 0.8 + Math.random() * effectiveShipWidth * 0.4);
                 let potentialDodgeX = currentSmoothedX + dodgeDir * dodgeAmount;
                 potentialDodgeX = Math.max(AI_EDGE_BUFFER * 2.5, Math.min(gameCanvasWidth - effectiveShipWidth - AI_EDGE_BUFFER * 2.5, potentialDodgeX));
 
@@ -3675,7 +3722,7 @@ function calculateAIDesiredState(currentShip, currentSmoothedX, isShipDual, game
                 if(targetEnemyForAI){
                     desiredTargetX=(targetEnemyForAI.x+targetEnemyForAI.width/2)-effectiveShipWidth/2;
                     const isBossEnemy3Align = (typeof isBossStage !== 'undefined' && isBossStage && typeof bossStageVariant !== 'undefined' && bossStageVariant === 'enemy3' && targetEnemyForAI.type===ENEMY3_TYPE && !targetEnemyForAI.hasCapturedShip);
-                    const COOP_AI_SHOOT_ALIGNMENT_THRESHOLD_FACTOR = (isPlayerTwoAI && selectedOnePlayerGameVariant === '1P_VS_AI_COOP') ? 1.2 : 0.9;
+                    const COOP_AI_SHOOT_ALIGNMENT_THRESHOLD_FACTOR = (isPlayerTwoAI && selectedOnePlayerGameVariant === '1P_VS_AI_COOP') ? 2.5 : 1.8; // AGGRESSIVE: ruimere threshold
                     if(isBossEnemy3Align){
                         // Direct vuren, veel ruimere alignment in boss enemy3
                         if(Math.abs(shipCenterX-(targetEnemyForAI.x+targetEnemyForAI.width/2)) < effectiveShipWidth * 2.5) {
@@ -3694,7 +3741,22 @@ function calculateAIDesiredState(currentShip, currentSmoothedX, isShipDual, game
     }
 
 
-    // Finale veiligheidschecks voor schieten, ongeacht hoe shouldTryShoot_AI_Calc eerder werd gezet
+
+    // AGGRESSIVE PATCH coop: clamp naar speelveld 15%-85% en altijd vuren als target bestaat
+    {
+        const minX = gameCanvas.width * 0.15;
+        const maxX = gameCanvas.width * 0.85 - effectiveShipWidth;
+        const safeMin = Math.max(AI_EDGE_BUFFER * 2.0, minX);
+        const safeMax = Math.min(gameCanvas.width - effectiveShipWidth - AI_EDGE_BUFFER * 2.0, maxX);
+        if (desiredTargetX < safeMin) desiredTargetX = safeMin + effectiveShipWidth * 0.15;
+        if (desiredTargetX > safeMax) desiredTargetX = safeMax - effectiveShipWidth * 0.15;
+        if (targetEnemyForAI && !isMovingForOwnFallingShip && !isMovingToCaptureBeam && !isTargetingPartnerRescue) {
+            shouldTryShoot_AI_Calc = true;
+        }
+    }
+
+
+        // Finale veiligheidschecks voor schieten, ongeacht hoe shouldTryShoot_AI_Calc eerder werd gezet
     if (shouldTryShoot_AI_Calc) {
         if (isMovingToCaptureBeam || isMovingForOwnFallingShip) {
             shouldTryShoot_AI_Calc = false;
@@ -3739,7 +3801,7 @@ function calculateAIDesiredState(currentShip, currentSmoothedX, isShipDual, game
 
         // Respecteer AI_CAPTURE_DIVE_SHOOT_STOP_DURATION_MS voor 1P vs AI COOP AI partner
         if (isPlayerTwoAI && selectedOnePlayerGameVariant === '1P_VS_AI_COOP' && shipIdentifier === 'ai_p2') {
-            const introStrictForP2AI = isShowingIntro && level === 1 && coopPlayersReadyStartTime > 0 && currentTime < coopPlayersReadyStartTime + 8000;
+            const introStrictForP2AI = isShowingIntro && level <= 1 && coopPlayersReadyStartTime > 0 && currentTime < coopPlayersReadyStartTime + 8000;
             if (introStrictForP2AI || isShowingIntro) { // Niet schieten tijdens intro
                 shouldTryShoot_AI_Calc = false;
             }
@@ -5026,7 +5088,7 @@ function runSingleGameUpdate(timestamp) {
         }
 
 
-        if (selectedGameMode === 'coop' && !gameJustStartedAndWaveLaunched && coopPlayersReadyStartTime === 0 && gameJustStarted) { // FIX LEVEL 18 COOP
+        if (selectedGameMode === 'coop' && !gameJustStartedAndWaveLaunched && coopPlayersReadyStartTime === 0 && gameJustStarted && !isShowingIntro && !isShowingCoopPlayersReady) { // FIX: alleen starten als geen intro actief
             if (isBossStage) startBossStageWave();
             else if (isFullGridWave) startFullGridWave();
             else if (isChallengingStage) startChallengingStageSequence();
@@ -5225,7 +5287,7 @@ function runSingleGameUpdate(timestamp) {
         }
 
         const noPlayerGameOverIsActive = !(isPlayer1ShowingGameOverMessage || isPlayer2ShowingGameOverMessage || isShowingPlayerGameOverMessage);
-        const inNormalIntro = isShowingIntro && !coopLevel1IntroIsCurrentlyActive && !(selectedGameMode === 'coop' && level ===1);
+        const inNormalIntro = isShowingIntro && !coopLevel1IntroIsCurrentlyActive && !(selectedGameMode === 'coop' && level <=1);
 
 
         if (!coopLevel1IntroIsCurrentlyActive && gameOverSequenceStartTime === 0 && activePlayersForLogic && !isShowingCaptureMessage && noPlayerGameOverIsActive) {
@@ -5395,7 +5457,7 @@ function runSingleGameUpdate(timestamp) {
                     const is1PvsAICoopModeAndNotL1 = isPlayerTwoAI && selectedOnePlayerGameVariant === '1P_VS_AI_COOP' && level > 1;
 
                     if (isNormalOrVsAIMode) {
-                        if (currentPlayer === 1 && level === 1 && !initialGameStartSoundPlayedThisSession) {
+                        if (currentPlayer === 1 && level <= 1 && !initialGameStartSoundPlayedThisSession) {
                             soundIdToPlay = 'startSound'; soundVolume = 0.4;
                         } else if (currentPlayer === 2 || level > 1) {
                             soundIdToPlay = 'levelUpSound'; soundVolume = 0.2;
@@ -5403,7 +5465,7 @@ function runSingleGameUpdate(timestamp) {
                     } else if (is1PvsAICoopModeAndNotL1) {
                          soundIdToPlay = 'levelUpSound'; soundVolume = 0.2;
                     } else if (!isTwoPlayerMode) { // 1P Classic mode
-                        if (level === 1 && !initialGameStartSoundPlayedThisSession) {
+                        if (level <= 1 && !initialGameStartSoundPlayedThisSession) {
                             soundIdToPlay = 'startSound'; soundVolume = 0.4;
                         } else if (level > 1) {
                             soundIdToPlay = 'levelUpSound'; soundVolume = 0.2;
@@ -5438,7 +5500,7 @@ function runSingleGameUpdate(timestamp) {
                         stageIntroSoundPlayed = true;
                      }
                      // <<< SPECIFIEKE LOGICA VOOR HUMAN 2P CO-OP STAGE 1 SOUND >>>
-                     else if (isTwoPlayerMode && selectedGameMode === 'coop' && !isPlayerTwoAI && !isCoopAIDemoActive && level === 1) { // << GEWIJZIGD: Alleen voor level 1
+                     else if (isTwoPlayerMode && selectedGameMode === 'coop' && !isPlayerTwoAI && !isCoopAIDemoActive && level <= 1) { // << GEWIJZIGD: Alleen voor level 1
                         // Voor Human 2-Player CO-OP: speel levelUpSound altijd (ook voor level 1).
                         // De 'startSound' is al gespeeld in baseStartGame (en playerIntroSoundPlayed is true als introStep 1 is doorlopen).
                         playSound('levelUpSound', false, 0.2);
@@ -5455,7 +5517,7 @@ function runSingleGameUpdate(timestamp) {
                             stageIntroSoundPlayed = true;
                         }
                         // Voor CO-OP Demo en 1P vs AI CO-OP level 1, geen extra geluid hier (startSound is al gespeeld)
-                        else if ((isCoopAIDemoActive || (isPlayerTwoAI && selectedOnePlayerGameVariant === '1P_VS_AI_COOP')) && level === 1) {
+                        else if ((isCoopAIDemoActive || (isPlayerTwoAI && selectedOnePlayerGameVariant === '1P_VS_AI_COOP')) && level <= 1) {
                              stageIntroSoundPlayed = true; // Markeer als gespeeld (omdat startSound de "introductie" was)
                         }
                      }
@@ -5465,7 +5527,7 @@ function runSingleGameUpdate(timestamp) {
                      } else if (level > 1 && !playerIntroSoundPlayed && !(isPlayerTwoAI && selectedGameMode === 'normal') && !initialGameStartSoundPlayedThisSession ) { // 2P Normal, level > 1
                          playSound('levelUpSound', false, 0.2);
                          stageIntroSoundPlayed = true;
-                     } else if (level === 1 && !isManualControl && !isCoopAIDemoActive && !(isPlayerTwoAI && selectedGameMode === 'coop') && !initialGameStartSoundPlayedThisSession) { // 1P AI Demo, level 1
+                     } else if (level <= 1 && !isManualControl && !isCoopAIDemoActive && !(isPlayerTwoAI && selectedGameMode === 'coop') && !initialGameStartSoundPlayedThisSession) { // 1P AI Demo, level 1
                          playSound('startSound', false, 0.4);
                          initialGameStartSoundPlayedThisSession = true;
                          stageIntroSoundPlayed = true;
@@ -5534,13 +5596,14 @@ function runSingleGameUpdate(timestamp) {
                      if (isCoopAIDemoActive || (isPlayerTwoAI && selectedOnePlayerGameVariant === '1P_VS_AI_COOP')) { aiShip1CanShootTime = 0; aiShip2CanShootTime = 0;}
                      else aiCanShootTime = 0;
                 }
-                const isNonCoopL1Normal = level === 1 && selectedGameMode !== 'coop';
-                const isCoopL1 = selectedGameMode === 'coop'; // FIX was level===1
+                const isNonCoopL1Normal = level <= 1 && selectedGameMode !== 'coop';
+                const isCoopL1 = selectedGameMode === 'coop';
+                const introActiveForLaunch = isShowingIntro || isShowingCoopPlayersReady || (typeof coopLevel1IntroIsCurrentlyActive !== 'undefined' && coopLevel1IntroIsCurrentlyActive);
 
-                const shouldLaunchWaveNow = (isNonCoopL1Normal && !gameJustStartedAndWaveLaunched) ||
+                const shouldLaunchWaveNow = !introActiveForLaunch && ((isNonCoopL1Normal && !gameJustStartedAndWaveLaunched) ||
                                           level > 1 ||
                                           isChallengingStage ||
-                                          (isCoopL1 && !gameJustStartedAndWaveLaunched);
+                                          (isCoopL1 && !gameJustStartedAndWaveLaunched));
 
 
                 if (shouldLaunchWaveNow) {

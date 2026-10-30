@@ -63,7 +63,7 @@ window.highScoreHolderId = null; // << GEWIJZIGD: Expliciet aan window toevoegen
 
 // Zet hier het level waar je wilt starten. De game start direct in dat level.
 
-let START_LEVEL = 18; // <-- VERANDER DIT NAAR GEWENST LEVEL
+let START_LEVEL = 1; // <-- VERANDER DIT NAAR GEWENST LEVEL
 window.START_LEVEL = START_LEVEL;
 
 function getConfiguredStartLevel() {
@@ -72,6 +72,7 @@ function getConfiguredStartLevel() {
         v = window.START_LEVEL; // allow runtime override via console: window.START_LEVEL = x
     }
     v = parseInt(v, 10);
+    // FIX: Level 0 en 1 moeten intro WEL tonen, dus 0 is geldig
     if (!isFinite(v) || v < 1) return 1;
     if (v > 999) return 999;
     return Math.floor(v);
