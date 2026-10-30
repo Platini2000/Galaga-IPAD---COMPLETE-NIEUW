@@ -3,8 +3,6 @@
 
 // --- Hulpvariabele om bij te houden hoeveel Challenging Stages er al zijn geweest ---
 let completedChallengingStagesCount = 0;
-let bossStageIsEnhancedMode = false;
-let bossStageEnhancedCenterY = 0;
 let isSimultaneousAssaultWave = false; // NIEUW: na CS level
 let justFinishedChallengingStage = false; // helper
 
@@ -261,17 +259,41 @@ function stopAllGameSoundsInternal() {
 window.stopAllGameSounds = stopAllGameSoundsInternal;
 
 /**
+ * Helper: hoeveel Challenging Stages zijn er geweest voor een bepaald level?
+ * Dit is cruciaal voor level kiezer, anders klopt de wave pattern index niet -> onzichtbare vijanden.
+ */
+function countCompletedCSForStartLevel(startLvl) {
+    let count = 0;
+    for (let lvl = 1; lvl < startLvl; lvl++) {
+        if (lvl % 6 === 0) continue; // boss, geen CS
+        if ((lvl - 1) % 5 === 2) count++; // CS levels: 3,8,13? eigenlijk pattern
+    }
+    return count;
+}
+window.countCompletedCSForStartLevel = countCompletedCSForStartLevel;
+
+/**
  * Reset de volledige game state naar beginwaarden.
+ * NU MET LEVEL KIEZER - start direct in geconfigureerd level zonder onzichtbare vijanden.
  */
 function resetGameInternal() {
-    // FIX: zorg dat canvas klopt voordat we level zetten - essentieel voor level kiezer
-    if (typeof resizeCanvases === 'function') { try { resizeCanvases(); } catch(e) {} }
+    // --- LEVEL KIEZER LOGICA ---
+    let configuredLevel = 1;
+    try {
+        if (typeof window !== 'undefined' && typeof window.getConfiguredStartLevel === 'function') {
+            configuredLevel = window.getConfiguredStartLevel();
+        } else if (typeof START_LEVEL !== 'undefined') {
+            configuredLevel = parseInt(START_LEVEL,10) || 1;
+        } else if (typeof window !== 'undefined' && typeof window.START_LEVEL !== 'undefined') {
+            configuredLevel = parseInt(window.START_LEVEL,10) || 1;
+        }
+    } catch(e) { configuredLevel = 1; }
+    if (!isFinite(configuredLevel) || configuredLevel < 1) configuredLevel = 1;
+
     score = 0;
-    level = (typeof Level !== 'undefined' ? Level : (typeof window !== 'undefined' && typeof window.Level !== 'undefined' ? window.Level : 1));
-    // FIX: als level nog steeds 1 is maar Level is hoger (bijv 24), forceer die waarde
-    if (typeof Level !== 'undefined' && Level > level) level = Level;
+    level = configuredLevel;
     playerLives = 3;
-    completedChallengingStagesCount = 0; 
+    completedChallengingStagesCount = countCompletedCSForStartLevel(configuredLevel); 
     window.highScoreHolderId = null;
 
     if (isTwoPlayerMode) {
@@ -281,8 +303,8 @@ function resetGameInternal() {
         player2Score = 0;
         currentPlayer = 1;
         player1CompletedLevel = -1;
-        player1MaxLevelReached = 1;
-        player2MaxLevelReached = 1;
+        player1MaxLevelReached = level;
+        player2MaxLevelReached = level;
         if (player1LifeThresholdsMet instanceof Set) player1LifeThresholdsMet.clear(); else player1LifeThresholdsMet = new Set();
         if (player2LifeThresholdsMet instanceof Set) player2LifeThresholdsMet.clear(); else player2LifeThresholdsMet = new Set();
 
@@ -343,7 +365,7 @@ function resetGameInternal() {
     } else {
         player1Lives = 3;
         player1Score = 0;
-        player1MaxLevelReached = 1;
+        player1MaxLevelReached = level;
         if (player1LifeThresholdsMet instanceof Set) player1LifeThresholdsMet.clear(); else player1LifeThresholdsMet = new Set();
 
         if (!ship && gameCanvas && gameCanvas.width > 0 && gameCanvas.height > 0) {
@@ -422,11 +444,29 @@ window.resetGame = resetGameInternal;
  * Reset de state voor een nieuwe wave (ronde).
  */
 function resetWaveInternal() {
+    // --- FIX ONZICHTBARE VIJANDEN: volledige cleanup bij elke wave reset, essentieel voor level kiezer ---
+    // 1. Clear alle timeouts en controllers
     if (typeof clearCSController === 'function') clearCSController();
     if (typeof window !== 'undefined' && window.csControllerIntervalId) { clearInterval(window.csControllerIntervalId); window.csControllerIntervalId=null; }
-    // FIXED V8: Als we net een CS hebben afgerond, verhoog teller NU (voordat nieuwe wave type wordt bepaald)
-    // isChallengingStage is nog de oude waarde (van de wave die we verlaten) op dit moment
-    if (typeof isChallengingStage !== 'undefined' && isChallengingStage) {
+    if (typeof enemySpawnTimeouts !== 'undefined' && Array.isArray(enemySpawnTimeouts)) {
+        enemySpawnTimeouts.forEach(clearTimeout);
+        enemySpawnTimeouts = [];
+    }
+    // 2. Reset boss stage state volledig (voorkomt ghost boss)
+    if (typeof resetBossStageState === 'function') {
+        // alleen resetten als we NIET in een boss stage starten - anders wordt hij direct daarna opnieuw opgezet
+        // maar voor veiligheid altijd boss spawn queue leegmaken vooraf
+        bossStageSpawnQueue = [];
+        bossStageSpawnIndex = 0;
+    }
+    // 3. Reset simultaneous assault shooter limiter
+    if (typeof simultaneousAssaultActiveShooters !== 'undefined') {
+        simultaneousAssaultActiveShooters = 0;
+        simultaneousAssaultLastShooterReset = Date.now();
+    }
+    // 4. Reset CS completion teller alleen als we echt een CS afronden EN niet net gestart zijn via level kiezer
+    // FIXED V8 + LEVEL KIEZER FIX
+    if (typeof isChallengingStage !== 'undefined' && isChallengingStage && !gameJustStarted) {
         if (typeof completedChallengingStagesCount !== 'undefined') {
             completedChallengingStagesCount++;
             console.log(`[CS RESET] CS just finished, incrementing count to ${completedChallengingStagesCount}`);
@@ -448,6 +488,7 @@ function resetWaveInternal() {
     player2NeedsRespawnAfterCapture = false;
 
 
+    // --- FIX: Alles wat kan zorgen voor onzichtbare vijanden volledig leegmaken ---
     enemies = [];
     bullets = [];
     enemyBullets = [];
@@ -455,12 +496,16 @@ function resetWaveInternal() {
     floatingScores = [];
     hitSparks = [];
     fallingShips = [];
-    // FIX voor level kiezer: boss state altijd schoon bij wave reset
-    if (typeof resetBossStageState === 'function') { try { resetBossStageState(); } catch(e) {} }
-    bossStageBoss = null;
-    bossStagePhase = 'none';
-    bossStageSpawnQueue = [];
-    bossStageSpawnIndex = 0;
+    // Boss stage extra cleanup
+    if (typeof bossStageBoss !== 'undefined') {
+        // wordt opnieuw aangemaakt in startBossStageWave indien nodig
+        if (typeof isBossStage !== 'undefined' && !isBossStage) {
+            bossStageBoss = null;
+        }
+    }
+    // Reset grid/fire state
+    lastGridFireCheckTime = 0;
+    gridJustCompleted = false;
 
     if (Array.isArray(enemySpawnTimeouts)) {
         enemySpawnTimeouts.forEach(clearTimeout);
@@ -500,15 +545,8 @@ function resetWaveInternal() {
     if (wasShowingDemoText) {
         isShowingDemoText = true;
     }
-    // FIX: als we direct vanaf level 2+ starten via Level kiezer, nooit Players Ready tonen
-    if (typeof level !== 'undefined' && level > 1) {
-        isShowingCoopPlayersReady = false;
-        coopPlayersReadyStartTime = 0;
-        showReadyMessage = false;
-        if (typeof isShowingPlayerGameOverMessage !== 'undefined') isShowingPlayerGameOverMessage = false;
-    }
 
-    if (selectedGameMode === 'coop' && level === 1) { 
+    if (selectedGameMode === 'coop') { // FIX LEVEL KIEZER was level===1
         isShowingIntro = false; 
         introStep = 2; 
     } else if ((isTwoPlayerMode && selectedGameMode === 'normal') ||
@@ -517,14 +555,8 @@ function resetWaveInternal() {
         isShowingIntro = true;
         if (!isManualControl) isShowingDemoText = true;
     } else if (isBossStage) {
-        // FIX: direct via level kiezer (level>1) -> geen lange intro, direct boss zichtbaar
-        if (typeof level !== 'undefined' && level > 1 && typeof Level !== 'undefined' && Level > 1) {
-            introStep = 0;
-            isShowingIntro = false;
-        } else {
-            introStep = 2;
-            isShowingIntro = true;
-        }
+        introStep = 2;
+        isShowingIntro = true;
         if (!isManualControl) isShowingDemoText = true;
     } else if (isChallengingStage) {
         introStep = 3;
@@ -535,14 +567,8 @@ function resetWaveInternal() {
         isShowingIntro = true;
         if (!isManualControl) isShowingDemoText = true;
     } else {
-        // FIX: direct level kiezer vanaf level 2 -> geen intro, direct vijanden
-        if (typeof level !== 'undefined' && level > 1 && typeof Level !== 'undefined' && Level > 1) {
-            introStep = 0;
-            isShowingIntro = false;
-        } else {
-            introStep = 2;
-            isShowingIntro = true;
-        }
+        introStep = 2;
+        isShowingIntro = true;
         if (!isManualControl) isShowingDemoText = true;
     }
 
@@ -648,27 +674,13 @@ function getBossStageMaxHitsForVariant(variant) {
 window.getBossStageMaxHitsForVariant = getBossStageMaxHitsForVariant;
 
 function getBossStageDifficulty(variant) {
-    // Na level 18: kleine enemies vuren NIET meer - alleen eindbaas (BOSS STAGES)
-    const isAfter18 = (typeof level !== 'undefined' && level > 18) || (typeof bossStageIsEnhancedMode !== 'undefined' && bossStageIsEnhancedMode);
-    if (isAfter18) {
-        // FIX: na level 18 - kleine enemies 0%, alleen eindbaas vuurt
-        if (variant === 'enemy2') {
-            return { gridShotInterval: 999999, gridShotChance: 0, gridMaxShootersPerCheck: 0, bossShotInterval: 850, bossNextAttackDelay: 1100, bossSpeedFactor: 1.25 };
-        }
-        if (variant === 'enemy3') {
-            return { gridShotInterval: 999999, gridShotChance: 0, gridMaxShootersPerCheck: 0, bossShotInterval: 550, bossNextAttackDelay: 750, bossSpeedFactor: 1.5 };
-        }
-        return { gridShotInterval: 999999, gridShotChance: 0, gridMaxShootersPerCheck: 0, bossShotInterval: 1200, bossNextAttackDelay: 1500, bossSpeedFactor: 1.0 };
-    } else {
-        // Voor level 18 en daarvoor - originele balans
-        if (variant === 'enemy2') {
-            return { gridShotInterval: 280, gridShotChance: 0.38, gridMaxShootersPerCheck: 2, bossShotInterval: 850, bossNextAttackDelay: 1100, bossSpeedFactor: 1.25 };
-        }
-        if (variant === 'enemy3') {
-            return { gridShotInterval: 180, gridShotChance: 0.55, gridMaxShootersPerCheck: 3, bossShotInterval: 550, bossNextAttackDelay: 750, bossSpeedFactor: 1.5 };
-        }
-        return { gridShotInterval: 400, gridShotChance: 0.25, gridMaxShootersPerCheck: 1, bossShotInterval: 1200, bossNextAttackDelay: 1500, bossSpeedFactor: 1.0 };
+    if (variant === 'enemy2') {
+        return { gridShotInterval: 280, gridShotChance: 0.38, gridMaxShootersPerCheck: 2, bossShotInterval: 850, bossNextAttackDelay: 1100, bossSpeedFactor: 1.25 };
     }
+    if (variant === 'enemy3') {
+        return { gridShotInterval: 180, gridShotChance: 0.55, gridMaxShootersPerCheck: 3, bossShotInterval: 550, bossNextAttackDelay: 750, bossSpeedFactor: 1.5 };
+    }
+    return { gridShotInterval: 400, gridShotChance: 0.25, gridMaxShootersPerCheck: 1, bossShotInterval: 1200, bossNextAttackDelay: 1500, bossSpeedFactor: 1.0 };
 }
 window.getBossStageDifficulty = getBossStageDifficulty;
 
@@ -825,8 +837,6 @@ function resetBossStageState() {
     bossStageBounceStartY = 0;
     bossStageBounceLastTime = 0;
     bossStageLastGridBeeShot = 0;
-    bossStageIsEnhancedMode = false;
-    bossStageEnhancedCenterY = 0;
 }
 
 function buildBossStageSpawnQueue() {
@@ -853,24 +863,12 @@ function buildBossStageSpawnQueue() {
 
 function startBossStageWave() {
     console.log("[BOSS STAGE] startBossStageWave level", level);
-    // FIX: altijd eerst canvas afmetingen verversen
-    if (typeof resizeCanvases === 'function') { try { resizeCanvases(); } catch(e) {} }
-    if (typeof enemySpawnTimeouts !== 'undefined' && Array.isArray(enemySpawnTimeouts)) {
-        enemySpawnTimeouts.forEach(function(t){ try{ clearTimeout(t);}catch(e){} });
-        enemySpawnTimeouts = [];
-    } else {
-        enemySpawnTimeouts = [];
-    }
-    // FIX: alles echt leegmaken voor 1e frame
+    enemySpawnTimeouts.forEach(clearTimeout);
+    enemySpawnTimeouts = [];
     enemies = [];
-    bullets = [];
-    enemyBullets = [];
-    explosions = [];
-    floatingScores = [];
-    fallingShips = [];
     squadronCompletionStatus = {};
     squadronEntranceFiringStatus = {};
-    if (typeof resetBossStageState === 'function') resetBossStageState();
+    resetBossStageState();
 
     // Bepaal variant en max hits voor deze level
     try {
@@ -903,24 +901,13 @@ function startBossStageWave() {
     
     buildBossStageSpawnQueue();
     
-    // NIEUW: Enhanced mode vanaf 2e ronde (na level 18)
-    try {
-        bossStageIsEnhancedMode = (typeof level !== 'undefined' && level > 18);
-        if (typeof window !== 'undefined') window.bossStageIsEnhancedMode = bossStageIsEnhancedMode;
-        if (bossStageIsEnhancedMode) {
-            console.log("[BOSS ENHANCED] Actief voor level", level, "- boss blijft in grid na spawn");
-        }
-    } catch(e) { bossStageIsEnhancedMode = false; }
-    
     // Geen extra BOSS STAGE message - intro via STAGE X -> BOSS STAGE beide cyaan
     isShowingBossStageMessage = false;
     playSound('entranceSound', false, 0.6);
     
     // Create boss entity 5x bigger, starting above screen
-    var canvasW = (gameCanvas && gameCanvas.width > 10) ? gameCanvas.width : (typeof window !== 'undefined' ? window.innerWidth : 800);
-    var canvasH = (gameCanvas && gameCanvas.height > 10) ? gameCanvas.height : (typeof window !== 'undefined' ? window.innerHeight : 600);
-    if (canvasW < 100) canvasW = 800;
-    if (canvasH < 100) canvasH = 600;
+    const canvasW = gameCanvas ? gameCanvas.width : 800;
+    const canvasH = gameCanvas ? gameCanvas.height : 600;
     const isEnemy2BossForSize = (typeof bossStageVariant !== 'undefined' && bossStageVariant === 'enemy2');
     const isEnemy3BossForSize = (typeof bossStageVariant !== 'undefined' && bossStageVariant === 'enemy3');
     let bossW, bossH;
@@ -956,28 +943,10 @@ function startBossStageWave() {
         attackGroupId: null
     };
     
-    // FIX: als direct via level kiezer (level >1), skip intro en ga meteen naar entering zodat vijand direct zichtbaar is
-    var isDirectBossChooser = (typeof level !== 'undefined' && level > 1);
-    if (isDirectBossChooser) {
-        bossStagePhase = 'entering';
-        if (typeof isShowingIntro !== 'undefined') isShowingIntro = false;
-        if (typeof introStep !== 'undefined') introStep = 0;
-        if (typeof isShowingCoopPlayersReady !== 'undefined') isShowingCoopPlayersReady = false;
-        if (typeof coopPlayersReadyStartTime !== 'undefined') coopPlayersReadyStartTime = 0;
-        if (typeof showReadyMessage !== 'undefined') showReadyMessage = false;
-        // zet boss net boven scherm zodat hij meteen naar binnen vliegt
-        if (bossStageBoss) {
-            bossStageBoss.y = -bossStageBoss.height - 20;
-        }
-    } else {
-        bossStagePhase = 'intro';
-    }
+    bossStagePhase = 'intro';
     bossStageBossHealth = (typeof bossMaxHitsForThisStage !== 'undefined' ? bossMaxHitsForThisStage : BOSS_STAGE_MAX_HITS);
     isEntrancePhaseActive = false;
     isWaveTransitioning = false;
-    if (typeof isBossStage !== 'undefined') isBossStage = true;
-    if (typeof window !== 'undefined') window.isBossStage = true;
-    if (typeof renderGame === 'function') { try { renderGame(); } catch(e) {} }
 }
 window.startBossStageWave = startBossStageWave;
 
@@ -1053,22 +1022,22 @@ function updateBossStageLogic(now) {
     
     // Intro STAGE X -> BOSS STAGE via isShowingIntro, daarna pas entering
     if (bossStagePhase === 'intro') {
-        if (typeof isShowingIntro !== 'undefined' && !isShowingIntro) {
+        if ((typeof isShowingIntro === 'undefined' || !isShowingIntro) && (typeof isShowingCoopPlayersReady === 'undefined' || !isShowingCoopPlayersReady)) {
             bossStagePhase = 'entering';
         }
         return;
     }
     
-    if (isShowingBossDefeatedMessage && now - bossDefeatedMessageStartTime > 3000) {
+    if (isShowingBossDefeatedMessage && now - bossDefeatedMessageStartTime > 3000) { // FIX: altijd 3 sec
         isShowingBossDefeatedMessage = false;
     }
-
-    const isEnhanced = (typeof bossStageIsEnhancedMode !== 'undefined' && bossStageIsEnhancedMode);
     
     switch(bossStagePhase) {
         case 'intro':
+            // waiting for message
             break;
         case 'entering': {
+            // Move boss down to targetY
             const dy = bossStageTargetY - bossStageBoss.y;
             if (Math.abs(dy) > 2) {
                 bossStageBoss.y += dy * 0.08 + 1.5;
@@ -1078,6 +1047,7 @@ function updateBossStageLogic(now) {
                 bossStageBounceStartY = bossStageBoss.y;
                 bossStageBounceLastTime = now;
                 bossStageBounceCount = 0;
+                // console.log("[BOSS] Start spawning");
             }
             break;
         }
@@ -1093,215 +1063,18 @@ function updateBossStageLogic(now) {
         }
         case 'spawning': {
             isEntrancePhaseActive = true;
+            // Spawn ALL at once zoals stage 4
             while (bossStageSpawnIndex < bossStageSpawnQueue.length) {
                 spawnOneBossStageBee();
             }
-            if (isEnhanced) {
-                // FIX NAAR WENS: 3x stuiteren -> omhoog verdwijnen -> wachten tot grid vol -> dan naar beneden meevechten
-                bossStagePhase = 'exiting_after_spawn_enhanced';
-                console.log("[BOSS ENHANCED] Alle kleine enemies gespawnd, boss gaat eerst omhoog verdwijnen");
-            } else {
-                bossStagePhase = 'exiting_after_spawn';
-            }
+            bossStagePhase = 'exiting_after_spawn';
             break;
         }
-        case 'exiting_after_spawn_enhanced': {
-            isEntrancePhaseActive = true; // geen vuren tijdens verdwijnen
-            if (bossStageBoss) {
-                bossStageBoss.y -= 10; // iets sneller omhoog
-                bossStageBoss.isVisible = true;
-            }
-            if (bossStageBoss && bossStageBoss.y < -bossStageBoss.height - 60) {
-                bossStageBoss.isVisible = false; // echt weg
-                bossStageBoss.y = -bossStageBoss.height - 100;
-                bossStagePhase = 'waiting_for_grid_enhanced';
-                console.log("[BOSS ENHANCED] Boss boven verdwenen, nu wachten tot alle kleine enemies in grid staan");
-            }
-            break;
-        }
-        // ====== NIEUWE ENHANCED FLOW ======
-        case 'waiting_for_grid_enhanced': {
-            isEntrancePhaseActive = true; // blokkeert vuren zoals level 4
-            let stillEntering = false;
-            for (let e of enemies) { if (e && (e.state === 'following_entrance_path' || e.state === 'moving_to_grid')) { stillEntering = true; break; } }
-            if (!stillEntering) {
-                // Alle vijanden staan in grid -> grote boss zakt OOK naar midden grid
-                isEntrancePhaseActive = true; // nog steeds geen vuren tijdens zakken
-                const canvasW = gameCanvas ? gameCanvas.width : 800;
-                const canvasH = gameCanvas ? gameCanvas.height : 600;
-                bossStageEnhancedCenterY = canvasH * 0.42; // midden in de grid
-                // Zorg dat boss zichtbaar is en bovenaan start voor daling naar midden
-                bossStageBoss.x = canvasW/2 - bossStageBoss.width/2;
-                // Als hij al op targetY staat, laat hem van daar naar midden zakken, anders vanaf huidige
-                // y blijft huidige (targetY) en gaat naar center
-                bossStageBoss.state = 'boss_entering_grid_center';
-                bossStageBoss.isVisible = true;
-                bossStagePhase = 'enhanced_boss_entering_grid';
-                console.log("[BOSS ENHANCED] Grid vol, boss zakt naar midden grid Y=", bossStageEnhancedCenterY);
-            }
-            break;
-        }
-        case 'enhanced_boss_entering_grid': {
-            isEntrancePhaseActive = true; // nog steeds geen vuren tijdens zakken
-            const targetY = (typeof bossStageEnhancedCenterY !== 'undefined' && bossStageEnhancedCenterY > 0) ? bossStageEnhancedCenterY : (gameCanvas ? gameCanvas.height*0.42 : 300);
-            const dy = targetY - bossStageBoss.y;
-            if (Math.abs(dy) > 2) {
-                bossStageBoss.y += dy * 0.10 + 2.5; // iets sneller naar beneden
-            } else {
-                bossStageBoss.y = targetY;
-                bossStageBoss.state = 'in_grid_boss';
-                bossStagePhase = 'fighting_enhanced';
-                bossStageBoss.lastFiredTime = 0;
-                const diffNext = (typeof getBossStageDifficulty === 'function' ? getBossStageDifficulty(bossStageVariant) : {bossNextAttackDelay:1500});
-                bossStageBoss.nextAttackTime = now + diffNext.bossNextAttackDelay;
-                isEntrancePhaseActive = false; // NU pas vuren toegestaan!
-                console.log("[BOSS ENHANCED] Boss in grid midden, FIGHT START - vuren toegestaan");
-            }
-            break;
-        }
-        case 'fighting_enhanced': {
-            isEntrancePhaseActive = false;
-            // Boss aanval logica (zelfde als normaal fighting)
-            if (bossStageBoss.state === 'in_grid_boss') {
-                if (now > (bossStageBoss.nextAttackTime || 0)) {
-                    try {
-                        let attackPath = generateAttackPathInternal(bossStageBoss);
-                        if (attackPath && typeof gameCanvas !== 'undefined' && gameCanvas) {
-                            const maxY = gameCanvas.height * 0.75;
-                            for (let seg of attackPath) {
-                                if (seg.p0 && seg.p0.y > maxY) seg.p0.y = maxY;
-                                if (seg.p1 && seg.p1.y > maxY) seg.p1.y = maxY;
-                                if (seg.p2 && seg.p2.y > maxY) seg.p2.y = maxY;
-                                if (seg.p3 && seg.p3.y > maxY) seg.p3.y = maxY;
-                            }
-                        }
-                        if (attackPath && attackPath.length > 0) {
-                            bossStageBoss.attackPathSegments = attackPath;
-                            bossStageBoss.attackPathSegmentIndex = 0;
-                            bossStageBoss.attackPathT = 0;
-                            bossStageBoss.state = 'attacking';
-                            const diffSpeed = (typeof getBossStageDifficulty === 'function' ? getBossStageDifficulty(bossStageVariant) : {bossSpeedFactor:1.0});
-                            bossStageBoss.speed = BASE_ENEMY_ATTACK_SPEED * diffSpeed.bossSpeedFactor;
-                            bossStageBoss.canFireThisDive = true;
-                            try {
-                                if (typeof stopSound === 'function') stopSound('gridBackgroundSound');
-                                if (typeof isGridSoundPlaying !== 'undefined') isGridSoundPlaying = false;
-                                playSound('gridBackgroundSound', false, 0.45);
-                            } catch(e) {}
-                        }
-                    } catch(e){ console.error("Boss enhanced attack gen failed", e); }
-                }
-            } else if (bossStageBoss.state === 'returning') {
-                const targetX = gameCanvas.width/2 - bossStageBoss.width/2;
-                const targetY = (typeof bossStageEnhancedCenterY !== 'undefined' && bossStageEnhancedCenterY > 0) ? bossStageEnhancedCenterY : bossStageTargetY;
-                const dx = targetX - bossStageBoss.x;
-                const dy = targetY - bossStageBoss.y;
-                const dist = Math.sqrt(dx*dx + dy*dy);
-                if (dist > 5) {
-                    bossStageBoss.x += dx * 0.08;
-                    bossStageBoss.y += dy * 0.08;
-                } else {
-                    bossStageBoss.x = targetX;
-                    bossStageBoss.y = targetY;
-                    bossStageBoss.state = 'in_grid_boss';
-                    bossStageBoss.nextAttackTime = now + 600;
-                }
-            }
-            // Boss schieten tijdens dive
-            if (bossStageBoss.state === 'attacking' && bossStageBoss.canFireThisDive) {
-                const diffBoss = (typeof getBossStageDifficulty === 'function' ? getBossStageDifficulty(bossStageVariant) : {bossShotInterval:1200, bossNextAttackDelay:1500, bossSpeedFactor:1.0});
-                // FIX: na level 18 langere interval voor boss - minder kogels voor AI
-                let bossInterval = diffBoss.bossShotInterval;
-                if (typeof level !== 'undefined' && level >= 19) {
-                    bossInterval = Math.max(bossInterval, 2200); // min 2.2 sec na 18
-                }
-                if (now - (bossStageBoss.lastFiredTime||0) > bossInterval) {
-                    let sprayCount = 1;
-                    // FIX DEFINITIEF NA LV18: eindbaas enemy1=2, enemy2=4, enemy3=6 kogels
-                    if (typeof level !== 'undefined' && level >= 19) {
-                        if (bossStageVariant === 'enemy2') sprayCount = 4;
-                        else if (bossStageVariant === 'enemy3') sprayCount = 6;
-                        else sprayCount = 2; // enemy1 / bees = 2 kogels
-                    } else {
-                        sprayCount = 2;
-                        if (typeof bossStageVariant !== 'undefined') {
-                            if (bossStageVariant === 'enemy2') sprayCount = 3;
-                            else if (bossStageVariant === 'enemy3') sprayCount = 3;
-                        }
-                    }
-                    let _spreadTargetShip = null;
-                    if (isTwoPlayerMode && selectedGameMode === 'coop') {
-                        const p1Active = ship1 && player1Lives > 0 && !isPlayer1WaitingForRespawn && !isPlayer1ShipCaptured;
-                        const p2Active = ship2 && player2Lives > 0 && !isPlayer2WaitingForRespawn && !isPlayer2ShipCaptured;
-                        if (p1Active && p2Active) _spreadTargetShip = Math.random() < 0.5 ? ship1 : ship2;
-                        else if (p1Active) _spreadTargetShip = ship1;
-                        else if (p2Active) _spreadTargetShip = ship2;
-                    } else {
-                        if (ship && playerLives > 0 && !isShipCaptured && !isWaitingForRespawn) _spreadTargetShip = ship;
-                    }
-                    if (_spreadTargetShip) {
-                        const _startX = bossStageBoss.x + bossStageBoss.width/2;
-                        const _startY = bossStageBoss.y + bossStageBoss.height * 0.7;
-                        const _dx = (_spreadTargetShip.x + _spreadTargetShip.width/2) - _startX;
-                        const _dy = (_spreadTargetShip.y + _spreadTargetShip.height/2) - _startY;
-                        const _baseAngle = Math.atan2(_dy, _dx);
-                        const _effSpeed = (typeof scaleValue === 'function' && typeof BASE_ENEMY_BULLET_SPEED !== 'undefined') ? scaleValue(level, BASE_ENEMY_BULLET_SPEED, MAX_ENEMY_BULLET_SPEED) : 4;
-                        let _degStep = 32;
-                        if (sprayCount === 2) _degStep = 48;
-                        else if (sprayCount === 4) _degStep = 32;
-                        else if (sprayCount === 6) _degStep = 26;
-                        const _degToRad = Math.PI/180;
-                        for (let s = 0; s < sprayCount; s++) {
-                            const _angleOffset = (s - (sprayCount-1)/2) * _degStep * _degToRad;
-                            const _angle = _baseAngle + _angleOffset;
-                            const _vx = Math.cos(_angle) * _effSpeed;
-                            const _vy = Math.sin(_angle) * _effSpeed;
-                            let _finalVy = _vy > 0 ? _vy : Math.abs(_vy);
-                            const _minDown = _effSpeed * 0.45;
-                            if (_finalVy < _minDown) _finalVy = _minDown;
-                            const _finalVx = _vx * 1.35;
-                            const _xSpread = (s - (sprayCount-1)/2) * (bossStageBoss.width * 0.18);
-                            enemyBullets.push({
-                                x: _startX + _xSpread - ENEMY_BULLET_WIDTH/2,
-                                y: _startY,
-                                width: ENEMY_BULLET_WIDTH,
-                                height: ENEMY_BULLET_HEIGHT,
-                                vx: _finalVx,
-                                vy: _finalVy > 0 ? _finalVy : _effSpeed,
-                                type: bossStageBoss.type
-                            });
-                        }
-                    }
-                    bossStageBoss.lastFiredTime = now;
-                    bossStageBoss.canFireThisDive = false;
-                    playSound('enemyShootSound', false, 0.5);
-                }
-            }
-            // FIX: Na level 18 mogen kleine enemies NIET meer vuren in BOSS STAGES - alleen eindbaas
-            const _bossStageAfter18_enhanced = (typeof level !== 'undefined' && level > 18);
-            if (!_bossStageAfter18_enhanced) {
-                // Kleine enemies mogen OOK vuren in enhanced mode (samen met boss) - alleen t/m level 18
-                if (typeof enemies !== 'undefined' && enemies.length > 0) {
-                    if (now - (window.bossStageLastGridBeeShot || 0) > 1500) {
-                        const gridBees = enemies.filter(e => e && e.state === 'in_grid');
-                        if (gridBees.length > 0 && Math.random() < 0.01) {
-                            const shooter = gridBees[Math.floor(Math.random()*gridBees.length)];
-                            if (shooter && typeof createBulletSimple === 'function') {
-                                if (createBulletSimple(shooter)) {
-                                    shooter.lastFiredTime = now;
-                                    bossStageLastGridBeeShot = now; window.bossStageLastGridBeeShot = now;
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            break;
-        }
-        // ====== EINDE NIEUWE FLOW, HIERONDER OUDE FLOW ======
         case 'exiting_after_spawn': {
+            // Boss goes up out of screen after grid vol
             bossStageBoss.y -= 8;
             if (bossStageBoss.y < -bossStageBoss.height - 50) {
+                // Hide boss, wait for grid clear
                 bossStagePhase = 'waiting_grid_clear';
                 console.log("[BOSS] Grid full, boss exited, waiting clear");
             }
@@ -1319,22 +1092,16 @@ function updateBossStageLogic(now) {
         case 'bees_in_grid': {
             isEntrancePhaseActive = false;
             if (bossStageBoss) bossStageBoss.isVisible = false;
-            // FIX: Na level 18 mogen kleine enemies NIET meer vuren - alleen eindbaas
-            const _bossStageAfter18_bees = (typeof level !== 'undefined' && level > 18);
-            if (!_bossStageAfter18_bees) {
-                if (typeof enemies !== 'undefined' && enemies.length > 0) {
-                    const diff = (typeof getBossStageDifficulty === 'function' ? getBossStageDifficulty(bossStageVariant) : {gridShotInterval:1500, gridShotChance:0.01});
-                    const enforcedInterval = Math.max(diff.gridShotInterval || 0, 1500);
-                    const enforcedChance = Math.min(diff.gridShotChance !== undefined ? diff.gridShotChance : 0.01, 0.01);
-                    if (now - (window.bossStageLastGridBeeShot || 0) > enforcedInterval) {
-                        const gridBees = enemies.filter(e => e && e.state === 'in_grid');
-                        if (gridBees.length > 0 && Math.random() < enforcedChance) {
-                            const shooter = gridBees[Math.floor(Math.random()*gridBees.length)];
-                            if (shooter && typeof createBulletSimple === 'function') {
-                                if (createBulletSimple(shooter)) {
-                                    shooter.lastFiredTime = now;
-                                    bossStageLastGridBeeShot = now; window.bossStageLastGridBeeShot = now;
-                                }
+            if (typeof enemies !== 'undefined' && enemies.length > 0) {
+                const diff = (typeof getBossStageDifficulty === 'function' ? getBossStageDifficulty(bossStageVariant) : {gridShotInterval:400, gridShotChance:0.25});
+                if (now - (window.bossStageLastGridBeeShot || 0) > diff.gridShotInterval) {
+                    const gridBees = enemies.filter(e => e && e.state === 'in_grid');
+                    if (gridBees.length > 0 && Math.random() < diff.gridShotChance) {
+                        const shooter = gridBees[Math.floor(Math.random()*gridBees.length)];
+                        if (shooter && typeof createBulletSimple === 'function') {
+                            if (createBulletSimple(shooter)) {
+                                shooter.lastFiredTime = now;
+                                bossStageLastGridBeeShot = now; window.bossStageLastGridBeeShot = now;
                             }
                         }
                     }
@@ -1356,6 +1123,7 @@ function updateBossStageLogic(now) {
             break;
         }
         case 'waiting_grid_clear': {
+            // Fallback - same as bees_in_grid
             if (enemies.length === 0) {
                 const canvasW = gameCanvas ? gameCanvas.width : 800;
                 if (bossStageBoss) {
@@ -1374,9 +1142,10 @@ function updateBossStageLogic(now) {
                 bossStageBoss.y += dy * 0.08 + 2.5;
             } else {
                 bossStageBoss.y = bossStageTargetY;
-                bossStageBoss.state = 'in_grid_boss';
+                bossStageBoss.state = 'in_grid_boss'; // hovering
                 bossStagePhase = 'fighting';
                 bossStageBoss.lastFiredTime = 0;
+                // Set next attack time
                 const diffNext = (typeof getBossStageDifficulty === 'function' ? getBossStageDifficulty(bossStageVariant) : {bossNextAttackDelay:1500});
                 bossStageBoss.nextAttackTime = now + diffNext.bossNextAttackDelay;
             }
@@ -1404,14 +1173,24 @@ function updateBossStageLogic(now) {
                             const diffSpeed = (typeof getBossStageDifficulty === 'function' ? getBossStageDifficulty(bossStageVariant) : {bossSpeedFactor:1.0});
                             bossStageBoss.speed = BASE_ENEMY_ATTACK_SPEED * diffSpeed.bossSpeedFactor;
                             bossStageBoss.canFireThisDive = true;
+                            // FIX: Alleen voor boss stages (grotere bosses): geen BOSS duik-geluid meer
+                            // Maar wel Achtergrond-grid.mp3 (gridBackgroundSound) iets harder afspelen bij aanval
                             try {
-                                if (typeof stopSound === 'function') stopSound('gridBackgroundSound');
-                                if (typeof isGridSoundPlaying !== 'undefined') isGridSoundPlaying = false;
+                                // Stop eventuele lopende grid loop zodat we 1x harder kunnen afspelen
+                                if (typeof stopSound === 'function') {
+                                    stopSound('gridBackgroundSound');
+                                }
+                                if (typeof isGridSoundPlaying !== 'undefined') {
+                                    isGridSoundPlaying = false;
+                                }
+                                // Speel Achtergrond-grid.mp3 1x af, iets harder (0.45 vs normale 0.1 background)
                                 playSound('gridBackgroundSound', false, 0.45);
-                            } catch(e) {}
+                            } catch(e) { console.warn('Boss attack sound fix failed', e); }
                         }
                     } catch(e){ console.error("Boss attack gen failed", e); }
                 }
+            } else if (bossStageBoss.state === 'attacking') {
+                // Movement handled in moveEntities
             } else if (bossStageBoss.state === 'returning') {
                 const targetX = gameCanvas.width/2 - bossStageBoss.width/2;
                 const dx = targetX - bossStageBoss.x;
@@ -1427,27 +1206,22 @@ function updateBossStageLogic(now) {
                     bossStageBoss.nextAttackTime = now + 600;
                 }
             }
+            // Boss schiet minder - MET SPRAY: enemy2=2 kogels, enemy3=3 kogels per duik
             if (bossStageBoss.state === 'attacking' && bossStageBoss.canFireThisDive) {
                 const diffBoss = (typeof getBossStageDifficulty === 'function' ? getBossStageDifficulty(bossStageVariant) : {bossShotInterval:1200, bossNextAttackDelay:1500, bossSpeedFactor:1.0});
-                // FIX: na level 18 langere interval voor boss - minder kogels voor AI
-                let bossInterval = diffBoss.bossShotInterval;
-                if (typeof level !== 'undefined' && level >= 19) {
-                    bossInterval = Math.max(bossInterval, 2200); // min 2.2 sec na 18
-                }
-                if (now - (bossStageBoss.lastFiredTime||0) > bossInterval) {
-                    let sprayCount = 1;
-                    // FIX DEFINITIEF NA LV18: eindbaas enemy1=2, enemy2=4, enemy3=6 kogels
-                    if (typeof level !== 'undefined' && level >= 19) {
+                if (now - (bossStageBoss.lastFiredTime||0) > diffBoss.bossShotInterval) {
+                    let sprayCount = 2;
+                    if (typeof bossStageVariant !== 'undefined') {
                         if (bossStageVariant === 'enemy2') sprayCount = 4;
                         else if (bossStageVariant === 'enemy3') sprayCount = 6;
-                        else sprayCount = 2; // enemy1 / bees = 2 kogels
-                    } else {
-                        sprayCount = 2;
-                        if (typeof bossStageVariant !== 'undefined') {
-                            if (bossStageVariant === 'enemy2') sprayCount = 3;
-                            else if (bossStageVariant === 'enemy3') sprayCount = 3;
-                        }
+                        else sprayCount = 2;
+                    } else if (typeof bossStageEnemyType !== 'undefined') {
+                        if (bossStageEnemyType === ENEMY2_TYPE) sprayCount = 4;
+                        else if (bossStageEnemyType === ENEMY3_TYPE) sprayCount = 6;
+                        else sprayCount = 2;
                     }
+                    // NIEUW: Echte spread richting schip - enemy1=2, enemy2=4, enemy3=6 kogels BREED
+                    // Bepaal target schip zoals in createBulletSimple
                     let _spreadTargetShip = null;
                     if (isTwoPlayerMode && selectedGameMode === 'coop') {
                         const p1Active = ship1 && player1Lives > 0 && !isPlayer1WaitingForRespawn && !isPlayer1ShipCaptured;
@@ -1466,19 +1240,22 @@ function updateBossStageLogic(now) {
                         const _baseAngle = Math.atan2(_dy, _dx);
                         const _effSpeed = (typeof scaleValue === 'function' && typeof BASE_ENEMY_BULLET_SPEED !== 'undefined') ? scaleValue(level, BASE_ENEMY_BULLET_SPEED, MAX_ENEMY_BULLET_SPEED) : 4;
                         let _degStep = 32;
-                        if (sprayCount === 2) _degStep = 48;
-                        else if (sprayCount === 4) _degStep = 32;
-                        else if (sprayCount === 6) _degStep = 26;
+                        if (sprayCount === 2) _degStep = 48; // enemy1 eindboss: 2 kogels HEEL breed - dekt halve scherm
+                        else if (sprayCount === 4) _degStep = 32; // enemy2 eindboss: 4 kogels verdeeld over bijna hele breedte
+                        else if (sprayCount === 6) _degStep = 26; // enemy3 eindboss: 6 kogels over VOLLEDIGE onderkant
                         const _degToRad = Math.PI/180;
                         for (let s = 0; s < sprayCount; s++) {
                             const _angleOffset = (s - (sprayCount-1)/2) * _degStep * _degToRad;
                             const _angle = _baseAngle + _angleOffset;
                             const _vx = Math.cos(_angle) * _effSpeed;
                             const _vy = Math.sin(_angle) * _effSpeed;
+                            // Extra: fysieke X-offset zodat kogels al verdeeld starten over boss breedte
+                            // Zorg dat kogels altijd naar beneden gaan, maar wel BREED verdeeld over scherm onder
                             let _finalVy = _vy > 0 ? _vy : Math.abs(_vy);
+                            // Clamp minimale downward speed zodat kogels niet te horizontaal gaan en toch scherm onder bereiken
                             const _minDown = _effSpeed * 0.45;
                             if (_finalVy < _minDown) _finalVy = _minDown;
-                            const _finalVx = _vx * 1.35;
+                            const _finalVx = _vx * 1.35; // Extra horizontale spreiding voor dekking over hele breedte
                             const _xSpread = (s - (sprayCount-1)/2) * (bossStageBoss.width * 0.18);
                             enemyBullets.push({
                                 x: _startX + _xSpread - ENEMY_BULLET_WIDTH/2,
@@ -1490,25 +1267,29 @@ function updateBossStageLogic(now) {
                                 type: bossStageBoss.type
                             });
                         }
+                    } else {
+                        // Fallback als geen schip gevonden: oude methode
+                        for (let s = 0; s < sprayCount; s++) {
+                            const spreadOffset = (sprayCount > 1) ? (s - (sprayCount-1)/2) * 12 : 0;
+                            const overridePos = { x: bossStageBoss.x + bossStageBoss.width/2 + spreadOffset, y: bossStageBoss.y + bossStageBoss.height * 0.7 };
+                            createBulletSimple(bossStageBoss, overridePos);
+                        }
                     }
                     bossStageBoss.lastFiredTime = now;
                     bossStageBoss.canFireThisDive = false;
                     playSound('enemyShootSound', false, 0.5);
                 }
             }
-            // FIX: Na level 18 mogen kleine enemies NIET meer vuren in BOSS STAGES - alleen eindbaas
-            const _bossStageAfter18_fighting = (typeof level !== 'undefined' && level > 18);
-            if (!_bossStageAfter18_fighting) {
-                if (typeof enemies !== 'undefined' && enemies.length > 0) {
-                    if (now - (window.bossStageLastGridBeeShot || 0) > 1500) {
-                        const gridBees = enemies.filter(e => e && e.state === 'in_grid');
-                        if (gridBees.length > 0 && Math.random() < 0.01) {
-                            const shooter = gridBees[Math.floor(Math.random()*gridBees.length)];
-                            if (shooter && typeof createBulletSimple === 'function') {
-                                if (createBulletSimple(shooter)) {
-                                    shooter.lastFiredTime = now;
-                                    bossStageLastGridBeeShot = now; window.bossStageLastGridBeeShot = now;
-                                }
+            // NIEUW: Bijen in grid mogen klein beetje vuren in boss mode
+            if (typeof enemies !== 'undefined' && enemies.length > 0) {
+                if (now - (window.bossStageLastGridBeeShot || 0) > 350) {
+                    const gridBees = enemies.filter(e => e && e.state === 'in_grid');
+                    if (gridBees.length > 0 && Math.random() < 0.30) {
+                        const shooter = gridBees[Math.floor(Math.random()*gridBees.length)];
+                        if (shooter && typeof createBulletSimple === 'function') {
+                            if (createBulletSimple(shooter)) {
+                                shooter.lastFiredTime = now;
+                                bossStageLastGridBeeShot = now; window.bossStageLastGridBeeShot = now;
                             }
                         }
                     }
@@ -1612,7 +1393,7 @@ function handleBossStageBossHit(shootingPlayerId = null) {
 }
 
 function triggerBossStageDefeat() {
-    if (bossStagePhase === 'defeated' || bossStagePhase === 'defeated_waiting_clear') return;
+    if (bossStagePhase === 'defeated') return;
     bossStagePhase = 'defeated';
     
     const bossX = bossStageBoss ? bossStageBoss.x + bossStageBoss.width/2 : gameCanvas.width/2;
@@ -1620,6 +1401,7 @@ function triggerBossStageDefeat() {
     const bossW = bossStageBoss ? bossStageBoss.width : BOSS_STAGE_BOSS_WIDTH;
     const bossH = bossStageBoss ? bossStageBoss.height : BOSS_STAGE_BOSS_HEIGHT;
     
+    // 5x een 2x zo grote explosie rondom de Boss nadat boss verslagen is
     for (let i=0;i<5;i++) {
         setTimeout(()=>{
             const rx = (Math.random()-0.5)*bossW*0.8 + bossX;
@@ -1631,17 +1413,17 @@ function triggerBossStageDefeat() {
         }, i*120);
     }
 
-    const baseBonus = (typeof getBossStageBonusForVariant === 'function' ? getBossStageBonusForVariant(bossStageVariant) : BOSS_STAGE_BONUS_SCORE);
-    const isEnhancedReward = (typeof bossStageIsEnhancedMode !== 'undefined' && bossStageIsEnhancedMode) || (typeof level !== 'undefined' && level > 18);
-    const bonus = isEnhancedReward ? baseBonus * 2 : baseBonus;
-    console.log("[BOSS BONUS] base:", baseBonus, "enhanced:", isEnhancedReward, "final bonus:", bonus);
+    const bonus = (typeof getBossStageBonusForVariant === 'function' ? getBossStageBonusForVariant(bossStageVariant) : BOSS_STAGE_BONUS_SCORE);
     score += bonus;
     if (isTwoPlayerMode && selectedGameMode === 'coop') {
+        // Give to both? Give to current player logic handled elsewhere, give to p1 for now
         player1Score += bonus;
         player2Score += bonus;
     } else if (isTwoPlayerMode && selectedGameMode === 'normal') {
         if (currentPlayer === 1) player1Score += bonus;
         else player2Score += bonus;
+    } else {
+        // single player score already added
     }
     
     if (typeof createFloatingScore === 'function') {
@@ -1653,39 +1435,21 @@ function triggerBossStageDefeat() {
     
     bossStageBoss = null;
     
-    // FIX: BOSS DEFEATED tekst 3 sec, maar stage gaat pas door als ALLE kleine enemies ook dood zijn
+    // FIX: Bonus text altijd exact 3000ms in beeld
     setTimeout(()=>{
         isShowingBossDefeatedMessage = false;
         bossDefeatedMessageStartTime = 0;
-        const remainingEnemies = (typeof enemies !== 'undefined') ? enemies.filter(e => e && e.type !== BOSS_STAGE_BOSS_TYPE).length : 0;
-        const noFalling = (typeof fallingShips !== 'undefined') ? fallingShips.length === 0 : true;
-        if (remainingEnemies === 0 && noFalling) {
-            if (typeof resetWaveInternal === 'function') {
-                level++;
-                console.log("[BOSS] Defeated + all enemies cleared, going to level", level);
-                resetWaveInternal();
-            }
-        } else {
-            bossStagePhase = 'defeated_waiting_clear';
-            console.log("[BOSS] Defeated maar nog", remainingEnemies, "enemies over - stage gaat door tot alles verslagen is");
+        if (typeof resetWaveInternal === 'function') {
+            level++;
+            console.log("[BOSS] Defeated, going to level", level);
+            resetWaveInternal();
         }
     }, 3000);
 }
 
-function isBossStageFullyCleared() {
-    if (typeof isBossStage === 'undefined' || !isBossStage) return false;
-    if (bossStageBoss !== null) return false;
-    if (bossStagePhase !== 'defeated' && bossStagePhase !== 'defeated_waiting_clear') return false;
-    const remaining = (typeof enemies !== 'undefined') ? enemies.length : 0;
-    const noFalling = (typeof fallingShips !== 'undefined') ? fallingShips.length === 0 : true;
-    return remaining === 0 && noFalling && !isShowingBossDefeatedMessage;
-}
-
-
 window.updateBossStageLogic = updateBossStageLogic;
 window.handleBossStageBossHit = handleBossStageBossHit;
 window.triggerBossStageDefeat = triggerBossStageDefeat;
-window.isBossStageFullyCleared = isBossStageFullyCleared;
 window.startBossStageWave = startBossStageWave;
 
 
@@ -1704,21 +1468,6 @@ window.startBossStageWave = startBossStageWave;
 
 
 const createBulletSimple = (targetEnemy, overrideStartPos = null) => {
-    // DEFINITIEVE FIX: Na level 18 in BOSS STAGES mogen kleine enemies ABSOLUUT NIET vuren
-    try {
-        if (typeof isBossStage !== 'undefined' && isBossStage && typeof level !== 'undefined' && level > 18) {
-            if (targetEnemy && targetEnemy.type !== BOSS_STAGE_BOSS_TYPE) {
-                // Alleen eindbaas mag vuren na level 18
-                return false;
-            }
-        }
-        // Extra check via bossStageIsEnhancedMode
-        if (typeof bossStageIsEnhancedMode !== 'undefined' && bossStageIsEnhancedMode) {
-            if (targetEnemy && targetEnemy.type !== BOSS_STAGE_BOSS_TYPE) {
-                return false;
-            }
-        }
-    } catch(e) {}
     let currentTargetShip = null;
     let gameActiveForTargeting = false;
 
@@ -2093,8 +1842,6 @@ window.clearCSController = clearCSController;
  * Vuur een burst van vijandelijke kogels af, met een GESCHAALD aantal kogels.
  */
 function fireEnemyBurst(enemyId, requiredState, initialDelayMs) {
-    // DEFINITIEF: Na level 18 in BOSS STAGES geen kogels van kleine enemies
-    try { if ((typeof isBossStage !== 'undefined' && isBossStage && typeof level !== 'undefined' && level > 18) || (typeof bossStageIsEnhancedMode !== 'undefined' && bossStageIsEnhancedMode)) { return; } } catch(e) {}
     let fireBurstCanContinue = false; if (isTwoPlayerMode && selectedGameMode === 'coop') { fireBurstCanContinue = (player1Lives > 0 && !isPlayer1ShipCaptured) || (player2Lives > 0 && !isPlayer2ShipCaptured); } else { fireBurstCanContinue = playerLives > 0 && !isShipCaptured; }
     if (!enemyId || isPaused || !isInGameState || !fireBurstCanContinue || isChallengingStage || isWaveTransitioning) { return; }
     // NIEUW V10: In simultaneous_assault pas vuren als ALLES in grid staat en geen boss aan het capturen is
@@ -2115,8 +1862,6 @@ function fireEnemyBurst(enemyId, requiredState, initialDelayMs) {
  * Vuur een burst van een VAST aantal vijandelijke kogels af.
  */
 function fireFixedEnemyBurst(enemyId, requiredState, initialDelayMs, fixedBulletCount) {
-    // DEFINITIEF: Na level 18 in BOSS STAGES geen kogels van kleine enemies
-    try { if ((typeof isBossStage !== 'undefined' && isBossStage && typeof level !== 'undefined' && level > 18) || (typeof bossStageIsEnhancedMode !== 'undefined' && bossStageIsEnhancedMode)) { return; } } catch(e) {}
     // FIX STAGE 4: nooit vuren tijdens entree / simultaneous assault entree
     if (typeof isEntrancePhaseActive !== 'undefined' && isEntrancePhaseActive) {
         if (typeof isSimultaneousAssaultWave !== 'undefined' && isSimultaneousAssaultWave) {
@@ -2535,7 +2280,7 @@ function handleEnemyHit(enemy, shootingPlayerId = null) {
                  else if (highScoreHolderId === 'player2' || highScoreHolderId === 'ai_p2') previouslyTriggeredFlag = player2TriggeredHighScoreSound;
 
                  // Alleen spelen als deze specifieke speler het geluid nog niet getriggerd heeft *voor deze score reeks*
-                 // OF als de houder is veranderd (wat impliceert dat iemand anders de score heeft gepakt/geëvenaard)
+                 // OF als de houder is veranderd (wat impliceert dat iemand anders de score heeft gepakt/geÃ«venaard)
                  if (!previouslyTriggeredFlag || (highScoreHolderId !== oldHighScoreHolderId && oldHighScore > 0)) {
                     playSound('hiScoreSound', false, 0.2);
                     if (highScoreHolderId === 'player1') player1TriggeredHighScoreSound = true;
@@ -2599,7 +2344,7 @@ function switchPlayerTurn() {
     if (!isTwoPlayerMode || selectedGameMode === 'coop') return false; // Niet voor CO-OP
     // stopSound('hiScoreSound'); // Verplaatst naar binnen de high score logica
 
-    // Sla de staat van de Zojuist Geëindigde Speler op.
+    // Sla de staat van de Zojuist GeÃ«indigde Speler op.
     if (currentPlayer === 1) {
         player1Score = score;
         player1IsDualShipActive = isDualShipActive;
@@ -2667,7 +2412,7 @@ function switchPlayerTurn() {
 function firePlayerBullet(shooterId = null, isTapEvent = false) {
 
     // BOSS STAGE: AI mag alleen in boss levels op boss vuren - veilig, alleen in deze versie - VUURSnelheid zoals normale levels, VEILIGHEID EERST
-    if (typeof isBossStage !== 'undefined' && isBossStage && typeof bossStageBoss !== 'undefined' && bossStageBoss && typeof bossStagePhase !== 'undefined' && (bossStagePhase === 'fighting' || bossStagePhase === 'fighting_enhanced')) {
+    if (typeof isBossStage !== 'undefined' && isBossStage && typeof bossStageBoss !== 'undefined' && bossStageBoss && typeof bossStagePhase !== 'undefined' && bossStagePhase === 'fighting') {
         try {
             if (bossStageBoss.state === 'attacking' || bossStageBoss.state === 'in_grid_boss') {
                 const bossCenterX = bossStageBoss.x + bossStageBoss.width/2;
@@ -2683,7 +2428,7 @@ function firePlayerBullet(shooterId = null, isTapEvent = false) {
     }
 
     // BOSS STAGE: AI moet boss willen opvreten - maar wel kogels ontwijken - VEILIGHEID EERST
-    if (typeof isBossStage !== 'undefined' && isBossStage && typeof bossStageBoss !== 'undefined' && bossStageBoss && typeof bossStagePhase !== 'undefined' && (bossStagePhase === 'fighting' || bossStagePhase === 'fighting_enhanced')) {
+    if (typeof isBossStage !== 'undefined' && isBossStage && typeof bossStageBoss !== 'undefined' && bossStageBoss && typeof bossStagePhase !== 'undefined' && bossStagePhase === 'fighting') {
         try {
             if (bossStageBoss.isVisible !== false) {
                 const bossCenterX = bossStageBoss.x + bossStageBoss.width/2;
@@ -2698,21 +2443,6 @@ function firePlayerBullet(shooterId = null, isTapEvent = false) {
     }
 
     if (typeof isSimultaneousAssaultWave !== "undefined" && isSimultaneousAssaultWave) { if (typeof isEntrancePhaseActive !== "undefined" && isEntrancePhaseActive && !isAllEnemiesInGridForSimultaneous()) return false; }
-    // BOSS ENHANCED: geen vuren tijdens stuiteren / spawnen / zakken naar midden grid (zoals level 4)
-    if (typeof isBossStage !== "undefined" && isBossStage && typeof bossStageIsEnhancedMode !== "undefined" && bossStageIsEnhancedMode) {
-        if (typeof bossStagePhase !== "undefined" && (bossStagePhase === 'bouncing' || bossStagePhase === 'spawning' || bossStagePhase === 'exiting_after_spawn_enhanced' || bossStagePhase === 'waiting_for_grid_enhanced' || bossStagePhase === 'enhanced_boss_entering_grid')) {
-            if (typeof isEntrancePhaseActive !== "undefined" && isEntrancePhaseActive) return false;
-        }
-    }
-    // Ook voor normale boss: tijdens entering/bouncing/spawning niet vuren in enhanced check (voor veiligheid)
-    if (typeof isBossStage !== "undefined" && isBossStage && typeof isEntrancePhaseActive !== "undefined" && isEntrancePhaseActive) {
-        if (typeof bossStagePhase !== "undefined" && (bossStagePhase === 'entering' || bossStagePhase === 'bouncing' || bossStagePhase === 'spawning' || bossStagePhase === 'exiting_after_spawn' || bossStagePhase === 'exiting_after_spawn_enhanced' || bossStagePhase === 'waiting_for_grid_enhanced' || bossStagePhase === 'enhanced_boss_entering_grid')) {
-            // Tijdens enhanced is isEntrancePhaseActive true -> blokkeer speler
-            if (typeof bossStageIsEnhancedMode !== "undefined" && bossStageIsEnhancedMode) {
-                return false;
-            }
-        }
-    }
     const now = Date.now();
 
     const inCoopLevel1IntroStrict = isTwoPlayerMode && selectedGameMode === 'coop' && level === 1 &&
@@ -2931,8 +2661,8 @@ function handlePlayerInput() {
                                    showCsBonusScoreMessage || showPerfectMessage || showCsHitsMessage || showCSClearMessage ||
                                    isCsCompletionDelayActive;
 
-         const inCoopLevel1IntroStrictForMovement = isTwoPlayerMode && selectedGameMode === 'coop' && level === 1 &&
-                                                   coopPlayersReadyStartTime > 0 && now < coopPlayersReadyStartTime + 8000;
+         const inCoopLevel1IntroStrictForMovement = isTwoPlayerMode && selectedGameMode === 'coop' &&
+                                                   coopPlayersReadyStartTime > 0 && now < coopPlayersReadyStartTime + 8000; // FIX
          let allowP1MovementDuringBlock = (inCoopLevel1IntroStrictForMovement || showReadyMessage) &&
                                           isTwoPlayerMode && selectedGameMode === 'coop' &&
                                           ship1 && player1Lives > 0;
@@ -3232,67 +2962,39 @@ function aiControl() {
             aiPreviousDodgeDirection = 0;
         }
 
-        // --- BOSS STAGE AI LOGIC - AGRESSIEF, EIND BAAS DIRECT AANVALLEN (FIX DEMO AI) ---
-        if (typeof isBossStage !== 'undefined' && isBossStage && typeof bossStageBoss !== 'undefined' && bossStageBoss && (bossStagePhase === 'fighting' || bossStagePhase === 'fighting_enhanced') && bossStageBoss.isVisible !== false && !isInvincibleForAI && !isShowingBlockingMessage) {
-            const isEnhancedAfter19 = (bossStageIsEnhancedMode && level >= 19 && bossStagePhase === 'fighting_enhanced');
+        // --- BOSS STAGE AI LOGIC - VEILIGHEID EERST, DAN BOSS AANVALLEN ---
+        if (typeof isBossStage !== 'undefined' && isBossStage && typeof bossStageBoss !== 'undefined' && bossStageBoss && bossStagePhase === 'fighting' && bossStageBoss.isVisible !== false && !isInvincibleForAI && !isShowingBlockingMessage) {
             const bossCenterX = bossStageBoss.x + bossStageBoss.width / 2;
             const bossTargetX = bossCenterX - effectiveShipWidth / 2;
-
-            // In enhanced mode na 19: soms grid vijand pakken als die dichtbij is en boss niet direct gevaarlijk
-            let chosenTarget = bossStageBoss;
-            if (isEnhancedAfter19) {
-                let gridEnemies = enemies.filter(e => e && e.alive && e.type !== BOSS_STAGE_BOSS_TYPE && e.type !== 'boss_stage_boss' && !e.isDying);
-                if (gridEnemies.length > 0) {
-                    // Sorteer: duikende vijanden eerst, daarna dichtste
-                    gridEnemies.sort((a,b) => {
-                        let scoreA = (a.state === 'attacking' || a.state === 'diving' ? 5000 : 0) + (a.state === 'following_bezier_path' ? 2000 : 0) + (a.state === 'in_grid' ? 1000 : 0) - Math.abs(a.x - shipCenterX);
-                        let scoreB = (b.state === 'attacking' || b.state === 'diving' ? 5000 : 0) + (b.state === 'following_bezier_path' ? 2000 : 0) + (b.state === 'in_grid' ? 1000 : 0) - Math.abs(b.x - shipCenterX);
-                        return scoreB - scoreA;
-                    });
-                    // 35% kans om grid te pakken als er aanvallers zijn, anders boss
-                    let hasAttackers = gridEnemies.some(e => e.state === 'attacking' || e.state === 'diving' || e.state === 'following_bezier_path');
-                    if (hasAttackers && Math.random() < 0.45) {
-                        chosenTarget = gridEnemies[0];
-                    }
-                }
-            }
-            targetEnemyForAI = chosenTarget;
-            // EIND BAAS KOGELS VEEL BETER ONTWIKEN - grotere safety, langere lookahead
-            const BOSS_AI_LOOKAHEAD_Y = SHIP_HEIGHT * 16.0;
-            const BOSS_AI_BULLET_PROJ_MS = 900;
-            const BOSS_AI_SAFETY_X = effectiveShipWidth * 1.85;
-            const BOSS_AI_SAFETY_Y = SHIP_HEIGHT * 1.4;
+            targetEnemyForAI = bossStageBoss;
+            const BOSS_AI_LOOKAHEAD_Y = SHIP_HEIGHT * 14.0;
+            const BOSS_AI_BULLET_PROJ_MS = 750;
+            const BOSS_AI_SAFETY_X = effectiveShipWidth * 1.25;
+            const BOSS_AI_SAFETY_Y = SHIP_HEIGHT * 0.9;
             let bossThreats = [];
             for (const bullet of enemyBullets) {
-                // In boss stage zijn bijna alle kogels van eindbaas - extra groot maken
-                if (bullet.y < activeShipForAI.y + BOSS_AI_LOOKAHEAD_Y && bullet.y + bullet.height > activeShipForAI.y - SHIP_HEIGHT * 5) {
+                if (bullet.y < activeShipForAI.y + BOSS_AI_LOOKAHEAD_Y && bullet.y + bullet.height > activeShipForAI.y - SHIP_HEIGHT * 4) {
                     const framesToProj = BOSS_AI_BULLET_PROJ_MS / 16.67;
                     let projX = bullet.x + bullet.vx * framesToProj;
                     let projY = bullet.y + bullet.vy * framesToProj;
                     let isFromAbove = bullet.vy > 0;
-                    // Eindbaas spray 2/4/6 kogels: breder ontwijken
-                    let isBossBullet = (isBossStage && (typeof level === 'undefined' || level > 18)) || (bullet.vy > 0 && Math.abs(bullet.vx) > 0.1);
-                    let safetyMult = isBossBullet ? 1.6 : 1.0;
-                    let safetyX = BOSS_AI_SAFETY_X * safetyMult * (isFromAbove ? 2.4 : 1.2);
-                    let safetyY = BOSS_AI_SAFETY_Y * safetyMult * (isFromAbove ? 3.2 : 1.2);
-                    // Spray herkenning: als kogel schuin vliegt, extra breedte
-                    if (Math.abs(bullet.vx) > 0.5) safetyX *= 1.5;
+                    let safetyX = BOSS_AI_SAFETY_X * (isFromAbove ? 2.0 : 1.0);
+                    let safetyY = BOSS_AI_SAFETY_Y * (isFromAbove ? 2.8 : 1.0);
                     bossThreats.push({
                         x: projX - bullet.width/2 - safetyX,
                         y: projY - bullet.height/2 - safetyY,
                         width: bullet.width + 2*safetyX,
                         height: bullet.height + 2*safetyY,
-                        isFromAbove: isFromAbove,
-                        vx: bullet.vx
+                        isFromAbove: isFromAbove
                     });
                 }
             }
             if (bossStageBoss.state === 'attacking') {
                 bossThreats.push({
-                    x: bossStageBoss.x - effectiveShipWidth*0.5,
-                    y: bossStageBoss.y - SHIP_HEIGHT*0.3,
-                    width: bossStageBoss.width + effectiveShipWidth*1.0,
-                    height: bossStageBoss.height + SHIP_HEIGHT*0.9,
+                    x: bossStageBoss.x - effectiveShipWidth*0.3,
+                    y: bossStageBoss.y - SHIP_HEIGHT*0.2,
+                    width: bossStageBoss.width + effectiveShipWidth*0.6,
+                    height: bossStageBoss.height + SHIP_HEIGHT*0.6,
                     isFromAbove: true
                 });
             }
@@ -3301,8 +3003,8 @@ function aiControl() {
                 let bestX = currentSmoothedShipXForAI;
                 let minColl = Infinity;
                 let maxSafeDist = -1;
-                const steps = 10;
-                const stepSize = effectiveShipWidth * 1.15;
+                const steps = 7;
+                const stepSize = effectiveShipWidth * 0.85;
                 for (let i = -steps; i <= steps; i++) {
                     let testX = currentSmoothedShipXForAI + i * stepSize;
                     testX = Math.max(AI_EDGE_BUFFER*1.5, Math.min(canvasWidth - effectiveShipWidth - AI_EDGE_BUFFER*1.5, testX));
@@ -3325,18 +3027,16 @@ function aiControl() {
                 }
                 dodgeTargetX = bestX;
                 desiredTargetX = bestX;
-                let targetXForBlend = (typeof chosenTarget !== 'undefined' && chosenTarget) ? (chosenTarget.x + chosenTarget.width/2 - effectiveShipWidth/2) : bossTargetX;
                 if (minColl === 0) {
-                    desiredTargetX = desiredTargetX * 0.55 + targetXForBlend * 0.45;
-                    if (aiPreviousDodgeDirection !== 0) aiDodgeCommitEndTime = now + 380;
+                    desiredTargetX = desiredTargetX * 0.65 + bossTargetX * 0.35;
+                    if (aiPreviousDodgeDirection !== 0) aiDodgeCommitEndTime = now + 220;
                 } else {
-                    aiDodgeCommitEndTime = now + 480;
+                    aiDodgeCommitEndTime = now + 300;
                 }
             } else {
                 isDodgingThreat = false;
-                let targetXForIdle = (typeof chosenTarget !== 'undefined' && chosenTarget) ? (chosenTarget.x + chosenTarget.width/2 - effectiveShipWidth/2) : bossTargetX;
-                const wiggle = Math.sin(now/220)*8;
-                desiredTargetX = Math.max(AI_EDGE_BUFFER, Math.min(canvasWidth - effectiveShipWidth - AI_EDGE_BUFFER, targetXForIdle + wiggle));
+                const wiggle = Math.sin(now/280)*12;
+                desiredTargetX = Math.max(AI_EDGE_BUFFER, Math.min(canvasWidth - effectiveShipWidth - AI_EDGE_BUFFER, bossTargetX + wiggle));
                 aiPreviousDodgeDirection = 0;
             }
             shouldTryShoot_AI = true;
@@ -3472,7 +3172,7 @@ function aiControl() {
             } else { aiPreviousDodgeDirection = 0; aiDodgeCommitEndTime = 0; }
         } else { aiPreviousDodgeDirection = 0; aiDodgeCommitEndTime = 0; } // Einde isInvincible/isShowingBlockingMessage check
 
-        const isBossFightActiveForSingleAI = (typeof isBossStage !== 'undefined' && isBossStage && typeof bossStagePhase !== 'undefined' && (bossStagePhase === 'fighting' || bossStagePhase === 'fighting_enhanced'));
+        const isBossFightActiveForSingleAI = (typeof isBossStage !== 'undefined' && isBossStage && typeof bossStagePhase !== 'undefined' && bossStagePhase === 'fighting');
         if (isBossFightActiveForSingleAI) {
             // In boss fight: behoud boss target en blijf vuren tijdens ontwijken
             if (!targetEnemyForAI && typeof bossStageBoss !== 'undefined' && bossStageBoss) targetEnemyForAI = bossStageBoss;
@@ -3724,16 +3424,16 @@ function calculateAIDesiredState(currentShip, currentSmoothedX, isShipDual, game
     const activeCapturingBoss = gameEnemies.find(e => e.id === capturingBossId && e.type === ENEMY3_TYPE);
 
     let dodgeTargetX = currentSmoothedX;
-    const isBossFightActive = (typeof isBossStage !== 'undefined' && isBossStage && typeof bossStagePhase !== 'undefined' && (bossStagePhase === 'fighting' || bossStagePhase === 'fighting_enhanced'));
+    const isBossFightActive = (typeof isBossStage !== 'undefined' && isBossStage && typeof bossStagePhase !== 'undefined' && bossStagePhase === 'fighting');
     if (!isChallengingStage && !isShipInvincible) {
-        // BOSS FIGHT: EXTREEM grotere lookahead en safety voor eindbaas kogels
-        const AI_DANGER_LOOKAHEAD_Y_COOP = isBossFightActive ? SHIP_HEIGHT * 20.0 : SHIP_HEIGHT * 9.0;
-        const AI_BULLET_PROJECTION_MS_COOP = isBossFightActive ? 1100 : 550;
-        const AI_ENEMY_PROJECTION_MS_COOP = isBossFightActive ? 700 : 350;
-        const AI_THREAT_SAFETY_MARGIN_X_BULLET_BASE = effectiveShipWidth * (isBossFightActive ? 2.2 : 0.6);
-        const AI_THREAT_SAFETY_MARGIN_Y_BULLET_BASE = SHIP_HEIGHT * (isBossFightActive ? 1.8 : 0.4);
-        const AI_THREAT_SAFETY_MARGIN_X_ENEMY = effectiveShipWidth * (isBossFightActive ? 1.8 : 0.6);
-        const AI_THREAT_SAFETY_MARGIN_Y_ENEMY = SHIP_HEIGHT * (isBossFightActive ? 1.6 : 0.6);
+        // BOSS FIGHT: veel grotere lookahead en safety margins
+        const AI_DANGER_LOOKAHEAD_Y_COOP = isBossFightActive ? SHIP_HEIGHT * 15.0 : SHIP_HEIGHT * 9.0;
+        const AI_BULLET_PROJECTION_MS_COOP = isBossFightActive ? 800 : 550;
+        const AI_ENEMY_PROJECTION_MS_COOP = isBossFightActive ? 500 : 350;
+        const AI_THREAT_SAFETY_MARGIN_X_BULLET_BASE = effectiveShipWidth * (isBossFightActive ? 1.35 : 0.6);
+        const AI_THREAT_SAFETY_MARGIN_Y_BULLET_BASE = SHIP_HEIGHT * (isBossFightActive ? 1.0 : 0.4);
+        const AI_THREAT_SAFETY_MARGIN_X_ENEMY = effectiveShipWidth * (isBossFightActive ? 1.2 : 0.6);
+        const AI_THREAT_SAFETY_MARGIN_Y_ENEMY = SHIP_HEIGHT * (isBossFightActive ? 1.1 : 0.6);
 
         let allProjectedThreats = [];
 
@@ -4059,65 +3759,44 @@ function calculateAIDesiredState(currentShip, currentSmoothedX, isShipDual, game
         }
     }
 
-    // BOSS STAGE: AGRESSIEF + VEEL BETER ONTWIKEN EIND BAAS KOGELS
-    if (typeof isBossStage !== 'undefined' && isBossStage && typeof bossStageBoss !== 'undefined' && bossStageBoss && typeof bossStagePhase !== 'undefined' && (bossStagePhase === 'fighting' || bossStagePhase === 'fighting_enhanced')) {
+    // BOSS STAGE: VEILIGHEID EERST, DAN DIRECT TERUG VUREN OP EINDBAAS
+    if (typeof isBossStage !== 'undefined' && isBossStage && typeof bossStageBoss !== 'undefined' && bossStageBoss && typeof bossStagePhase !== 'undefined' && bossStagePhase === 'fighting') {
         try {
             if (bossStageBoss.isVisible !== false) {
-                const isEnhancedAfter19 = (typeof bossStageIsEnhancedMode !== 'undefined' && bossStageIsEnhancedMode && typeof level !== 'undefined' && level >= 19 && bossStagePhase === 'fighting_enhanced');
                 const bossCenterX = bossStageBoss.x + bossStageBoss.width/2;
                 const bossTargetX = bossCenterX - effectiveShipWidth/2;
+                // ALTIJD eindbaas als target
+                targetEnemyForAI = bossStageBoss;
 
-                let chosenTarget = bossStageBoss;
-                if (isEnhancedAfter19) {
-                    let gridEnemies = gameEnemies.filter(e => e && e.alive && e.type !== BOSS_STAGE_BOSS_TYPE && e.type !== 'boss_stage_boss' && !e.isDying);
-                    if (gridEnemies.length > 0) {
-                        gridEnemies.sort((a,b) => {
-                            let scoreA = (a.state === 'attacking' || a.state === 'diving' ? 6000 : 0) + (a.state === 'following_bezier_path' ? 3000 : 0) + (a.state === 'in_grid' ? 1500 : 0) - Math.abs(a.x - bossCenterX)*0.5;
-                            let scoreB = (b.state === 'attacking' || b.state === 'diving' ? 6000 : 0) + (b.state === 'following_bezier_path' ? 3000 : 0) + (b.state === 'in_grid' ? 1500 : 0) - Math.abs(b.x - bossCenterX)*0.5;
-                            return scoreB - scoreA;
-                        });
-                        let hasAttackers = gridEnemies.some(e => e.state === 'attacking' || e.state === 'diving' || e.state === 'following_bezier_path');
-                        if (hasAttackers && Math.random() < 0.5) {
-                            chosenTarget = gridEnemies[0];
-                        }
-                    }
-                }
-                targetEnemyForAI = chosenTarget;
-                let targetCenterX = chosenTarget.x + chosenTarget.width/2;
-                let targetX = targetCenterX - effectiveShipWidth/2;
-
+                // Als er al een dodge actief is, behoud die dodge maar VUUR WEL door
                 if (isDodgingThreatCurrentFrame) {
-                    // Tijdens ontwijken eindbaas: 60% dodge behouden, 40% naar target, maar BLIJVEN VUREN
-                    desiredTargetX = desiredTargetX * 0.6 + targetX * 0.4;
-                    shouldTryShoot_AI_Calc = true;
+                    // dodgeTargetX is al berekend in eerdere threat logic - behouden
+                    // maar wel 20% bijsturen naar boss zodat we niet te ver weg raken
+                    desiredTargetX = desiredTargetX * 0.8 + bossTargetX * 0.2;
+                    shouldTryShoot_AI_Calc = true; // BLIJVEN VUREN TIJDENS ONTWIKEN
                 } else {
+                    // Geen directe dreiging: agressief naar boss bewegen en vuren
                     const nowWiggle = typeof currentTime !== 'undefined' ? currentTime : Date.now();
-                    const wiggle = Math.sin(nowWiggle/220)*6;
-                    let tx = targetX + wiggle;
+                    const wiggle = Math.sin(nowWiggle/250)*10; // kleinere wiggle, meer accuraat
+                    let tx = bossTargetX + wiggle;
                     tx = Math.max(AI_EDGE_BUFFER, Math.min(gameCanvas.width - effectiveShipWidth - AI_EDGE_BUFFER, tx));
                     desiredTargetX = tx;
                     shouldTryShoot_AI_Calc = true;
+                    // Reset dodge richting als veilig
                     chosenDodgeDirThisFrame = 0;
                 }
+                // In boss fight: schiet ALTIJD, ongeacht capture logic die later komt
+                // (overschrijft latere false zetten, behalve geblokkeerd state)
             }
         } catch(e) { console.warn("Boss AI override error", e); }
     }
 
     if (typeof isSimultaneousAssaultWave !== "undefined" && isSimultaneousAssaultWave) { if (typeof isEntrancePhaseActive !== "undefined" && isEntrancePhaseActive && !isAllEnemiesInGridForSimultaneous()) { shouldTryShoot_AI_Calc = false; } }
     if (typeof gameEnemies !== "undefined") { const bossWithShipAttacking = gameEnemies.find(e => e && e.type === ENEMY3_TYPE && e.hasCapturedShip && (e.state === "attacking" || e.state === "diving")); if (bossWithShipAttacking) { shouldTryShoot_AI_Calc = true; targetEnemyForAI = bossWithShipAttacking; } }
-    // BOSS FIGHT FINAL OVERRIDE: eindbaas heeft prio, maar na 19 ook grid doelgericht aanvallen (niet wachten op duik)
-    if (typeof isBossStage !== 'undefined' && isBossStage && typeof bossStageBoss !== 'undefined' && bossStageBoss && (bossStagePhase === 'fighting' || bossStagePhase === 'fighting_enhanced') && bossStageBoss.isVisible !== false) {
-        const isEnhancedAfter19 = (typeof bossStageIsEnhancedMode !== 'undefined' && bossStageIsEnhancedMode && typeof level !== 'undefined' && level >= 19 && bossStagePhase === 'fighting_enhanced');
-        if (isEnhancedAfter19 && targetEnemyForAI && targetEnemyForAI.type !== BOSS_STAGE_BOSS_TYPE) {
-            // Behoud grid target die we net kozen - doelgericht schieten
-            shouldTryShoot_AI_Calc = true;
-        } else {
-            // Standaard: eindbaas
-            if (!targetEnemyForAI || targetEnemyForAI.type === BOSS_STAGE_BOSS_TYPE) {
-                targetEnemyForAI = bossStageBoss;
-            }
-            shouldTryShoot_AI_Calc = true;
-        }
+    // BOSS FIGHT FINAL OVERRIDE: altijd terugvuren op eindbaas, zelfs als andere logic het uitzet (behalve als volledig geblokkeerd)
+    if (typeof isBossStage !== 'undefined' && isBossStage && typeof bossStageBoss !== 'undefined' && bossStageBoss && bossStagePhase === 'fighting' && bossStageBoss.isVisible !== false) {
+        targetEnemyForAI = bossStageBoss;
+        shouldTryShoot_AI_Calc = true;
     }
     desiredTargetX = Math.max(AI_EDGE_BUFFER, Math.min(gameCanvas.width - effectiveShipWidth - AI_EDGE_BUFFER, desiredTargetX));
     return { desiredTargetX, shouldTryShoot: shouldTryShoot_AI_Calc, targetEnemyForAI, chosenDodgeDir: chosenDodgeDirThisFrame, isDodging: isDodgingThreatCurrentFrame, predictedCollisions: predictedCollisionsForReturn };
@@ -4445,7 +4124,7 @@ function moveEntities(overrideP1Left = null, overrideP1Right = null) {
             b.y -= b.speed; if (b.y + PLAYER_BULLET_HEIGHT < 0) { bullets.splice(i, 1); continue; }
             let bulletHit = false;
             // BOSS STAGE BOSS collision - kogels mogen niet door boss heen, bij raken normale explosie en kogel weg
-            if (typeof isBossStage !== 'undefined' && isBossStage && typeof bossStageBoss !== 'undefined' && bossStageBoss && (bossStagePhase === 'fighting' || bossStagePhase === 'fighting_enhanced')) {
+            if (typeof isBossStage !== 'undefined' && isBossStage && typeof bossStageBoss !== 'undefined' && bossStageBoss && bossStagePhase === 'fighting') {
                 const bossVulnerable = bossStageBoss.state === 'attacking' || bossStageBoss.state === 'in_grid_boss';
                 if (bossVulnerable) {
                     const bossRect = { x: bossStageBoss.x, y: bossStageBoss.y, width: bossStageBoss.width, height: bossStageBoss.height };
@@ -5087,7 +4766,7 @@ function handlePlayerShipCollision(playerNumber, hitDualPart, collisionTime, was
 
 function triggerGridFiring() {
     // BOSS STAGE: AI moet boss willen opvreten - maar wel kogels ontwijken
-    if (typeof isBossStage !== 'undefined' && isBossStage && typeof bossStageBoss !== 'undefined' && bossStageBoss && typeof bossStagePhase !== 'undefined' && (bossStagePhase === 'fighting' || bossStagePhase === 'fighting_enhanced')) {
+    if (typeof isBossStage !== 'undefined' && isBossStage && typeof bossStageBoss !== 'undefined' && bossStageBoss && typeof bossStagePhase !== 'undefined' && bossStagePhase === 'fighting') {
         try {
             if (bossStageBoss.isVisible !== false) {
                 const bossCenterX = bossStageBoss.x + bossStageBoss.width/2;
@@ -5119,11 +4798,6 @@ function triggerGridFiring() {
             }
         }
         if (!canFireBasedOnPlayerState) return;
-
-        // FIX: Na level 18 in BOSS STAGES mogen kleine enemies NIET vuren - alleen eindbaas
-        if (typeof isBossStage !== 'undefined' && isBossStage && typeof level !== 'undefined' && level > 18) {
-            return;
-        }
 
         // Vuurstop voor grid als AI capture anticipatie actief is in COOP Demo
         if (isCoopAIDemoActive && coopAICaptureDiveAnticipationActive && Date.now() < coopAICaptureDiveAnticipationEndTime) {
@@ -5302,7 +4976,7 @@ function runSingleGameUpdate(timestamp) {
 
 
         let coopLevel1IntroIsCurrentlyActive = false;
-        if (selectedGameMode === 'coop' && level === 1 && coopPlayersReadyStartTime > 0) {
+        if (selectedGameMode === 'coop' && coopPlayersReadyStartTime > 0) { // FIX LEVEL KIEZER - was level===1
             coopLevel1IntroIsCurrentlyActive = true;
 
             if (isShowingCoopPlayersReady) {
@@ -5352,8 +5026,9 @@ function runSingleGameUpdate(timestamp) {
         }
 
 
-        if (selectedGameMode === 'coop' && level === 1 && !gameJustStartedAndWaveLaunched && coopPlayersReadyStartTime === 0 && gameJustStarted) {
-            if (isFullGridWave) startFullGridWave();
+        if (selectedGameMode === 'coop' && !gameJustStartedAndWaveLaunched && coopPlayersReadyStartTime === 0 && gameJustStarted) { // FIX LEVEL 18 COOP
+            if (isBossStage) startBossStageWave();
+            else if (isFullGridWave) startFullGridWave();
             else if (isChallengingStage) startChallengingStageSequence();
             else if (currentWaveDefinition && currentWaveDefinition.length > 0) scheduleEntranceFlightWave();
             else { isWaveTransitioning = true; readyForNextWaveReset = true; }
@@ -5860,7 +5535,7 @@ function runSingleGameUpdate(timestamp) {
                      else aiCanShootTime = 0;
                 }
                 const isNonCoopL1Normal = level === 1 && selectedGameMode !== 'coop';
-                const isCoopL1 = level === 1 && selectedGameMode === 'coop';
+                const isCoopL1 = selectedGameMode === 'coop'; // FIX was level===1
 
                 const shouldLaunchWaveNow = (isNonCoopL1Normal && !gameJustStartedAndWaveLaunched) ||
                                           level > 1 ||
@@ -5900,7 +5575,7 @@ function runSingleGameUpdate(timestamp) {
 
         if (gameJustStarted && noSpecialOrNormalIntroRunning) {
              if (!gameJustStartedAndWaveLaunched) {
-                const isCoopModeL1NotAlreadyHandled = selectedGameMode === 'coop' && level === 1 && coopPlayersReadyStartTime !== 0;
+                const isCoopModeL1NotAlreadyHandled = selectedGameMode === 'coop' && coopPlayersReadyStartTime !== 0; // FIX
 
                 if (!isCoopModeL1NotAlreadyHandled) {
                     if (isBossStage) startBossStageWave();
@@ -5978,20 +5653,7 @@ function runSingleGameUpdate(timestamp) {
 
             if (!isWaveTransitioning && activePlayersForLogic && !inNormalIntro && !isShowingCaptureMessage && !isEntrancePhaseActive) {
                 let allEnemiesGone = enemies.length === 0; let noFallingShips = fallingShips.length === 0; let waveConsideredComplete = false;
-                if (isBossStage) {
-                    // FIX: Boss stages moeten pas klaar zijn als boss dood is EN alle kleine enemies dood zijn
-                    // Als boss al verslagen is (phase defeated_waiting_clear) en er geen enemies meer zijn, dan is wave klaar
-                    if (bossStageBoss === null && (bossStagePhase === 'defeated' || bossStagePhase === 'defeated_waiting_clear')) {
-                        if (allEnemiesGone && noFallingShips && !isShowingBossDefeatedMessage) {
-                            waveConsideredComplete = true;
-                            console.log("[BOSS] Alle enemies verslagen na boss defeat - stage compleet");
-                        } else {
-                            waveConsideredComplete = false;
-                        }
-                    } else {
-                        waveConsideredComplete = false; // Boss leeft nog, handled via triggerBossStageDefeat
-                    }
-                }
+                if (isBossStage) { waveConsideredComplete = false; } // Boss handled separately
                 else if (isChallengingStage) { if (allEnemiesGone && !isEntrancePhaseActive) { waveConsideredComplete = true; if (typeof clearCSController === 'function') clearCSController(); } }
                 else { if (allEnemiesGone && !isEntrancePhaseActive && noFallingShips) waveConsideredComplete = true; }
 
