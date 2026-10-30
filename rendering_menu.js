@@ -387,13 +387,7 @@ function showMenuState() {
        stopAllGameSoundsInternal();
        isGridSoundPlaying = false;
 
-       // FIX: level kiezer moet altijd Level respecteren, ook in menu
-       if (typeof resizeCanvases === 'function') { try { resizeCanvases(); } catch(e) {} }
-       playerLives = 3; score = 0; level = (typeof Level !== 'undefined' ? Level : (typeof window !== 'undefined' && typeof window.Level !== 'undefined' ? window.Level : 1));
-       if (typeof window !== 'undefined') window.level = level;
-       // FIX: boss state ook hier schoon voor directe start
-       if (typeof resetBossStageState === 'function') { try { resetBossStageState(); } catch(e) {} }
-       bossStageBoss = null; bossStagePhase = 'none';
+       playerLives = 3; score = 0; level = 1;
        player1Lives = 3; player2Lives = 3; player1Score = 0; player2Score = 0; player1ShotsFired = 0; player2ShotsFired = 0; player1EnemiesHit = 0; player2EnemiesHit = 0; player1MaxLevelReached = 1; player2MaxLevelReached = 1;
        scoreEarnedThisCS = 0; enemies = []; bullets = []; enemyBullets = []; explosions = []; isShowingIntro = false; introStep = 0; isChallengingStage = false; challengingStageEnemiesHit = 0; currentGridOffsetX = 0; gridMoveDirection = 1; currentWaveDefinition = null; isEntrancePhaseActive = false; totalEnemiesScheduledForWave = 0; enemiesSpawnedThisWave = 0; if(typeof enemySpawnTimeouts !== 'undefined' && Array.isArray(enemySpawnTimeouts)){ enemySpawnTimeouts.forEach(clearTimeout); } enemySpawnTimeouts = []; lastEnemyDetachTime = 0; selectedButtonIndex = 0;
        joystickMovedVerticallyLastFrame = false; previousButtonStates = []; previousGameButtonStates = []; previousDemoButtonStates = []; previousGameButtonStatesP2 = [];
@@ -1762,8 +1756,8 @@ function renderGame() {
                                  gameCtx.fillStyle = b.isDamaged ? "white" : "blue";
                                  gameCtx.fillRect(drawX, drawY, drawW, drawH);
                              }
-                             // Health bar - FIX: altijd boven hoofd, ook in enhanced mode (fighting_enhanced etc) voor eindboss die meevecht
-                              if (bossStageBoss && bossStageBoss.isVisible !== false && (typeof bossStageBossHealth !== 'undefined' && bossStageBossHealth > 0) && bossStagePhase !== 'defeated') {
+                             // Small green health bar directly above boss when on 30% position
+                             if (bossStagePhase === 'entering' || bossStagePhase === 'bouncing' || bossStagePhase === 'spawning' || bossStagePhase === 'returning' || bossStagePhase === 'fighting') {
                                  const barW = drawW * 0.8;
                                  const barH = 8;
                                  const barX = drawX + (drawW - barW)/2;
@@ -1804,10 +1798,7 @@ function renderGame() {
                     messageDrawnThisCycle = true;
                  } else if (typeof isShowingBossDefeatedMessage !== 'undefined' && isShowingBossDefeatedMessage) {
                     drawCanvasText("BOSS DEFEATED!", midScreenX, midScreenY - 20, INTRO_TEXT_FONT, "#00FF00", 'center', 'middle', true);
-                    let _baseBonusDisp = (typeof getBossStageBonusForVariant === 'function' ? getBossStageBonusForVariant(bossStageVariant) : (typeof BOSS_STAGE_BONUS_SCORE !== 'undefined' ? BOSS_STAGE_BONUS_SCORE : 10000));
-                     let _isEnhancedDisp = (typeof bossStageIsEnhancedMode !== 'undefined' && bossStageIsEnhancedMode);
-                     let _finalBonusDisp = _isEnhancedDisp ? _baseBonusDisp * 2 : _baseBonusDisp;
-                     drawCanvasText("+" + _finalBonusDisp, midScreenX, midScreenY + 20, INTRO_TEXT_FONT, "#FFFFFF", 'center', 'middle', true);
+                    drawCanvasText("+" + (typeof getBossStageBonusForVariant === 'function' ? getBossStageBonusForVariant(bossStageVariant) : (typeof BOSS_STAGE_BONUS_SCORE !== 'undefined' ? BOSS_STAGE_BONUS_SCORE : 10000)), midScreenX, midScreenY + 20, INTRO_TEXT_FONT, "#FFFFFF", 'center', 'middle', true);
                     messageDrawnThisCycle = true;
                  } else if (isPaused) {
                     drawCanvasText("PAUSED", midScreenX, midScreenY, PAUSE_TEXT_FONT, PAUSE_TEXT_COLOR, 'center', 'middle', PAUSE_TEXT_SHADOW);

@@ -1,68 +1,6 @@
 // --- START OF FILE setup_utils.js ---
 // --- DEEL 1      van 3 dit code blok    ---
 
-// Level kiezer - zet hier je start level
-var Level = 1; // is level start
-var Level2 = (typeof Level2 !== 'undefined' ? Level2 : Level);
-// Als Level2 gezet is, gebruik die als start level
-if (typeof Level2 !== 'undefined' && Level2 > 1) {
-    Level = Level2;
-}
-
-// --- LEVEL KIEZER FIX: robuuste level switch ---
-function applyLevelChoice(newLevel) {
-    var lvl = parseInt(newLevel, 10);
-    if (!isFinite(lvl) || lvl < 1) lvl = 1;
-    if (lvl > 99) lvl = 99;
-    Level = lvl;
-    if (typeof window !== 'undefined') window.Level = lvl;
-    if (typeof level !== 'undefined') { level = lvl; } 
-    else if (typeof window !== 'undefined' && typeof window.level !== 'undefined') { window.level = lvl; }
-
-    if (typeof resizeCanvases === 'function') { try { resizeCanvases(); } catch(e) {} }
-
-    if (typeof enemySpawnTimeouts !== 'undefined' && Array.isArray(enemySpawnTimeouts)) {
-        enemySpawnTimeouts.forEach(function(t){ try{ clearTimeout(t);}catch(e){} });
-        enemySpawnTimeouts = [];
-    }
-    if (typeof clearCSController === 'function') { try { clearCSController(); } catch(e) {} }
-    if (typeof resetBossStageState === 'function') { try { resetBossStageState(); } catch(e) {} }
-
-    if (typeof enemies !== 'undefined') enemies = [];
-    if (typeof bullets !== 'undefined') bullets = [];
-    if (typeof enemyBullets !== 'undefined') enemyBullets = [];
-    if (typeof explosions !== 'undefined') explosions = [];
-    if (typeof floatingScores !== 'undefined') floatingScores = [];
-    if (typeof fallingShips !== 'undefined') fallingShips = [];
-
-    if (typeof isBossStage !== 'undefined') isBossStage = false;
-    if (typeof bossStagePhase !== 'undefined') bossStagePhase = 'none';
-    if (typeof bossStageBoss !== 'undefined') bossStageBoss = null;
-    if (typeof bossStageIsEnhancedMode !== 'undefined') bossStageIsEnhancedMode = false;
-    if (typeof bossStageEnhancedCenterY !== 'undefined') bossStageEnhancedCenterY = 0;
-    if (typeof isChallengingStage !== 'undefined') isChallengingStage = false;
-    if (typeof isFullGridWave !== 'undefined') isFullGridWave = false;
-    if (typeof isSimultaneousAssaultWave !== 'undefined') isSimultaneousAssaultWave = false;
-    if (typeof isEntrancePhaseActive !== 'undefined') isEntrancePhaseActive = false;
-    if (typeof isWaveTransitioning !== 'undefined') isWaveTransitioning = false;
-
-    console.log("[LEVEL KIEZER] Level gezet naar", lvl);
-    return lvl;
-}
-if (typeof window !== 'undefined') { window.applyLevelChoice = applyLevelChoice; }
-
-function startLevel(lvl) {
-    var v = applyLevelChoice(lvl);
-    if (typeof resetGameInternal === 'function') { resetGameInternal(); }
-    else if (typeof window !== 'undefined' && typeof window.resetGame === 'function') { window.resetGame(); }
-    if (typeof isInGameState !== 'undefined') isInGameState = true;
-    if (typeof isShowingScoreScreen !== 'undefined') isShowingScoreScreen = false;
-    if (typeof renderGame === 'function') { try { renderGame(); } catch(e){} }
-    return v;
-}
-if (typeof window !== 'undefined') { window.startLevel = startLevel; }
-
-
 const
     // Enemy Types (Needs to be defined BEFORE game_logic.js uses them)
     ENEMY1_TYPE = 'enemy1', ENEMY2_TYPE = 'enemy2', ENEMY3_TYPE = 'enemy3',
@@ -81,7 +19,6 @@ const
     BOSS_STAGE_BOSS_HEIGHT = Math.round(ENEMY1_HEIGHT * BOSS_STAGE_SCALE_FACTOR),
     BOSS_STAGE_MAX_HITS = 150,
     BOSS_STAGE_BONUS_SCORE = 10000,
-    BOSS_STAGE_ENHANCED_START_LEVEL = 19,
     SHIP_WIDTH = 50, SHIP_HEIGHT = 50, SHIP_BOTTOM_MARGIN = 30, SHIP_MOVE_SPEED = 10,
     COOP_SHIP_HORIZONTAL_OFFSET_FACTOR = 0.15,
 
@@ -123,7 +60,7 @@ let highScore = 20000;
 window.highScoreHolderId = null; // << GEWIJZIGD: Expliciet aan window toevoegen
 let playerLives = 3;
 let score = 0;
-let level = (typeof Level !== 'undefined' ? Level : 1);
+let level = 1;
 let isTwoPlayerMode = false;
 let selectedGameMode = 'normal'; // 'normal', 'coop'
 let currentPlayer = 1;
