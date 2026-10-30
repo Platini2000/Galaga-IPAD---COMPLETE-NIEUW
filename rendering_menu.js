@@ -1738,23 +1738,49 @@ function renderGame() {
                              const drawW = b.width;
                              const drawH = b.height;
                              if (img) {
-                                 if (b.isDamagedFlash) {
-                                 gameCtx.globalAlpha = 0.6;
-                                 gameCtx.filter = 'brightness(200%)';
-                             } else if (b.isBluePhase || b.isDamaged) {
-                                 const isBlueBoss = b.isBluePhase || (typeof bossStageVariant !== 'undefined' && bossStageVariant === 'enemy3') || b.type === 'boss_stage_boss' || (typeof BOSS_STAGE_BOSS_TYPE !== 'undefined' && b.type === BOSS_STAGE_BOSS_TYPE);
-                                if (isBlueBoss) {
-                                     gameCtx.filter = 'hue-rotate(180deg) saturate(1.5) brightness(1.2)';
-                                 } else {
+                                 // FIX iPhone: geen hue-rotate filter, gebruik source-atop tint (werkt op iOS + PC)
+                                 const isBluePhaseActive = !!(b.isBluePhase);
+                                 const isDamagedFlashActive = !!(b.isDamagedFlash);
+
+                                 if (isDamagedFlashActive) {
                                      gameCtx.globalAlpha = 0.6;
-                                     gameCtx.filter = 'brightness(200%)';
                                  }
-                             }
+                                 // Eerst image tekenen
                                  gameCtx.drawImage(img, drawX, drawY, drawW, drawH);
+
+                                 if (isDamagedFlashActive) {
+                                     gameCtx.globalCompositeOperation = 'source-atop';
+                                     gameCtx.fillStyle = 'rgba(255,255,255,0.75)';
+                                     gameCtx.fillRect(drawX, drawY, drawW, drawH);
+                                     gameCtx.globalCompositeOperation = 'source-over';
+                                     gameCtx.globalAlpha = 1.0;
+                                 } else if (isBluePhaseActive) {
+                                     // 150 max, bij 75 hits = 50% -> blauw, bij 25% -> rood
+                                     const maxH = (typeof bossStageBossMaxHealth !== 'undefined' ? bossStageBossMaxHealth : 150);
+                                     const curH = (typeof bossStageBossHealth !== 'undefined' ? bossStageBossHealth : maxH);
+                                     const pct = curH / maxH;
+                                     let tintColor = 'rgba(0, 90, 255, 0.68)'; // blauw bij 75 hits
+                                     if (pct <= 0.25) {
+                                         tintColor = 'rgba(255, 0, 0, 0.70)'; // rood
+                                     } else if (pct <= 0.40) {
+                                         tintColor = 'rgba(255, 50, 50, 0.60)';
+                                     }
+                                     gameCtx.globalCompositeOperation = 'source-atop';
+                                     gameCtx.fillStyle = tintColor;
+                                     gameCtx.fillRect(drawX, drawY, drawW, drawH);
+                                     gameCtx.globalCompositeOperation = 'source-over';
+                                 }
                                  gameCtx.filter = 'none';
                                  gameCtx.globalAlpha = 1.0;
                              } else {
-                                 gameCtx.fillStyle = b.isDamaged ? "white" : "blue";
+                                 // fallback
+                                 if (b.isBluePhase) {
+                                     const maxH = (typeof bossStageBossMaxHealth !== 'undefined' ? bossStageBossMaxHealth : 150);
+                                     const curH = (typeof bossStageBossHealth !== 'undefined' ? bossStageBossHealth : maxH);
+                                     gameCtx.fillStyle = (curH / maxH <= 0.25) ? "red" : "blue";
+                                 } else {
+                                     gameCtx.fillStyle = b.isDamaged ? "white" : "green";
+                                 }
                                  gameCtx.fillRect(drawX, drawY, drawW, drawH);
                              }
                              // Small green health bar directly above boss when on 30% position
