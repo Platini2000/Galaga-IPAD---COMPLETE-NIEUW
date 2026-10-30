@@ -1367,12 +1367,12 @@ function handleBossStageBossHit(shootingPlayerId = null) {
         }
     } catch(e) { console.error("Boss hit score error", e); }
     
-    // --- KLEURWISSEL enemy3 eindbaas: blauw na 75 hits van 150 (helft) ---
+        // --- KLEURWISSEL ALLEEN enemy3 eindbaas (level 18): blauw na 75 hits ---
     if (typeof bossStageVariant !== 'undefined' && bossStageVariant === 'enemy3') {
         const halfHealth = (typeof bossStageBossMaxHealth !== 'undefined' ? bossStageBossMaxHealth : 150) / 2;
         if (bossStageBossHealth <= halfHealth) {
             if (!bossStageBoss.isBluePhase) {
-                console.log("[BOSS] enemy3 bereikt 75 hits - wordt BLAUW! Health:", bossStageBossHealth);
+                console.log("[BOSS] enemy3 bereikt 75 hits - wordt BLAUW/ROOD! Health:", bossStageBossHealth);
             }
             bossStageBoss.isBluePhase = true;
         }

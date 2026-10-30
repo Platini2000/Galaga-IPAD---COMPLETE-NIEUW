@@ -1754,16 +1754,16 @@ function renderGame() {
                                      gameCtx.fillRect(drawX, drawY, drawW, drawH);
                                      gameCtx.globalCompositeOperation = 'source-over';
                                      gameCtx.globalAlpha = 1.0;
-                                 } else if (isBluePhaseActive) {
+                                 } else if (isBluePhaseActive && (typeof bossStageVariant !== 'undefined' && bossStageVariant === 'enemy3')) {
                                      // 150 max, bij 75 hits = 50% -> blauw, bij 25% -> rood
                                      const maxH = (typeof bossStageBossMaxHealth !== 'undefined' ? bossStageBossMaxHealth : 150);
                                      const curH = (typeof bossStageBossHealth !== 'undefined' ? bossStageBossHealth : maxH);
                                      const pct = curH / maxH;
-                                     let tintColor = 'rgba(0, 90, 255, 0.68)'; // blauw bij 75 hits
+                                     let tintColor = 'rgba(0, 80, 255, 0.45)'; // Blauw bij 75 hits: rgba(0, 80, 255, 0.45) = 20% -
                                      if (pct <= 0.25) {
-                                         tintColor = 'rgba(255, 0, 0, 0.70)'; // rood
+                                         tintColor = 'rgba(255, 0, 0, 0.50)'; // Fel rood bij 25%: rgba(255, 0, 0, 0.50) = 25% -
                                      } else if (pct <= 0.40) {
-                                         tintColor = 'rgba(255, 50, 50, 0.60)';
+                                         tintColor = 'rgba(255, 40, 40, 0.50)'; // Rood bij 40%: rgba(255, 40, 40, 0.50) = 25%
                                      }
                                      gameCtx.globalCompositeOperation = 'source-atop';
                                      gameCtx.fillStyle = tintColor;
