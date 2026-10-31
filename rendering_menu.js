@@ -943,7 +943,7 @@ function renderHitSparks() { if (!gameCtx || !hitSparks || hitSparks.length === 
 
 
 /**
- * Tekent de volledige game scÃƒÂ¨ne.
+ * Tekent de volledige game scÃƒÆ’Ã‚Â¨ne.
  */
 function renderGame() {
     try {
@@ -1808,7 +1808,91 @@ function renderGame() {
                          gameCtx.restore();
                      }
                  }
-                 if (captureBeamActive && capturingBossId && captureBeamProgress > 0 && !isShowingCoopPlayersReady) { gameCtx.save(); const pulseAlpha = 0.4 + (Math.sin(now * CAPTURE_BEAM_PULSE_SPEED) + 1) / 2 * 0.6; const fadeAlpha = captureBeamProgress; gameCtx.globalAlpha = fadeAlpha * pulseAlpha; const capturingBoss = enemies.find(e => e.id === capturingBossId); if (capturingBoss) { const beamSourceX = capturingBoss.x + BOSS_WIDTH / 2; const beamVisualStartY = capturingBoss.y + BOSS_HEIGHT; const beamVisualEndY = gameCanvas.height - LIFE_ICON_MARGIN_BOTTOM - LIFE_ICON_SIZE - 10; const topWidth = BOSS_WIDTH * CAPTURE_BEAM_WIDTH_TOP_FACTOR; const bottomWidth = SHIP_WIDTH * CAPTURE_BEAM_WIDTH_BOTTOM_FACTOR; if (beamVisualStartY < beamVisualEndY) { const grad = gameCtx.createLinearGradient(beamSourceX, beamVisualStartY, beamSourceX, beamVisualEndY); grad.addColorStop(0, CAPTURE_BEAM_COLOR_START); grad.addColorStop(1, CAPTURE_BEAM_COLOR_END); gameCtx.fillStyle = grad; gameCtx.beginPath(); gameCtx.moveTo(beamSourceX - topWidth / 2, beamVisualStartY); gameCtx.lineTo(beamSourceX + topWidth / 2, beamVisualStartY); gameCtx.lineTo(beamSourceX + bottomWidth / 2, beamVisualEndY); gameCtx.lineTo(beamSourceX - bottomWidth / 2, beamVisualEndY); gameCtx.closePath(); gameCtx.fill(); } } gameCtx.restore(); }
+                 if (captureBeamActive && capturingBossId && captureBeamProgress > 0 && !isShowingCoopPlayersReady) { 
+                     gameCtx.save(); 
+                     const pulseAlpha = 0.4 + (Math.sin(now * CAPTURE_BEAM_PULSE_SPEED) + 1) / 2 * 0.6; 
+                     const fadeAlpha = captureBeamProgress; 
+                     gameCtx.globalAlpha = fadeAlpha * pulseAlpha; 
+                     const capturingBoss = enemies.find(e => e.id === capturingBossId); 
+                     let beamCenterXForIcon = gameCanvas.width/2;
+                     let beamIconY = gameCanvas.height*0.6;
+                     if (capturingBoss) { 
+                         const beamSourceX = capturingBoss.x + BOSS_WIDTH / 2; 
+                         beamCenterXForIcon = beamSourceX;
+                         const beamVisualStartY = capturingBoss.y + BOSS_HEIGHT; 
+                         const beamVisualEndY = gameCanvas.height - LIFE_ICON_MARGIN_BOTTOM - LIFE_ICON_SIZE - 10; 
+                         beamIconY = (beamVisualStartY + beamVisualEndY)/2;
+                         const topWidth = BOSS_WIDTH * CAPTURE_BEAM_WIDTH_TOP_FACTOR; 
+                         const bottomWidth = SHIP_WIDTH * CAPTURE_BEAM_WIDTH_BOTTOM_FACTOR; 
+                         if (beamVisualStartY < beamVisualEndY) { 
+                             const grad = gameCtx.createLinearGradient(beamSourceX, beamVisualStartY, beamSourceX, beamVisualEndY); 
+                             grad.addColorStop(0, CAPTURE_BEAM_COLOR_START); 
+                             grad.addColorStop(1, CAPTURE_BEAM_COLOR_END); 
+                             gameCtx.fillStyle = grad; 
+                             gameCtx.beginPath(); 
+                             gameCtx.moveTo(beamSourceX - topWidth / 2, beamVisualStartY); 
+                             gameCtx.lineTo(beamSourceX + topWidth / 2, beamVisualStartY); 
+                             gameCtx.lineTo(beamSourceX + bottomWidth / 2, beamVisualEndY); 
+                             gameCtx.lineTo(beamSourceX - bottomWidth / 2, beamVisualEndY); 
+                             gameCtx.closePath(); 
+                             gameCtx.fill(); 
+                         } 
+                     } 
+                     gameCtx.restore();
+                     try {
+                         if (typeof captureBeamUpgradeIconRotation !== 'undefined') captureBeamUpgradeIconRotation += 0.08;
+                         let iconType = null;
+                         if (capturingBoss && capturingBoss.beamerUpgradeType) iconType = capturingBoss.beamerUpgradeType;
+                         else if (typeof activeBeamerUpgradeType !== 'undefined') iconType = activeBeamerUpgradeType;
+                         if (iconType) {
+                             gameCtx.save();
+                             gameCtx.translate(beamCenterXForIcon, beamIconY);
+                             gameCtx.rotate(captureBeamUpgradeIconRotation || 0);
+                             gameCtx.globalAlpha = 1.0;
+                             let iconColor = "#FFFFFF";
+                             if (iconType === 'SHIELD') iconColor = "#00BFFF";
+                             else if (iconType === 'RAPID') iconColor = "#FFFF00";
+                             else if (iconType === 'SPREAD') iconColor = "#FFFFFF";
+                             else if (iconType === 'CLEAR') iconColor = "#FF4500";
+                             else if (iconType === '1UP') iconColor = "#FF0000";
+                             else if (iconType === 'DUAL') iconColor = "#00FF00";
+                             let iconImg = null;
+                             if (iconType === 'SHIELD' && typeof shieldIconImage !== 'undefined') iconImg = shieldIconImage;
+                             else if (iconType === 'RAPID' && typeof rapidIconImage !== 'undefined') iconImg = rapidIconImage;
+                             else if (iconType === 'SPREAD' && typeof spreadIconImage !== 'undefined') iconImg = spreadIconImage;
+                             else if (iconType === 'CLEAR' && typeof clearIconImage !== 'undefined') iconImg = clearIconImage;
+                             else if (iconType === '1UP' && typeof oneUpIconImage !== 'undefined') iconImg = oneUpIconImage;
+                             else if (iconType === 'DUAL' && typeof dualIconImage !== 'undefined') iconImg = dualIconImage;
+                             if (iconImg && iconImg.complete && iconImg.naturalWidth !== 0) {
+                                 const iconSize = 52;
+                                 gameCtx.shadowColor = iconColor; gameCtx.shadowBlur = 14;
+                                 gameCtx.drawImage(iconImg, -iconSize/2, -iconSize/2, iconSize, iconSize);
+                                 gameCtx.shadowBlur = 0;
+                             } else {
+                                 if (iconType === 'SHIELD') {
+                                     gameCtx.fillStyle = iconColor; gameCtx.beginPath(); gameCtx.arc(0,0,22,0,Math.PI*2); gameCtx.fill();
+                                     gameCtx.fillStyle = "#000080"; gameCtx.beginPath(); gameCtx.moveTo(-12,-8); gameCtx.lineTo(12,-8); gameCtx.lineTo(10,10); gameCtx.lineTo(0,16); gameCtx.lineTo(-10,10); gameCtx.closePath(); gameCtx.fill();
+                                 } else if (iconType === 'RAPID') {
+                                     gameCtx.strokeStyle = iconColor; gameCtx.lineWidth = 4;
+                                     for(let i=-12;i<=12;i+=12){ gameCtx.beginPath(); gameCtx.moveTo(i,-18); gameCtx.lineTo(i,18); gameCtx.stroke(); }
+                                 } else if (iconType === 'SPREAD') {
+                                     gameCtx.strokeStyle = iconColor; gameCtx.lineWidth = 4;
+                                     gameCtx.beginPath(); gameCtx.moveTo(0,0); gameCtx.lineTo(0,-20); gameCtx.stroke();
+                                     gameCtx.beginPath(); gameCtx.moveTo(0,0); gameCtx.lineTo(-14,-18); gameCtx.stroke();
+                                     gameCtx.beginPath(); gameCtx.moveTo(0,0); gameCtx.lineTo(14,-18); gameCtx.stroke();
+                                     gameCtx.beginPath(); gameCtx.moveTo(0,0); gameCtx.lineTo(-24,-12); gameCtx.stroke();
+                                     gameCtx.beginPath(); gameCtx.moveTo(0,0); gameCtx.lineTo(24,-12); gameCtx.stroke();
+                                 } else if (iconType === 'DUAL') {
+                                     gameCtx.fillStyle = iconColor; gameCtx.fillRect(-18,-8,12,16); gameCtx.fillRect(6,-8,12,16);
+                                 } else {
+                                     gameCtx.fillStyle = iconColor; gameCtx.font = "bold 28px Arial"; gameCtx.fillText(iconType[0], 0, 0);
+                                 }
+                             }
+                             gameCtx.shadowColor = iconColor; gameCtx.shadowBlur = 12; gameCtx.restore();
+                             gameCtx.save(); gameCtx.globalAlpha = 1; gameCtx.font = "10px 'Press Start 2P'"; gameCtx.fillStyle = "#FFFFFF"; gameCtx.textAlign = "center"; gameCtx.fillText(iconType, beamCenterXForIcon, beamIconY + 40); gameCtx.restore();
+                         }
+                     } catch(e) {}
+                 }
                  if (!isShowingCoopPlayersReady) { renderExplosions(); renderFloatingScores(); renderHitSparks(); }
 
                  let messageDrawnThisCycle = false;
@@ -1826,6 +1910,12 @@ function renderGame() {
                  } else if (typeof isShowingBossDefeatedMessage !== 'undefined' && isShowingBossDefeatedMessage) {
                     drawCanvasText("BOSS DEFEATED!", midScreenX, midScreenY - 20, INTRO_TEXT_FONT, "#00FF00", 'center', 'middle', true);
                     drawCanvasText("+" + (typeof getBossStageBonusForVariant === 'function' ? getBossStageBonusForVariant(bossStageVariant) : (typeof BOSS_STAGE_BONUS_SCORE !== 'undefined' ? BOSS_STAGE_BONUS_SCORE : 10000)), midScreenX, midScreenY + 20, INTRO_TEXT_FONT, "#FFFFFF", 'center', 'middle', true);
+                    messageDrawnThisCycle = true;
+                 } else if (typeof isNextWaveMessageActive !== 'undefined' && isNextWaveMessageActive) {
+                    const elapsedNext = Date.now() - nextWaveMessageStartTime;
+                    if (elapsedNext < 2500) {
+                        drawCanvasText("NEXT WAVE", midScreenX, midScreenY, INTRO_TEXT_FONT, INTRO_TEXT_COLOR_NORMAL, 'center', 'middle', true);
+                    } else { isNextWaveMessageActive = false; }
                     messageDrawnThisCycle = true;
                  } else if (isPaused) {
                     drawCanvasText("PAUSED", midScreenX, midScreenY, PAUSE_TEXT_FONT, PAUSE_TEXT_COLOR, 'center', 'middle', PAUSE_TEXT_SHADOW);

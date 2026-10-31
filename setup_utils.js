@@ -154,6 +154,46 @@ let captureBeamSource = { x: 0, y: 0 };
 let captureBeamTargetY = 0;
 let captureBeamProgress = 0;
 let captureAttemptMadeThisLevel = false;
+// --- NIEUW UPGRADE BEAMER SYSTEEM 2 GOLVEN ---
+let currentSubWave = 1;
+let maxSubWavesPerLevel = 2;
+let isNextWaveMessageActive = false;
+let nextWaveMessageStartTime = 0;
+let beamerUpgradeAttemptsThisLevel = 0;
+let maxBeamerAttemptsPerLevel = 3;
+let activeBeamerUpgradeType = null;
+let captureBeamUpgradeIconRotation = 0;
+let shieldActive = false;
+let shieldActivePlayer = null;
+let rapidActive = false;
+let rapidActiveUntil = 0;
+let rapidActivePlayer = null;
+let spreadActive = false;
+let spreadActiveUntil = 0;
+let spreadActivePlayer = null;
+let clearActiveUntil = 0;
+let isClearNoBulletsActive = false;
+// FIX HELPER: centrale check of CLEAR nog actief is, auto-reset als verlopen
+function isClearBlocking() {
+    try {
+        if (!isClearNoBulletsActive) return false;
+        if (typeof clearActiveUntil === 'undefined' || clearActiveUntil === 0) { isClearNoBulletsActive = false; return false; }
+        if (Date.now() >= clearActiveUntil) {
+            isClearNoBulletsActive = false;
+            clearActiveUntil = 0;
+            if (typeof lastGridFireCheckTime !== 'undefined') lastGridFireCheckTime = 0;
+            console.log("[FIX] isClearBlocking auto-expire -> vuren hervat");
+            return false;
+        }
+        return true;
+    } catch(e){ return false; }
+}
+window.isClearBlocking = isClearBlocking;
+let upgradeMessageActive = false;
+let upgradeMessageText = "";
+let upgradeMessageStartTime = 0;
+let upgradeMessagePlayer = null;
+
 let isWaitingForRespawn = false;
 let isPlayer1WaitingForRespawn = false;
 let isPlayer2WaitingForRespawn = false;
@@ -286,6 +326,9 @@ const beeImage2 = new Image(), butterflyImage2 = new Image(), bossGalagaImage2 =
 beeImage2.src = 'Afbeeldingen/bee-2.png'; butterflyImage2.src = 'Afbeeldingen/butterfly-2.png'; bossGalagaImage2.src = 'Afbeeldingen/bossGalaga-2.png';
 const level1Image = new Image(), level5Image = new Image(), level10Image = new Image(), level20Image = new Image(), level30Image = new Image(), level50Image = new Image();
 level1Image.src = 'Afbeeldingen/Level-1.png'; level5Image.src = 'Afbeeldingen/Level-5.png'; level10Image.src = 'Afbeeldingen/Level-10.png'; level20Image.src = 'Afbeeldingen/Level-20.png'; level30Image.src = 'Afbeeldingen/Level-30.png'; level50Image.src = 'Afbeeldingen/Level-50.png';
+// --- NIEUW UPGRADE ICONEN ---
+const shieldIconImage = new Image(), clearIconImage = new Image(), dualIconImage = new Image(), oneUpIconImage = new Image(), spreadIconImage = new Image(), rapidIconImage = new Image();
+shieldIconImage.src = 'Afbeeldingen/shield_icon.png'; clearIconImage.src = 'Afbeeldingen/clear_icon.png'; dualIconImage.src = 'Afbeeldingen/dual_icon.png'; oneUpIconImage.src = 'Afbeeldingen/1up_icon.png'; spreadIconImage.src = 'Afbeeldingen/spread_icon.png'; rapidIconImage.src = 'Afbeeldingen/rapid_icon.png';
 
 // Web Audio API
 let audioContext;
@@ -665,7 +708,7 @@ function initializeDOMElements() {
     }
 
 
-    const imagesToLoad = [ shipImage, beeImage, bulletImage, bossGalagaImage, butterflyImage, logoImage, level1Image, level5Image, level10Image, level20Image, level30Image, level50Image, beeImage2, butterflyImage2, bossGalagaImage2 ];
+    const imagesToLoad = [ shipImage, beeImage, bulletImage, bossGalagaImage, butterflyImage, logoImage, level1Image, level5Image, level10Image, level20Image, level30Image, level50Image, beeImage2, butterflyImage2, bossGalagaImage2, shieldIconImage, clearIconImage, dualIconImage, oneUpIconImage, spreadIconImage, rapidIconImage ];
     imagesToLoad.forEach(img => { if (img) img.onerror = () => console.error(`Error loading image: ${img.src}`); });
     return true;
 }
@@ -880,7 +923,7 @@ function drawStars() { /* ... ongewijzigd ... */ try { if (!starryCtx || !starry
 /** Draws the retro perspective grid. */
 function drawRetroGrid() { /* ... ongewijzigd ... */ try { if (!retroGridCtx || !retroGridCanvas || retroGridCanvas.width === 0 || retroGridCanvas.height === 0) return; if (!isPaused || isShowingPortraitMessage) { gridOffsetY -= GRID_SPEED; } const width = retroGridCanvas.width; const height = retroGridCanvas.height; retroGridCtx.clearRect(0, 0, width, height); const horizonY = Math.round(height * GRID_HORIZON_Y_FACTOR); const vanishingPointX = width / 2; const perspectiveHeight = height - horizonY; retroGridCtx.lineWidth = GRID_LINE_WIDTH; const fixedLineWidth = width * GRID_HORIZONTAL_LINE_WIDTH_FACTOR; const fixedLineStartX = vanishingPointX - fixedLineWidth / 2; const fixedLineEndX = vanishingPointX + fixedLineWidth / 2; const fadeStartY = horizonY + perspectiveHeight * 0.1; const fadeEndY = height; const fadeRange = Math.max(1, fadeEndY - fadeStartY); retroGridCtx.strokeStyle = GRID_LINE_COLOR_FIXED; retroGridCtx.beginPath(); retroGridCtx.moveTo(fixedLineStartX, horizonY); retroGridCtx.lineTo(fixedLineEndX, horizonY); retroGridCtx.stroke(); let normalizedOffset = gridOffsetY % GRID_BASE_SPACING; if (normalizedOffset > 0) { normalizedOffset -= GRID_BASE_SPACING; } let currentDrawY = horizonY - normalizedOffset; if (currentDrawY <= horizonY) currentDrawY += GRID_BASE_SPACING; while (currentDrawY < height + GRID_BASE_SPACING) { let progress = Math.max(0, Math.min(1, (currentDrawY - horizonY) / perspectiveHeight)); if (currentDrawY > horizonY && currentDrawY <= height + GRID_LINE_WIDTH*2) { let currentAlpha; if (currentDrawY <= fadeStartY) { currentAlpha = GRID_MIN_ALPHA; } else if (currentDrawY >= fadeEndY) { currentAlpha = GRID_BASE_ALPHA; } else { const fadeProgress = (currentDrawY - fadeStartY) / fadeRange; currentAlpha = GRID_MIN_ALPHA + (GRID_BASE_ALPHA - GRID_MIN_ALPHA) * fadeProgress; } currentAlpha = Math.max(0, Math.min(GRID_BASE_ALPHA, currentAlpha)); if (currentAlpha > 0.01) { retroGridCtx.strokeStyle = `rgba(${GRID_RGB_PART}, ${currentAlpha.toFixed(3)})`; retroGridCtx.beginPath(); retroGridCtx.moveTo(fixedLineStartX, Math.round(currentDrawY)); retroGridCtx.lineTo(fixedLineEndX, Math.round(currentDrawY)); retroGridCtx.stroke(); } } let nextSpacing = GRID_BASE_SPACING * Math.pow(1 + progress * 1.5, GRID_SPACING_POWER); currentDrawY += Math.max(1, nextSpacing); } retroGridCtx.strokeStyle = GRID_LINE_COLOR_FIXED; retroGridCtx.beginPath(); const numLinesHalf = Math.floor(GRID_NUM_PERSPECTIVE_LINES / 2); const horizonSpreadWidth = width * GRID_HORIZON_SPREAD_FACTOR; const maxSpreadAtBottom = width * GRID_BOTTOM_SPREAD_FACTOR; for (let i = 0; i <= numLinesHalf; i++) { let spreadProgress = Math.pow(i / numLinesHalf, GRID_PERSPECTIVE_POWER); let startX_R = vanishingPointX + spreadProgress * (horizonSpreadWidth / 2); let startX_L = vanishingPointX - spreadProgress * (horizonSpreadWidth / 2); let bottomX_R = vanishingPointX + spreadProgress * (maxSpreadAtBottom / 2); let bottomX_L = vanishingPointX - spreadProgress * (maxSpreadAtBottom / 2); retroGridCtx.moveTo(startX_R, horizonY); retroGridCtx.lineTo(bottomX_R, height); if (i > 0) { retroGridCtx.moveTo(startX_L, horizonY); retroGridCtx.lineTo(bottomX_L, height); } } retroGridCtx.stroke(); } catch (e) { console.error("Error in drawRetroGrid:", e); } }
 
-/** Berekent een punt op een kubische BÃƒÆ’Ã‚Â©zier curve. */
+/** Berekent een punt op een kubische BÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©zier curve. */
 function calculateBezierPoint(t, p0, p1, p2, p3) { /* ... ongewijzigd ... */ const u = 1 - t; const tt = t * t; const uu = u * u; const uuu = uu * u; const ttt = tt * t; let p = uuu * p0; p += 3 * uu * t * p1; p += 3 * u * tt * p2; p += ttt * p3; return p; }
 
 /** Defines the Bezier curve paths for normal wave enemy entrances. */
@@ -1336,7 +1379,7 @@ let soundPausedStates = {}; // Wordt niet meer gebruikt op dezelfde manier met W
 function pauseAllSounds() {
     if (audioContext && audioContext.state === 'running') {
         // audioContext.suspend().then(() => console.log("AudioContext suspended for pause.")).catch(e => console.error("Error suspending AudioContext:", e));
-        // Laten we audioContext.suspend() voor nu even uitcommentariÃƒÆ’Ã‚Â«ren om te zien of dat een probleem is.
+        // Laten we audioContext.suspend() voor nu even uitcommentariÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â«ren om te zien of dat een probleem is.
         // Het direct stoppen van sounds zou effectiever moeten zijn.
     }
     // <<< GEWIJZIGD: Stop alle geluiden individueel, inclusief menu muziek, door te itereren over soundSources. >>>

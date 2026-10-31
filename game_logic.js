@@ -77,6 +77,52 @@ function forceGameOverIfAllDead() {
 }
 window.forceGameOverIfAllDead = forceGameOverIfAllDead;
 
+// --- NIEUW: Echte random beamer upgrades zonder herhaling ---
+function refillBeamerShuffleBag() {
+    const allTypes = ['DUAL', 'SHIELD', 'RAPID', 'SPREAD', 'CLEAR', '1UP'];
+    for (let i = allTypes.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [allTypes[i], allTypes[j]] = [allTypes[j], allTypes[i]];
+    }
+    beamerUpgradeShuffleBag = allTypes;
+    beamerUpgradeBagIndex = 0;
+}
+function getNextBeamerUpgradeType() {
+    try {
+        if (typeof beamerUpgradeShuffleBag === 'undefined' || !Array.isArray(beamerUpgradeShuffleBag) || beamerUpgradeShuffleBag.length === 0 || beamerUpgradeBagIndex >= beamerUpgradeShuffleBag.length) {
+            refillBeamerShuffleBag();
+        }
+        let attempts = 0;
+        let picked = beamerUpgradeShuffleBag[beamerUpgradeBagIndex++];
+        while (typeof lastBeamerUpgradeType !== 'undefined' && lastBeamerUpgradeType !== null && picked === lastBeamerUpgradeType && attempts < 10) {
+            if (beamerUpgradeBagIndex >= beamerUpgradeShuffleBag.length) refillBeamerShuffleBag();
+            let remaining = beamerUpgradeShuffleBag.slice(beamerUpgradeBagIndex);
+            let filtered = remaining.filter(t => t !== lastBeamerUpgradeType);
+            if (filtered.length > 0) {
+                picked = filtered[Math.floor(Math.random()*filtered.length)];
+                let idx = beamerUpgradeShuffleBag.indexOf(picked, beamerUpgradeBagIndex);
+                if (idx >=0) beamerUpgradeShuffleBag.splice(idx,1);
+                else beamerUpgradeBagIndex++;
+            } else {
+                picked = beamerUpgradeShuffleBag[beamerUpgradeBagIndex++];
+            }
+            attempts++;
+        }
+        if (beamerUpgradeBagIndex >= beamerUpgradeShuffleBag.length) refillBeamerShuffleBag();
+        lastBeamerUpgradeType = picked;
+        return picked;
+    } catch(e){
+        const fallback = ['DUAL','SHIELD','RAPID','SPREAD','CLEAR','1UP'];
+        let f = fallback[Math.floor(Math.random()*fallback.length)];
+        if (f === lastBeamerUpgradeType) f = fallback[(fallback.indexOf(f)+1)%fallback.length];
+        lastBeamerUpgradeType = f;
+        return f;
+    }
+}
+window.getNextBeamerUpgradeType = getNextBeamerUpgradeType;
+window.refillBeamerShuffleBag = refillBeamerShuffleBag;
+
+
 
 function generateAttackPathInternal(enemy) { // Hernoemd naar Internal
     try {
@@ -478,6 +524,27 @@ function resetWaveInternal() {
     isEntrancePhaseActive = true;
     firstEnemyLanded = false;
     captureAttemptMadeThisLevel = false;
+    try { if (typeof currentSubWave !== 'undefined') currentSubWave = 1; if (typeof beamerUpgradeAttemptsThisLevel !== 'undefined') beamerUpgradeAttemptsThisLevel = 0; if (typeof isNextWaveMessageActive !== 'undefined') isNextWaveMessageActive = false; } catch(e) {}
+    try { if (typeof currentSubWave !== 'undefined') currentSubWave = 1; if (typeof beamerUpgradeAttemptsThisLevel !== 'undefined') beamerUpgradeAttemptsThisLevel = 0; if (typeof isNextWaveMessageActive !== 'undefined') isNextWaveMessageActive = false; } catch(e) {}
+    // FIX: alle upgrades uit bij nieuwe stage (per verzoek)
+    try {
+        if (typeof shieldActive !== 'undefined') shieldActive = false;
+        if (typeof shieldActivePlayer !== 'undefined') shieldActivePlayer = null;
+        if (typeof rapidActive !== 'undefined') rapidActive = false;
+        if (typeof rapidActiveUntil !== 'undefined') rapidActiveUntil = 0;
+        if (typeof rapidActivePlayer !== 'undefined') rapidActivePlayer = null;
+        if (typeof spreadActive !== 'undefined') spreadActive = false;
+        if (typeof spreadActiveUntil !== 'undefined') spreadActiveUntil = 0;
+        if (typeof spreadActivePlayer !== 'undefined') spreadActivePlayer = null;
+        if (typeof isClearNoBulletsActive !== 'undefined') isClearNoBulletsActive = false;
+        if (typeof clearActiveUntil !== 'undefined') clearActiveUntil = 0;
+        if (typeof upgradeMessageActive !== 'undefined') upgradeMessageActive = false;
+        if (typeof upgradeMessageText !== 'undefined') upgradeMessageText = "";
+        if (typeof upgradeMessagePlayer !== 'undefined') upgradeMessagePlayer = null;
+        if (typeof activeBeamerUpgradeType !== 'undefined') activeBeamerUpgradeType = null;
+        if (typeof captureBeamUpgradeIconRotation !== 'undefined') captureBeamUpgradeIconRotation = 0;
+        console.log("[FIX] Upgrades gereset bij nieuwe stage");
+    } catch(e) {}
     gameJustStartedAndWaveLaunched = false;
     aiPlayerActivelySeekingCaptureById = null;
     coopAICaptureDiveAnticipationActive = false;
@@ -1278,6 +1345,8 @@ function updateBossStageLogic(now) {
                             if (_finalVy < _minDown) _finalVy = _minDown;
                             const _finalVx = _vx * 1.35; // Extra horizontale spreiding voor dekking over hele breedte
                             const _xSpread = (s - (sprayCount-1)/2) * (bossStageBoss.width * 0.18);
+                            // CLEAR check
+                            try { if (typeof isClearBlocking === 'function' ? isClearBlocking() : (typeof isClearNoBulletsActive !== 'undefined' && isClearNoBulletsActive && Date.now() < clearActiveUntil)) continue; } catch(e) {}
                             enemyBullets.push({
                                 x: _startX + _xSpread - ENEMY_BULLET_WIDTH/2,
                                 y: _startY,
@@ -1529,6 +1598,12 @@ const createBulletSimple = (targetEnemy, overrideStartPos = null) => {
             return false;
         }
     }
+    // CLEAR UPGRADE: blokkeer alle vijandelijke kogels 10 sec - FIX gebruikt helper
+    try {
+        if (typeof isClearBlocking === 'function' ? isClearBlocking() : (typeof isClearNoBulletsActive !== 'undefined' && isClearNoBulletsActive && typeof clearActiveUntil !== 'undefined' && Date.now() < clearActiveUntil)) {
+            return false;
+        }
+    } catch(e) {}
     // Individuele enemy is nog aan het invliegen -> blokkeren
     if (targetEnemy.isEntering || targetEnemy.state === 'following_entrance_path' || targetEnemy.state === 'moving_to_grid') {
         return false;
@@ -1863,6 +1938,7 @@ window.clearCSController = clearCSController;
  * Vuur een burst van vijandelijke kogels af, met een GESCHAALD aantal kogels.
  */
 function fireEnemyBurst(enemyId, requiredState, initialDelayMs) {
+    try { if (typeof isClearBlocking === 'function' ? isClearBlocking() : (typeof isClearNoBulletsActive !== 'undefined' && isClearNoBulletsActive && Date.now() < clearActiveUntil)) return; } catch(e) {}
     let fireBurstCanContinue = false; if (isTwoPlayerMode && selectedGameMode === 'coop') { fireBurstCanContinue = (player1Lives > 0 && !isPlayer1ShipCaptured) || (player2Lives > 0 && !isPlayer2ShipCaptured); } else { fireBurstCanContinue = playerLives > 0 && !isShipCaptured; }
     if (!enemyId || isPaused || !isInGameState || !fireBurstCanContinue || isChallengingStage || isWaveTransitioning) { return; }
     // NIEUW V10: In simultaneous_assault pas vuren als ALLES in grid staat en geen boss aan het capturen is
@@ -1883,6 +1959,7 @@ function fireEnemyBurst(enemyId, requiredState, initialDelayMs) {
  * Vuur een burst van een VAST aantal vijandelijke kogels af.
  */
 function fireFixedEnemyBurst(enemyId, requiredState, initialDelayMs, fixedBulletCount) {
+    try { if (typeof isClearBlocking === 'function' ? isClearBlocking() : (typeof isClearNoBulletsActive !== 'undefined' && isClearNoBulletsActive && Date.now() < clearActiveUntil)) return; } catch(e) {}
     // FIX STAGE 4: nooit vuren tijdens entree / simultaneous assault entree
     if (typeof isEntrancePhaseActive !== 'undefined' && isEntrancePhaseActive) {
         if (typeof isSimultaneousAssaultWave !== 'undefined' && isSimultaneousAssaultWave) {
@@ -2596,9 +2673,26 @@ function firePlayerBullet(shooterId = null, isTapEvent = false) {
 
     if (!canShootLogic || !shootingShipObject) return false;
 
+    // FIX: per speler checken wie upgrade heeft
+    let _shooterPlayerNum = null;
+    try {
+        if (currentShooterPlayerId === 'player1') _shooterPlayerNum = 1;
+        else if (currentShooterPlayerId === 'player2' || currentShooterPlayerId === 'ai_p2') _shooterPlayerNum = 2;
+        else if (typeof currentPlayer !== 'undefined') _shooterPlayerNum = currentPlayer;
+        else _shooterPlayerNum = 1;
+    } catch(e) { _shooterPlayerNum = 1; }
+    const _isRapidForThisShooter = (typeof rapidActive !== 'undefined' && rapidActive && typeof rapidActivePlayer !== 'undefined' && rapidActivePlayer === _shooterPlayerNum && Date.now() < rapidActiveUntil);
+    const _isSpreadForThisShooter = (typeof spreadActive !== 'undefined' && spreadActive && typeof spreadActivePlayer !== 'undefined' && spreadActivePlayer === _shooterPlayerNum && Date.now() < spreadActiveUntil);
+
+    // RAPID UPGRADE FIX: kleine beetje sneller, niet elke frame
+    const RAPID_SHOOT_COOLDOWN = 90; // normaal 140, rapid 90 = ~35% sneller
+    const effectiveShootCooldown = _isRapidForThisShooter ? RAPID_SHOOT_COOLDOWN : SHOOT_COOLDOWN;
+
     if (useSingleShotFlag) {
         if (isTapEvent) {
-            if (now - playerSpecificLastShotTime < SHOOT_COOLDOWN) return false;
+            if (now - playerSpecificLastShotTime < effectiveShootCooldown) {
+                return false;
+            }
         } else {
             let fireButtonIsCurrentlyPressed = false;
             if (currentShooterPlayerId === 'player1' || (!isTwoPlayerMode && currentShooterPlayerId === 'player1')) {
@@ -2617,10 +2711,14 @@ function firePlayerBullet(shooterId = null, isTapEvent = false) {
                 if (fireButtonIsCurrentlyPressed) return false;
                 else setSingleShotFlag(false);
             }
-            if (now - playerSpecificLastShotTime < SHOOT_COOLDOWN) return false;
+            if (now - playerSpecificLastShotTime < effectiveShootCooldown) {
+                return false;
+            }
         }
     } else {
-        if (now - playerSpecificLastShotTime < SHOOT_COOLDOWN) return false;
+        if (now - playerSpecificLastShotTime < effectiveShootCooldown) {
+            return false;
+        }
     }
 
 
@@ -2635,6 +2733,14 @@ function firePlayerBullet(shooterId = null, isTapEvent = false) {
             bullets.push({ x: bulletX1, y: bulletY, width: PLAYER_BULLET_WIDTH, height: PLAYER_BULLET_HEIGHT, speed: PLAYER_BULLET_SPEED, playerId: currentShooterPlayerId });
             bullets.push({ x: bulletX2, y: bulletY, width: PLAYER_BULLET_WIDTH, height: PLAYER_BULLET_HEIGHT, speed: PLAYER_BULLET_SPEED, playerId: currentShooterPlayerId });
             bulletsCreated = 2;
+        } else if (_isSpreadForThisShooter) {
+            const centerX = shootingShipObject.x + shootingShipObject.width / 2;
+            const bulletY = shootingShipObject.y;
+            const offsets = [-24, -12, 0, 12, 24];
+            for(let off of offsets) {
+                bullets.push({ x: centerX - PLAYER_BULLET_WIDTH / 2 + off, y: bulletY, width: PLAYER_BULLET_WIDTH, height: PLAYER_BULLET_HEIGHT, speed: PLAYER_BULLET_SPEED, playerId: currentShooterPlayerId, spread: true, spreadOffset: off });
+            }
+            bulletsCreated = 5;
         } else {
             const bulletX = shootingShipObject.x + shootingShipObject.width / 2 - PLAYER_BULLET_WIDTH / 2;
             bullets.push({ x: bulletX, y: bulletY, width: PLAYER_BULLET_WIDTH, height: PLAYER_BULLET_HEIGHT, speed: PLAYER_BULLET_SPEED, playerId: currentShooterPlayerId });
@@ -3230,7 +3336,8 @@ function aiControl() {
             }
             if (!isMovingForOwnFallingShip) {
                 const capturingBossObject = enemies.find(e => e.id === capturingBossId && e.type === ENEMY3_TYPE);
-                const beamIsActiveAndPotentiallyTargeting = captureBeamActive && capturingBossObject && capturingBossObject.state === 'capturing' && !isShipCapturedForAI;
+                let beamIconReadyForAI = true; try { if (capturingBossObject && capturingBossObject.beamerUpgradeAvailableAt && Date.now() < capturingBossObject.beamerUpgradeAvailableAt && capturingBossObject.beamerUpgradeType && capturingBossObject.beamerUpgradeType !== 'DUAL') beamIconReadyForAI = false; } catch(e) {}
+                const beamIsActiveAndPotentiallyTargeting = captureBeamActive && capturingBossObject && capturingBossObject.state === 'capturing' && !isShipCapturedForAI && beamIconReadyForAI;
                 if (beamIsActiveAndPotentiallyTargeting) {
                     const wantsToCapture = (aiLivesForAI > 1 && !isDualActiveForAI);
                     if (wantsToCapture) { aiIsCurrentlyTargetingCaptureBoss = true; isMovingToCapture = true; const beamCenterX = capturingBossObject.x + (capturingBossObject.width / 2); desiredTargetX = beamCenterX - effectiveShipWidth / 2; shouldTryShoot_AI = false; targetEnemyForAI = null; }
@@ -3632,7 +3739,8 @@ function calculateAIDesiredState(currentShip, currentSmoothedX, isShipDual, game
             }
         }
         if (!isMovingForOwnFallingShip) {
-            const beamActiveForThisShip = captureBeamActive && activeCapturingBoss && activeCapturingBoss.state === 'capturing' && !isThisShipCaptured;
+            let beamReadyForShip = true; try { if (activeCapturingBoss && activeCapturingBoss.beamerUpgradeAvailableAt && Date.now() < activeCapturingBoss.beamerUpgradeAvailableAt && activeCapturingBoss.beamerUpgradeType && activeCapturingBoss.beamerUpgradeType !== 'DUAL') beamReadyForShip = false; } catch(e) {}
+            const beamActiveForThisShip = captureBeamActive && activeCapturingBoss && activeCapturingBoss.state === 'capturing' && !isThisShipCaptured && beamReadyForShip;
             if (canThisAIShipBeCapturedPhysically && beamActiveForThisShip) {
                 let proceedWithCapture = false;
                 if (isThisACoopAIMode) {
@@ -3917,7 +4025,14 @@ function findAndDetachEnemy() {
  */
 function triggerImmediateCaptureDive() {
     try {
-        if (isChallengingStage || captureAttemptMadeThisLevel) {
+        if (isChallengingStage) {
+            return;
+        }
+        if (typeof beamerUpgradeAttemptsThisLevel !== 'undefined' && typeof maxBeamerAttemptsPerLevel !== 'undefined') {
+            if (beamerUpgradeAttemptsThisLevel >= maxBeamerAttemptsPerLevel) {
+                return;
+            }
+        } else if (captureAttemptMadeThisLevel) {
             return;
         }
         // REGEL: Als er 2 dual ships zijn (coop beide dual) -> geen capture door boss 3
@@ -3989,6 +4104,15 @@ function triggerImmediateCaptureDive() {
                 if (currentEnemy && currentEnemy.state === 'preparing_capture') {
                     currentEnemy.state = 'diving_to_capture_position';
                     captureAttemptMadeThisLevel = true;
+                    try {
+                        if (typeof beamerUpgradeAttemptsThisLevel !== 'undefined') beamerUpgradeAttemptsThisLevel++;
+                        let upgradeType = (typeof getNextBeamerUpgradeType === 'function') ? getNextBeamerUpgradeType() : 'DUAL';
+                        if (!upgradeType) upgradeType = 'DUAL';
+                        currentEnemy.beamerUpgradeType = upgradeType;
+                        if (typeof activeBeamerUpgradeType !== 'undefined') activeBeamerUpgradeType = upgradeType;
+                        currentEnemy.beamerUpgradeAvailableAt = Date.now() + 4000;
+                        console.log("[BEAMER] Nieuwe upgrade: " + upgradeType);
+                    } catch(e) { console.error("beamer assign", e); }
                 }
                 if(currentEnemy) currentEnemy.capturePrepareTimeout = null;
                 const timeoutIndex = enemySpawnTimeouts.indexOf(prepareTimeoutId);
@@ -4179,11 +4303,28 @@ function moveEntities(overrideP1Left = null, overrideP1Right = null) {
             if (isWaitingForRespawn && now >= respawnTime) isWaitingForRespawn = false;
             if (isInvincible && now >= invincibilityEndTime) isInvincible = false;
         }
+        // FIX: clear/rapid/spread timers moeten ALTIJD gereset worden, ook in COOP mode
+        // Anders blijft CLEAR actief en vuren vijanden nooit meer na 10 sec
+        try {
+            if (typeof rapidActive !== 'undefined' && rapidActive && Date.now() > rapidActiveUntil) { rapidActive = false; rapidActivePlayer = null; }
+            if (typeof spreadActive !== 'undefined' && spreadActive && Date.now() > spreadActiveUntil) { spreadActive = false; spreadActivePlayer = null; }
+            if (typeof isClearNoBulletsActive !== 'undefined' && isClearNoBulletsActive && Date.now() >= clearActiveUntil) { 
+                isClearNoBulletsActive = false; 
+                clearActiveUntil = 0;
+                // Reset grid fire timer zodat vijanden direct weer mogen vuren
+                lastGridFireCheckTime = 0;
+                console.log("[FIX] CLEAR expired - vijanden mogen weer vuren");
+            }
+        } catch(e) {}
 
         // Move Player Bullets & Collision with Enemies - V38 + BOSS STAGE
         for (let i = bullets.length - 1; i >= 0; i--) {
             const b = bullets[i]; if (!b) { bullets.splice(i, 1); continue; }
-            b.y -= b.speed; if (b.y + PLAYER_BULLET_HEIGHT < 0) { bullets.splice(i, 1); continue; }
+            b.y -= b.speed;
+            if (b.spread && typeof b.spreadOffset !== 'undefined') {
+                b.x += b.spreadOffset * 0.06;
+            }
+            if (b.y + PLAYER_BULLET_HEIGHT < 0) { bullets.splice(i, 1); continue; }
             let bulletHit = false;
             // BOSS STAGE BOSS collision - kogels mogen niet door boss heen, bij raken normale explosie en kogel weg
             if (typeof isBossStage !== 'undefined' && isBossStage && typeof bossStageBoss !== 'undefined' && bossStageBoss && bossStagePhase === 'fighting') {
@@ -4218,7 +4359,12 @@ function moveEntities(overrideP1Left = null, overrideP1Right = null) {
             }
         }
 
-        // Move Enemy Bullets
+        // Move Enemy Bullets - CLEAR UPGRADE FIX: blokkeer en verwijder alle kogels 10 sec
+        try {
+            if (typeof isClearBlocking === 'function' ? isClearBlocking() : (typeof isClearNoBulletsActive !== 'undefined' && isClearNoBulletsActive && typeof clearActiveUntil !== 'undefined' && Date.now() < clearActiveUntil)) {
+                enemyBullets = [];
+            }
+        } catch(e) {}
         for (let i = enemyBullets.length - 1; i >= 0; i--) { const eb = enemyBullets[i]; if (!eb) { enemyBullets.splice(i, 1); continue; } eb.x += eb.vx; eb.y += eb.vy; if (eb.y > gameCanvas.height || eb.y < -ENEMY_BULLET_HEIGHT || eb.x < -ENEMY_BULLET_WIDTH || eb.x > gameCanvas.width) { enemyBullets.splice(i, 1); } }
 
         // Move Falling Ships
@@ -4437,7 +4583,8 @@ function moveEntities(overrideP1Left = null, overrideP1Right = null) {
                         if (isCoopAIDemoActive) coopAICaptureDiveAnticipationActive = false;
                         break;
                     }
-                    const elapsedCaptureTime = now - enemy.captureStartTime; const halfAnimationTime = CAPTURE_BEAM_ANIMATION_DURATION_MS / 2; const totalBeamStayTime = CAPTURE_BEAM_DURATION_MS;
+                    const elapsedCaptureTime = now - enemy.captureStartTime; const halfAnimationTime = CAPTURE_BEAM_ANIMATION_DURATION_MS / 2; let totalBeamStayTime = CAPTURE_BEAM_DURATION_MS;
+                    try { if (enemy.beamerUpgradeType && enemy.beamerUpgradeType !== 'DUAL') { totalBeamStayTime = CAPTURE_BEAM_DURATION_MS + 4000; } } catch(e) {}
                     if (elapsedCaptureTime < halfAnimationTime) { captureBeamProgress = elapsedCaptureTime / halfAnimationTime; }
                     else if (elapsedCaptureTime < totalBeamStayTime - halfAnimationTime) { captureBeamProgress = 1.0; }
                     else if (elapsedCaptureTime < totalBeamStayTime) { captureBeamProgress = 1.0 - ((elapsedCaptureTime - (totalBeamStayTime - halfAnimationTime)) / halfAnimationTime); }
@@ -4463,6 +4610,87 @@ function moveEntities(overrideP1Left = null, overrideP1Right = null) {
                                 else if (ship2 && player2Lives > 0 && !isPlayer2ShipCaptured && !player2IsDualShipActive && checkCollision(ship2, beamBoundingBox)) { shipHitObject = ship2; playerHitId = 2; }
                             } else {
                                 if (ship && playerLives > 0 && !isShipCaptured && !isDualShipActive && checkCollision(ship, beamBoundingBox)) { shipHitObject = ship; playerHitId = currentPlayer; }
+                            }
+                            let isUpgradeBeam = false;
+                            let upgradeTypeForBeam = null;
+                            let beamerIconReady = true;
+                            try {
+                                if (enemy.beamerUpgradeAvailableAt && Date.now() < enemy.beamerUpgradeAvailableAt) {
+                                    beamerIconReady = false;
+                                }
+                            } catch(e) {}
+                            try {
+                                if (enemy.beamerUpgradeType && enemy.beamerUpgradeType !== 'DUAL') {
+                                    isUpgradeBeam = true;
+                                    upgradeTypeForBeam = enemy.beamerUpgradeType;
+                                } else if (typeof activeBeamerUpgradeType !== 'undefined' && activeBeamerUpgradeType && activeBeamerUpgradeType !== 'DUAL') {
+                                    isUpgradeBeam = true;
+                                    upgradeTypeForBeam = activeBeamerUpgradeType;
+                                }
+                            } catch(e) {}
+                            // FIX: 2 sec zichtbaar voordat icoon gepakt mag worden
+                            if (isUpgradeBeam && !beamerIconReady) {
+                                shipHitObject = null;
+                                isUpgradeBeam = false;
+                                upgradeTypeForBeam = null;
+                            }
+                            if (shipHitObject && isUpgradeBeam && upgradeTypeForBeam) {
+                                try {
+                                    let pNum = playerHitId || 1;
+                                    if (typeof upgradeMessageActive !== 'undefined') {
+                                        upgradeMessageActive = true;
+                                        upgradeMessageText = upgradeTypeForBeam;
+                                        upgradeMessageStartTime = Date.now();
+                                        upgradeMessagePlayer = pNum;
+                                        if (upgradeTypeForBeam === 'CLEAR') {
+                                            isClearNoBulletsActive = true;
+                                            clearActiveUntil = Date.now() + 10000;
+                                            enemyBullets = [];
+                                        } else if (upgradeTypeForBeam === 'SHIELD') {
+                                            shieldActive = true;
+                                            shieldActivePlayer = pNum;
+                                        } else if (upgradeTypeForBeam === 'RAPID') {
+                                            rapidActive = true;
+                                            rapidActiveUntil = Date.now() + 15000;
+                                            rapidActivePlayer = pNum;
+                                        } else if (upgradeTypeForBeam === 'SPREAD') {
+                                            spreadActive = true;
+                                            spreadActiveUntil = Date.now() + 15000;
+                                            spreadActivePlayer = pNum;
+                                        } else if (upgradeTypeForBeam === '1UP') {
+                                            if (isTwoPlayerMode && selectedGameMode === 'coop') {
+                                                if (pNum === 1) player1Lives++; else player2Lives++;
+                                            } else {
+                                                playerLives++;
+                                            }
+                                            // FIX 1UP beamer: toon EXTRA LIFE tekst + geluid direct, net als bij score
+                                            try {
+                                                // Forceer extra life message direct zichtbaar
+                                                if (typeof showExtraLifeMessage !== 'undefined') {
+                                                    showExtraLifeMessage = true;
+                                                    extraLifeMessageStartTime = Date.now();
+                                                    console.log("[1UP BEAMER] EXTRA LIFE triggered for player " + pNum);
+                                                }
+                                                if (typeof playSound === 'function') {
+                                                    playSound('extraLifeSound', false, 0.8);
+                                                    // Nog een keer na korte delay voor zekerheid dat audio context actief is
+                                                    setTimeout(() => { try{ playSound('extraLifeSound', false, 0.8); }catch(e){} }, 100);
+                                                }
+                                                // Ook upgrade message laten zien als 1UP, maar extra life heeft prioriteit
+                                            } catch(e) { console.error("1UP beamer extraLife error", e); }
+                                        }
+                                    }
+                                } catch(e) {}
+                                try {
+                                    captureBeamActive = false;
+                                    captureBeamProgress = 0;
+                                    capturingBossId = null;
+                                    enemy.state = 'returning';
+                                    enemy.beamerUpgradeType = null;
+                                    if (typeof activeBeamerUpgradeType !== 'undefined') activeBeamerUpgradeType = null;
+                                    stopSound('captureSound');
+                                } catch(e) {}
+                                shipHitObject = null;
                             }
                             if (shipHitObject) {
                                 enemy.capturedShipDimensions = { width: shipHitObject.width, height: shipHitObject.height }; enemy.hasCapturedShip = true; enemy.capturedPlayerId = (playerHitId === 1 ? 'player1' : 'player2'); enemy.capturedPlayerNum = playerHitId; stopSound('captureSound');
@@ -4776,6 +5004,26 @@ function handlePlayerShipCollision(playerNumber, hitDualPart, collisionTime, was
         } else {
             if(!wasCapturedHit && shipObjectToUpdate) createExplosion(lastKnownX + SHIP_WIDTH/2, shipBaseY + SHIP_HEIGHT/2);
 
+            try {
+                if (typeof shieldActive !== 'undefined' && shieldActive) {
+                    let shieldPlayerMatch = true;
+                    if (typeof shieldActivePlayer !== 'undefined' && shieldActivePlayer !== null) {
+                        if (isTwoPlayerMode && selectedGameMode === 'coop') {
+                            shieldPlayerMatch = (shieldActivePlayer === playerNumber);
+                        }
+                    }
+                    if (shieldPlayerMatch) {
+                        shieldActive = false;
+                        shieldActivePlayer = null;
+                        if (typeof upgradeMessageActive !== 'undefined') {
+                            upgradeMessageActive = true;
+                            upgradeMessageText = "SHIELD BLOCK";
+                            upgradeMessageStartTime = Date.now();
+                        }
+                        return;
+                    }
+                }
+            } catch(e) {}
             if(wasCapturedHit) {
                 isShipCaptured = true;
                 if (ship) ship = null;
@@ -4847,6 +5095,12 @@ function triggerGridFiring() {
 
     if (typeof isSimultaneousAssaultWave !== "undefined" && isSimultaneousAssaultWave) { if (typeof isEntrancePhaseActive !== "undefined" && isEntrancePhaseActive && !isAllEnemiesInGridForSimultaneous()) return; }
     try { // <<< TOEGEVOEGD: try-catch blok om de functie heen >>>
+        // CLEAR UPGRADE: geen grid firing tijdens clear - FIX
+        try { 
+            if (typeof isClearBlocking === 'function' ? isClearBlocking() : (typeof isClearNoBulletsActive !== 'undefined' && isClearNoBulletsActive && Date.now() < clearActiveUntil)) { enemyBullets = []; return; }
+            // extra safety: als verlopen, forceer reset hier ook
+            if (typeof isClearNoBulletsActive !== 'undefined' && isClearNoBulletsActive && Date.now() >= clearActiveUntil) { isClearNoBulletsActive = false; clearActiveUntil = 0; lastGridFireCheckTime = 0; }
+        } catch(e) {}
         if (isPaused || !isInGameState || isChallengingStage || isWaveTransitioning) { return; }
         let canFireBasedOnPlayerState = false;
         if (isTwoPlayerMode && selectedGameMode === 'coop') {
@@ -5611,7 +5865,14 @@ function runSingleGameUpdate(timestamp) {
                     else if (isChallengingStage) startChallengingStageSequence();
                     else {
                         if (currentWaveDefinition && currentWaveDefinition.length > 0) {
-                            if (isFullGridWave) startFullGridWave();
+                            try {
+                    if (isFullGridWave && typeof currentSubWave !== 'undefined' && typeof maxSubWavesPerLevel !== 'undefined') {
+                        // FIX: full grid heeft GEEN 2e golf - alleen normale beamer levels
+                        currentSubWave = 1;
+                        beamerUpgradeAttemptsThisLevel = 0;
+                    }
+                } catch(e) {}
+                if (isFullGridWave) startFullGridWave();
                             else { scheduleEntranceFlightWave(); playSound('entranceSound', false, 0.4); }
                         } else {
                              isEntrancePhaseActive = false; stopSound('entranceSound'); isWaveTransitioning = true; readyForNextWaveReset = true; bullets = []; enemyBullets = []; explosions = [];
@@ -5645,7 +5906,14 @@ function runSingleGameUpdate(timestamp) {
                     else if (isChallengingStage) startChallengingStageSequence();
                     else {
                         if (currentWaveDefinition && currentWaveDefinition.length > 0) {
-                            if (isFullGridWave) startFullGridWave();
+                            try {
+                    if (isFullGridWave && typeof currentSubWave !== 'undefined' && typeof maxSubWavesPerLevel !== 'undefined') {
+                        // FIX: full grid heeft GEEN 2e golf - alleen normale beamer levels
+                        currentSubWave = 1;
+                        beamerUpgradeAttemptsThisLevel = 0;
+                    }
+                } catch(e) {}
+                if (isFullGridWave) startFullGridWave();
                             else { scheduleEntranceFlightWave(); playSound('entranceSound', false, 0.4); }
                         } else {
                              isWaveTransitioning = true; readyForNextWaveReset = true;
@@ -5742,10 +6010,30 @@ function runSingleGameUpdate(timestamp) {
                     }
 
 
+                    try {
+                        if (!isChallengingStage && !isBossStage && !isFullGridWave && typeof currentSubWave !== 'undefined' && typeof maxSubWavesPerLevel !== 'undefined') {
+                            if (currentSubWave < maxSubWavesPerLevel) {
+                                currentSubWave++;
+                                isNextWaveMessageActive = true;
+                                nextWaveMessageStartTime = Date.now();
+                                isWaveTransitioning = true;
+                                beamerUpgradeAttemptsThisLevel = Math.max(0, beamerUpgradeAttemptsThisLevel - 1);
+                                bullets = []; enemyBullets = []; explosions = []; floatingScores = [];
+                                totalEnemiesScheduledForWave = 0; enemiesSpawnedThisWave = 0;
+                                setTimeout(() => {
+                                    isWaveTransitioning = false;
+                                    if (typeof currentWaveDefinition !== 'undefined' && currentWaveDefinition && currentWaveDefinition.length > 0) {
+                                        if (typeof scheduleEntranceFlightWave === 'function') { scheduleEntranceFlightWave(); playSound('entranceSound', false, 0.4); }
+                                        else if (typeof startFullGridWave === 'function') { startFullGridWave(); }
+                                    }
+                                }, 2200);
+                                renderGame(); return;
+                            } else { currentSubWave = 1; beamerUpgradeAttemptsThisLevel = 0; }
+                        }
+                    } catch(e) {}
                     isWaveTransitioning = true; if (isGridSoundPlaying) { stopSound('gridBackgroundSound'); isGridSoundPlaying = false; }
                     if (!isChallengingStage) {
-                        bullets = [];
-                        enemyBullets = [];
+                        bullets = []; enemyBullets = [];
                     }
 
                     floatingScores = []; enemySpawnTimeouts.forEach(clearTimeout); enemySpawnTimeouts = []; totalEnemiesScheduledForWave = 0; enemiesSpawnedThisWave = 0;
