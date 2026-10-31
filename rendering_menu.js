@@ -945,6 +945,106 @@ function renderHitSparks() { if (!gameCtx || !hitSparks || hitSparks.length === 
 /**
  * Tekent de volledige game scÃƒÆ’Ã‚Â¨ne.
  */
+
+/** Tekent een mooie transparante blauwe halve cirkel shield over het schip */
+function drawShieldBubble(ctx, shipX, shipY, shipW, shipH, time, isHitFlash) {
+    if (!ctx) return;
+    ctx.save();
+    const centerX = shipX + shipW / 2;
+    // Mooie halve cirkel boven schip - center net boven midden schip
+    const centerY = shipY + shipH * 0.3;
+    const baseRadius = Math.max(shipW, shipH) * 0.85;
+    const pulse = Math.sin(time * 0.005) * 3;
+    const radius = baseRadius + pulse;
+    
+    let alphaMult = 1.0;
+    if (isHitFlash) {
+        const hitAge = Date.now() - isHitFlash.startTime;
+        const hitProg = hitAge / isHitFlash.duration;
+        if (hitProg < 1) {
+            alphaMult = 1.5 + (1 - hitProg) * 0.8;
+            // Extra flash radius
+            ctx.shadowColor = 'rgba(80,180,255,0.8)';
+            ctx.shadowBlur = 15 + (1-hitProg)*10;
+        }
+    }
+
+    // Outer glow
+    ctx.beginPath();
+    ctx.arc(centerX, centerY, radius + 4, Math.PI, 0, false); // halve cirkel boven
+    ctx.lineTo(centerX + radius + 4, centerY);
+    // Maak halve cirkel path voor fill
+    ctx.closePath();
+    
+    // Gradient fill voor transparante blauwe halve cirkel
+    const grad = ctx.createRadialGradient(centerX, centerY - radius*0.2, radius*0.2, centerX, centerY, radius);
+    grad.addColorStop(0, `rgba(100,200,255,${0.18 * alphaMult})`);
+    grad.addColorStop(0.5, `rgba(30,140,255,${0.22 * alphaMult})`);
+    grad.addColorStop(0.85, `rgba(20,100,255,${0.15 * alphaMult})`);
+    grad.addColorStop(1, `rgba(10,60,180,${0.05 * alphaMult})`);
+    
+    ctx.fillStyle = grad;
+    ctx.globalAlpha = 1;
+    ctx.beginPath();
+    ctx.arc(centerX, centerY, radius, Math.PI, 0, false);
+    ctx.lineTo(centerX + radius, centerY);
+    ctx.lineTo(centerX - radius, centerY);
+    ctx.closePath();
+    ctx.fill();
+    
+    // Binnenste lichtere highlight
+    ctx.globalAlpha = 0.6 * alphaMult;
+    ctx.fillStyle = `rgba(150,220,255,0.12)`;
+    ctx.beginPath();
+    ctx.arc(centerX, centerY - radius*0.15, radius*0.7, Math.PI, 0, false);
+    ctx.closePath();
+    ctx.fill();
+    
+    // Buitenlijn - mooie blauwe rand
+    ctx.globalAlpha = 1;
+    ctx.strokeStyle = `rgba(60,180,255,${0.75 * alphaMult})`;
+    ctx.lineWidth = 2.2;
+    ctx.shadowColor = 'rgba(40,150,255,0.6)';
+    ctx.shadowBlur = 10;
+    ctx.beginPath();
+    ctx.arc(centerX, centerY, radius, Math.PI, 0, false);
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+    
+    // Tweede dunne binnenlijn voor diepte
+    ctx.strokeStyle = `rgba(120,210,255,${0.35 * alphaMult})`;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.arc(centerX, centerY, radius - 3, Math.PI, 0, false);
+    ctx.stroke();
+    
+    // Kleine stipjes / sparkles op de bubble voor extra mooi effect
+    ctx.globalAlpha = 0.5 * alphaMult;
+    const sparkleTime = time * 0.002;
+    for(let i=0;i<3;i++){
+        const ang = Math.PI + (Math.PI * (i/3)) + sparkleTime + i;
+        const sx = centerX + Math.cos(ang) * radius * 0.85;
+        const sy = centerY + Math.sin(ang) * radius * 0.85;
+        ctx.fillStyle = 'rgba(180,230,255,0.8)';
+        ctx.beginPath();
+        ctx.arc(sx, sy, 1.5, 0, Math.PI*2);
+        ctx.fill();
+    }
+    
+    ctx.restore();
+}
+
+function shouldDrawShieldForPlayer(playerNum) {
+    try {
+        if (typeof shieldActive === 'undefined' || !shieldActive) return false;
+        if (typeof shieldActivePlayer === 'undefined' || shieldActivePlayer === null) return true;
+        if (typeof isTwoPlayerMode !== 'undefined' && isTwoPlayerMode && typeof selectedGameMode !== 'undefined' && selectedGameMode === 'coop') {
+            return shieldActivePlayer === playerNum;
+        }
+        return true;
+    } catch(e){ return false; }
+}
+
 function renderGame() {
     try {
         if (!gameCtx || !gameCanvas) {
@@ -1574,6 +1674,19 @@ function renderGame() {
                             gameCtx.drawImage(shipImage, Math.round(shipDrawX), Math.round(shipDrawY), ship1.width, ship1.height);
                             if (player1IsDualShipActive) { gameCtx.drawImage(shipImage, Math.round(shipDrawX + DUAL_SHIP_OFFSET_X), Math.round(shipDrawY), ship1.width, ship1.height); }
                         } else { gameCtx.fillStyle = "blue"; gameCtx.fillRect(Math.round(shipDrawX), Math.round(shipDrawY), ship1.width, ship1.height); }
+                        // Shield bubble voor P1
+                        if (typeof shouldDrawShieldForPlayer === 'function' && shouldDrawShieldForPlayer(1)) {
+                            let hitEff = null;
+                            if (typeof shieldHitEffects !== 'undefined') {
+                                for(let i=shieldHitEffects.length-1;i>=0;i--){
+                                    if(shieldHitEffects[i].playerNum===1 && Date.now()-shieldHitEffects[i].startTime < shieldHitEffects[i].duration){ hitEff=shieldHitEffects[i]; break; }
+                                }
+                            }
+                            drawShieldBubble(gameCtx, shipDrawX, shipDrawY, ship1.width, ship1.height, Date.now(), hitEff);
+                            if (player1IsDualShipActive) {
+                                drawShieldBubble(gameCtx, shipDrawX + DUAL_SHIP_OFFSET_X, shipDrawY, ship1.width, ship1.height, Date.now()+200, null);
+                            }
+                        }
                     }
                 }
                 if (p2ActiveAndAlive && (!isPlayer2ShipCaptured || (isPlayer2ShipCaptured && !isShowingCaptureMessage))) {
@@ -1596,6 +1709,18 @@ function renderGame() {
                             gameCtx.drawImage(shipImage, Math.round(shipDrawX), Math.round(shipDrawY), ship2.width, ship2.height);
                             if (player2IsDualShipActive) { gameCtx.drawImage(shipImage, Math.round(shipDrawX + DUAL_SHIP_OFFSET_X), Math.round(shipDrawY), ship2.width, ship2.height); }
                         } else { gameCtx.fillStyle = "green"; gameCtx.fillRect(Math.round(shipDrawX), Math.round(shipDrawY), ship2.width, ship2.height); }
+                        if (typeof shouldDrawShieldForPlayer === 'function' && shouldDrawShieldForPlayer(2)) {
+                            let hitEff = null;
+                            if (typeof shieldHitEffects !== 'undefined') {
+                                for(let i=shieldHitEffects.length-1;i>=0;i--){
+                                    if(shieldHitEffects[i].playerNum===2 && Date.now()-shieldHitEffects[i].startTime < shieldHitEffects[i].duration){ hitEff=shieldHitEffects[i]; break; }
+                                }
+                            }
+                            drawShieldBubble(gameCtx, shipDrawX, shipDrawY, ship2.width, ship2.height, Date.now(), hitEff);
+                            if (player2IsDualShipActive) {
+                                drawShieldBubble(gameCtx, shipDrawX + DUAL_SHIP_OFFSET_X, shipDrawY, ship2.width, ship2.height, Date.now()+200, null);
+                            }
+                        }
                     }
                 }
             } else { // 1P Classic, 1P_VS_AI_NORMAL, 2P_NORMAL (Human)
@@ -1619,6 +1744,19 @@ function renderGame() {
                             }
                         } else {
                             gameCtx.fillStyle = "blue"; gameCtx.fillRect(Math.round(shipDrawX), Math.round(shipDrawY), ship.width, ship.height);
+                        }
+                        if (typeof shouldDrawShieldForPlayer === 'function' && shouldDrawShieldForPlayer(1)) {
+                            let hitEff = null;
+                            if (typeof shieldHitEffects !== 'undefined') {
+                                for(let i=shieldHitEffects.length-1;i>=0;i--){
+                                    const now=Date.now();
+                                    if(now-shieldHitEffects[i].startTime < shieldHitEffects[i].duration){ hitEff=shieldHitEffects[i]; break; }
+                                }
+                            }
+                            drawShieldBubble(gameCtx, shipDrawX, shipDrawY, ship.width, ship.height, Date.now(), hitEff);
+                            if (isDualShipActive) {
+                                drawShieldBubble(gameCtx, shipDrawX + DUAL_SHIP_OFFSET_X, shipDrawY, ship.width, ship.height, Date.now()+200, null);
+                            }
                         }
                     }
                 }

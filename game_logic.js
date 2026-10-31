@@ -4634,15 +4634,17 @@ function moveEntities(overrideP1Left = null, overrideP1Right = null) {
                                 isUpgradeBeam = false;
                                 upgradeTypeForBeam = null;
                             }
-                            if (shipHitObject && isUpgradeBeam && upgradeTypeForBeam) {
+                                                        if (shipHitObject && isUpgradeBeam && upgradeTypeForBeam) {
                                 try {
                                     let pNum = playerHitId || 1;
+                                    // Geen upgrade meldingen meer - beamer icoon met SHIELD text eronder blijft wel
                                     if (typeof upgradeMessageActive !== 'undefined') {
-                                        upgradeMessageActive = true;
-                                        upgradeMessageText = upgradeTypeForBeam;
-                                        upgradeMessageStartTime = Date.now();
-                                        upgradeMessagePlayer = pNum;
-                                        if (upgradeTypeForBeam === 'CLEAR') {
+                                        upgradeMessageActive = false;
+                                        upgradeMessageText = "";
+                                        upgradeMessageStartTime = 0;
+                                        upgradeMessagePlayer = null;
+                                    }
+                                    if (upgradeTypeForBeam === 'CLEAR') {
                                             isClearNoBulletsActive = true;
                                             clearActiveUntil = Date.now() + 10000;
                                             enemyBullets = [];
@@ -4679,7 +4681,6 @@ function moveEntities(overrideP1Left = null, overrideP1Right = null) {
                                                 // Ook upgrade message laten zien als 1UP, maar extra life heeft prioriteit
                                             } catch(e) { console.error("1UP beamer extraLife error", e); }
                                         }
-                                    }
                                 } catch(e) {}
                                 try {
                                     captureBeamActive = false;
@@ -4778,6 +4779,33 @@ function moveEntities(overrideP1Left = null, overrideP1Right = null) {
                     else if (shipData.dual && dualShipPartRect && checkCollision(bulletRect, dualShipPartRect)) { collided = true; hitDual = true; }
 
                     if (collided) {
+                        // NIEUW: Shield vangt kogel op voor hele stage
+                        try {
+                            if (typeof shieldActive !== 'undefined' && shieldActive) {
+                                let shieldMatch = true;
+                                if (typeof shieldActivePlayer !== 'undefined' && shieldActivePlayer !== null) {
+                                    if (isTwoPlayerMode && selectedGameMode === 'coop') {
+                                        shieldMatch = (shieldActivePlayer === shipData.playerNum);
+                                    }
+                                }
+                                if (shieldMatch) {
+                                    // Absorbeer kogel, maak mooi effect
+                                    enemyBullets.splice(k, 1);
+                                    bulletRemoved = true;
+                                    if (typeof shieldHitEffects !== 'undefined') {
+                                        shieldHitEffects.push({ x: eb.x + eb.width/2, y: eb.y + eb.height/2, shipX: currentShip.x, shipY: currentShip.y, shipW: currentShip.width, shipH: currentShip.height, startTime: Date.now(), duration: 350, playerNum: shipData.playerNum });
+                                    }
+                                    if (typeof hitSparks !== 'undefined') {
+                                        for(let hs=0; hs<6; hs++){
+                                            const ang = Math.random()*Math.PI*2;
+                                            const sp = 1 + Math.random()*3;
+                                            hitSparks.push({ x: eb.x, y: eb.y, vx: Math.cos(ang)*sp, vy: Math.sin(ang)*sp, size: 5, color: 'rgba(80,180,255,0.9)', alpha: 1.0, creationTime: Date.now(), duration: 400 });
+                                        }
+                                    }
+                                    break;
+                                }
+                            }
+                        } catch(e){}
                         playSound('lostLifeSound', false, 0.6);
                         handlePlayerShipCollision(shipData.playerNum, hitDual, now, false);
                         enemyBullets.splice(k, 1); bulletRemoved = true;
@@ -5013,13 +5041,17 @@ function handlePlayerShipCollision(playerNumber, hitDualPart, collisionTime, was
                         }
                     }
                     if (shieldPlayerMatch) {
-                        shieldActive = false;
-                        shieldActivePlayer = null;
-                        if (typeof upgradeMessageActive !== 'undefined') {
-                            upgradeMessageActive = true;
-                            upgradeMessageText = "SHIELD BLOCK";
-                            upgradeMessageStartTime = Date.now();
-                        }
+                        // NIEUW: Shield blijft actief hele stage - geen melding per verzoek
+                        try {
+                            if (typeof shieldHitEffects !== 'undefined') {
+                                shieldHitEffects.push({ x: lastKnownX + SHIP_WIDTH/2, y: shipBaseY + SHIP_HEIGHT/2, startTime: Date.now(), duration: 300, playerNum: playerNumber });
+                            }
+                            if (typeof hitSparks !== 'undefined') {
+                                for(let hs=0; hs<8; hs++){
+                                    hitSparks.push({ x: lastKnownX + SHIP_WIDTH/2 + (Math.random()-0.5)*SHIP_WIDTH, y: shipBaseY + (Math.random()*SHIP_HEIGHT*0.5), vx: (Math.random()-0.5)*4, vy: (Math.random()-0.5)*4, size: 4, color: 'rgba(0,200,255,0.9)', alpha: 1.0, creationTime: Date.now(), duration: 300 });
+                                }
+                            }
+                        } catch(e){}
                         return;
                     }
                 }

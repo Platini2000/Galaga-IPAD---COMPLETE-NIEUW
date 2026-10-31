@@ -164,6 +164,8 @@ let maxBeamerAttemptsPerLevel = 3;
 let activeBeamerUpgradeType = null;
 let captureBeamUpgradeIconRotation = 0;
 let shieldActive = false;
+let shieldHitEffects = [];
+
 let shieldActivePlayer = null;
 let rapidActive = false;
 let rapidActiveUntil = 0;
