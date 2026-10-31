@@ -160,6 +160,8 @@ let maxSubWavesPerLevel = 2;
 let isNextWaveMessageActive = false;
 let nextWaveMessageStartTime = 0;
 let beamerUpgradeAttemptsThisLevel = 0;
+let beamerTargetAlternation = 0; // FAIR: 0 = links P1, 1 = rechts P2
+window.beamerTargetAlternation = 0;
 let maxBeamerAttemptsPerLevel = 3;
 let activeBeamerUpgradeType = null;
 let captureBeamUpgradeIconRotation = 0;
@@ -212,6 +214,87 @@ let fallingShips = [];
 let isDualShipActive = false;
 let player1IsDualShipActive = false;
 let player2IsDualShipActive = false;
+// Dualship blijft 3 stages actief
+let isDualShipActiveExpireLevel = 0;
+let player1DualShipExpireLevel = 0;
+let player2DualShipExpireLevel = 0;
+const DUALSHIP_STAGE_DURATION = 3;
+window.DUALSHIP_STAGE_DURATION = DUALSHIP_STAGE_DURATION;
+
+function setDualShipActiveWithExpiry(playerNum) {
+    // Geen leven kosten, alleen dual activeren voor 3 stages
+    if (playerNum === 1) {
+        player1IsDualShipActive = true;
+        player1DualShipExpireLevel = level + DUALSHIP_STAGE_DURATION;
+        if (!isTwoPlayerMode) {
+            isDualShipActive = true;
+            isDualShipActiveExpireLevel = level + DUALSHIP_STAGE_DURATION;
+        }
+    } else if (playerNum === 2) {
+        player2IsDualShipActive = true;
+        player2DualShipExpireLevel = level + DUALSHIP_STAGE_DURATION;
+    } else {
+        isDualShipActive = true;
+        isDualShipActiveExpireLevel = level + DUALSHIP_STAGE_DURATION;
+        if (isTwoPlayerMode && selectedGameMode === 'normal') {
+            if (currentPlayer === 1) {
+                player1IsDualShipActive = true;
+                player1DualShipExpireLevel = level + DUALSHIP_STAGE_DURATION;
+            } else {
+                player2IsDualShipActive = true;
+                player2DualShipExpireLevel = level + DUALSHIP_STAGE_DURATION;
+            }
+        } else if (!isTwoPlayerMode) {
+            player1IsDualShipActive = true;
+            player1DualShipExpireLevel = level + DUALSHIP_STAGE_DURATION;
+        }
+    }
+}
+
+function checkAndExpireDualShips() {
+    if (typeof level === 'undefined') return;
+    // Called bij level advance
+    if (isDualShipActive && isDualShipActiveExpireLevel > 0 && level >= isDualShipActiveExpireLevel) {
+        console.log(`[DUALSHIP] 1P dual expired at level ${level} (was until ${isDualShipActiveExpireLevel})`);
+        isDualShipActive = false;
+        isDualShipActiveExpireLevel = 0;
+        if (!isTwoPlayerMode) {
+            player1IsDualShipActive = false;
+            player1DualShipExpireLevel = 0;
+        }
+        if (isTwoPlayerMode && selectedGameMode === 'normal') {
+            if (currentPlayer === 1) {
+                player1IsDualShipActive = false;
+                player1DualShipExpireLevel = 0;
+            } else {
+                player2IsDualShipActive = false;
+                player2DualShipExpireLevel = 0;
+            }
+        }
+    }
+    if (player1IsDualShipActive && player1DualShipExpireLevel > 0 && level >= player1DualShipExpireLevel) {
+        console.log(`[DUALSHIP] P1 dual expired at level ${level}`);
+        player1IsDualShipActive = false;
+        player1DualShipExpireLevel = 0;
+        if (!isTwoPlayerMode) {
+            isDualShipActive = false;
+            isDualShipActiveExpireLevel = 0;
+        }
+    }
+    if (player2IsDualShipActive && player2DualShipExpireLevel > 0 && level >= player2DualShipExpireLevel) {
+        console.log(`[DUALSHIP] P2 dual expired at level ${level}`);
+        player2IsDualShipActive = false;
+        player2DualShipExpireLevel = 0;
+    }
+    // Sync single-player flag
+    if (!isTwoPlayerMode) {
+        isDualShipActive = player1IsDualShipActive;
+        isDualShipActiveExpireLevel = player1DualShipExpireLevel;
+    }
+}
+window.setDualShipActiveWithExpiry = setDualShipActiveWithExpiry;
+window.checkAndExpireDualShips = checkAndExpireDualShips;
+
 let isShowingCaptureMessage = false;
 let captureMessageStartTime = 0;
 let capturedBossIdWithMessage = null;
@@ -1490,6 +1573,8 @@ function triggerFinalGameOverSequence() {
         floatingScores = [];
         isDualShipActive = false;
         player1IsDualShipActive = false; player2IsDualShipActive = false;
+        isDualShipActiveExpireLevel = 0; player1DualShipExpireLevel = 0; player2DualShipExpireLevel = 0;
+        isDualShipActiveExpireLevel = 0; player1DualShipExpireLevel = 0; player2DualShipExpireLevel = 0;
         isShowingResultsScreen = false;
         isShipCaptured = false;
         isPlayer1ShipCaptured = false;

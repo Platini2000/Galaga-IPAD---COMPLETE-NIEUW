@@ -1531,6 +1531,7 @@ function triggerBossStageDefeat() {
         bossDefeatedMessageStartTime = 0;
         if (typeof resetWaveInternal === 'function') {
             level++;
+                            if (typeof window !== 'undefined' && typeof window.checkAndExpireDualShips === 'function') window.checkAndExpireDualShips(); else if (typeof checkAndExpireDualShips === 'function') checkAndExpireDualShips();
             console.log("[BOSS] Defeated, going to level", level);
             resetWaveInternal();
         }
@@ -2736,11 +2737,11 @@ function firePlayerBullet(shooterId = null, isTapEvent = false) {
         } else if (_isSpreadForThisShooter) {
             const centerX = shootingShipObject.x + shootingShipObject.width / 2;
             const bulletY = shootingShipObject.y;
-            const offsets = [-24, -12, 0, 12, 24];
+            const offsets = [-12, 0, 12]; // TERUG NAAR 3 kogels (was 5)
             for(let off of offsets) {
                 bullets.push({ x: centerX - PLAYER_BULLET_WIDTH / 2 + off, y: bulletY, width: PLAYER_BULLET_WIDTH, height: PLAYER_BULLET_HEIGHT, speed: PLAYER_BULLET_SPEED, playerId: currentShooterPlayerId, spread: true, spreadOffset: off });
             }
-            bulletsCreated = 5;
+            bulletsCreated = 3;
         } else {
             const bulletX = shootingShipObject.x + shootingShipObject.width / 2 - PLAYER_BULLET_WIDTH / 2;
             bullets.push({ x: bulletX, y: bulletY, width: PLAYER_BULLET_WIDTH, height: PLAYER_BULLET_HEIGHT, speed: PLAYER_BULLET_SPEED, playerId: currentShooterPlayerId });
@@ -4062,8 +4063,38 @@ function triggerImmediateCaptureDive() {
             return; // Geen geschikt doelwit
         }
 
-        const targetInfo = potentialTargets[Math.floor(Math.random() * potentialTargets.length)];
+        // --- FAIR BEAMER LOGICA ---
+        // Speler met minst levens krijgt beamer, bij gelijk om en om links/rechts
+        let targetInfo;
+        if (isTwoPlayerMode && selectedGameMode === 'coop' && potentialTargets.length === 2) {
+            const p1Target = potentialTargets.find(t => t.playerNum === 1);
+            const p2Target = potentialTargets.find(t => t.playerNum === 2);
+            if (p1Target && p2Target) {
+                if (player1Lives < player2Lives) {
+                    targetInfo = p1Target;
+                    console.log(`[BEAMER FAIR] P1 heeft minder levens (${player1Lives} vs ${player2Lives}) -> beamer naar LINKS (P1)`);
+                } else if (player2Lives < player1Lives) {
+                    targetInfo = p2Target;
+                    console.log(`[BEAMER FAIR] P2 heeft minder levens (${player2Lives} vs ${player1Lives}) -> beamer naar RECHTS (P2)`);
+                } else {
+                    // Gelijk aantal levens -> om en om
+                    if (typeof beamerTargetAlternation === 'undefined') {
+                        beamerTargetAlternation = 0;
+                    }
+                    targetInfo = (beamerTargetAlternation === 0) ? p1Target : p2Target;
+                    console.log(`[BEAMER FAIR] Gelijk levens (${player1Lives} vs ${player2Lives}) -> beamer naar ${beamerTargetAlternation === 0 ? 'LINKS (P1)' : 'RECHTS (P2)'} (om en om)`);
+                    beamerTargetAlternation = 1 - beamerTargetAlternation;
+                    window.beamerTargetAlternation = beamerTargetAlternation;
+                }
+            } else {
+                targetInfo = potentialTargets[Math.floor(Math.random() * potentialTargets.length)];
+            }
+        } else {
+            // 1P of maar 1 target beschikbaar -> neem die
+            targetInfo = potentialTargets[Math.floor(Math.random() * potentialTargets.length)];
+        }
         const targetPlayerShipForDive = targetInfo.playerShip;
+        // --- EINDE FAIR BEAMER LOGICA ---
 
         const potentialCapturingBosses = enemies.filter(e =>
             e && e.state === 'in_grid' && e.type === ENEMY3_TYPE && !e.hasCapturedShip && !e.isPreparingForImmediateCapture
@@ -4390,30 +4421,30 @@ function moveEntities(overrideP1Left = null, overrideP1Right = null) {
                         if (fs.targetPlayerId === 'player1' && ship1 && player1Lives > 0) {
                             rescuingPlayerShipObject = ship1;
                             rescuerAlreadyDual = player1IsDualShipActive;
-                            setDualShipForRescuer = () => { player1IsDualShipActive = true; };
+                            setDualShipForRescuer = () => { player1IsDualShipActive = true; player1DualShipExpireLevel = level + (typeof DUALSHIP_STAGE_DURATION !== 'undefined' ? DUALSHIP_STAGE_DURATION : 3); };
                             rescuerIsActiveAndExists = true;
                             rescuerPlayerId = 'player1';
                         } else if ((fs.targetPlayerId === 'player2' || fs.targetPlayerId === 'ai_p2') && ship2 && player2Lives > 0) {
                             rescuingPlayerShipObject = ship2;
                             rescuerAlreadyDual = player2IsDualShipActive;
-                            setDualShipForRescuer = () => { player2IsDualShipActive = true; };
+                            setDualShipForRescuer = () => { player2IsDualShipActive = true; player2DualShipExpireLevel = level + (typeof DUALSHIP_STAGE_DURATION !== 'undefined' ? DUALSHIP_STAGE_DURATION : 3); };
                             rescuerIsActiveAndExists = true;
                             rescuerPlayerId = (isPlayerTwoAI && selectedOnePlayerGameVariant === '1P_VS_AI_COOP') ? 'ai_p2' : 'player2';
                         }
                     } else {
                         if (isTwoPlayerMode && selectedGameMode === 'coop') {
-                            if (fs.targetPlayerId === 'player1' && ship1 && player1Lives > 0 ) { rescuingPlayerShipObject = ship1; rescuerAlreadyDual = player1IsDualShipActive; playerShipIsCurrentlyCaptured = isPlayer1ShipCaptured; setDualShipForRescuer = () => { player1IsDualShipActive = true; isPlayer1ShipCaptured = false;}; rescuerIsActiveAndExists = true; rescuerPlayerId = 'player1';}
-                            else if (fs.targetPlayerId === 'player2' && ship2 && player2Lives > 0 ) { rescuingPlayerShipObject = ship2; rescuerAlreadyDual = player2IsDualShipActive; playerShipIsCurrentlyCaptured = isPlayer2ShipCaptured; setDualShipForRescuer = () => { player2IsDualShipActive = true; isPlayer2ShipCaptured = false;}; rescuerIsActiveAndExists = true; rescuerPlayerId = 'player2';}
+                            if (fs.targetPlayerId === 'player1' && ship1 && player1Lives > 0 ) { rescuingPlayerShipObject = ship1; rescuerAlreadyDual = player1IsDualShipActive; playerShipIsCurrentlyCaptured = isPlayer1ShipCaptured; setDualShipForRescuer = () => { player1IsDualShipActive = true; player1DualShipExpireLevel = level + (typeof DUALSHIP_STAGE_DURATION !== 'undefined' ? DUALSHIP_STAGE_DURATION : 3); isPlayer1ShipCaptured = false;}; rescuerIsActiveAndExists = true; rescuerPlayerId = 'player1';}
+                            else if (fs.targetPlayerId === 'player2' && ship2 && player2Lives > 0 ) { rescuingPlayerShipObject = ship2; rescuerAlreadyDual = player2IsDualShipActive; playerShipIsCurrentlyCaptured = isPlayer2ShipCaptured; setDualShipForRescuer = () => { player2IsDualShipActive = true; player2DualShipExpireLevel = level + (typeof DUALSHIP_STAGE_DURATION !== 'undefined' ? DUALSHIP_STAGE_DURATION : 3); isPlayer2ShipCaptured = false;}; rescuerIsActiveAndExists = true; rescuerPlayerId = 'player2';}
                         } else { // 1P Classic, 1P_VS_AI_NORMAL, 2P_NORMAL
                             if (ship && playerLives > 0 ) {
                                 rescuingPlayerShipObject = ship;
                                 rescuerAlreadyDual = isDualShipActive;
                                 playerShipIsCurrentlyCaptured = isShipCaptured;
                                 setDualShipForRescuer = () => {
-                                    isDualShipActive = true;
+                                    isDualShipActive = true; isDualShipActiveExpireLevel = level + (typeof DUALSHIP_STAGE_DURATION !== 'undefined' ? DUALSHIP_STAGE_DURATION : 3);
                                     if (isTwoPlayerMode && selectedGameMode === 'normal') {
-                                        if (currentPlayer === 1) player1IsDualShipActive = true; else player2IsDualShipActive = true;
-                                    } else if (!isTwoPlayerMode) player1IsDualShipActive = true;
+                                        if (currentPlayer === 1) { player1IsDualShipActive = true; player1DualShipExpireLevel = level + (typeof DUALSHIP_STAGE_DURATION !== 'undefined' ? DUALSHIP_STAGE_DURATION : 3); } else { player2IsDualShipActive = true; player2DualShipExpireLevel = level + (typeof DUALSHIP_STAGE_DURATION !== 'undefined' ? DUALSHIP_STAGE_DURATION : 3); }
+                                    } else if (!isTwoPlayerMode) player1IsDualShipActive = true; player1DualShipExpireLevel = level + (typeof DUALSHIP_STAGE_DURATION !== 'undefined' ? DUALSHIP_STAGE_DURATION : 3);
                                     isShipCaptured = false;
                                 };
                                 rescuerIsActiveAndExists = true;
@@ -4432,6 +4463,10 @@ function moveEntities(overrideP1Left = null, overrideP1Right = null) {
                         }
                         fallingShips.splice(i, 1); dockedThisFrame = true; continue;
                     } else if (rescuerIsActiveAndExists && rescuerAlreadyDual) {
+                        // Refresh dualship duration - geen leven kosten
+                        if (rescuerPlayerId === 'player1') player1DualShipExpireLevel = level + (typeof DUALSHIP_STAGE_DURATION !== 'undefined' ? DUALSHIP_STAGE_DURATION : 3);
+                        else if (rescuerPlayerId === 'player2') player2DualShipExpireLevel = level + (typeof DUALSHIP_STAGE_DURATION !== 'undefined' ? DUALSHIP_STAGE_DURATION : 3);
+                        else { isDualShipActiveExpireLevel = level + (typeof DUALSHIP_STAGE_DURATION !== 'undefined' ? DUALSHIP_STAGE_DURATION : 3); if (currentPlayer === 1) player1DualShipExpireLevel = level + (typeof DUALSHIP_STAGE_DURATION !== 'undefined' ? DUALSHIP_STAGE_DURATION : 3); else player2DualShipExpireLevel = level + (typeof DUALSHIP_STAGE_DURATION !== 'undefined' ? DUALSHIP_STAGE_DURATION : 3); if (!isTwoPlayerMode) player1DualShipExpireLevel = level + (typeof DUALSHIP_STAGE_DURATION !== 'undefined' ? DUALSHIP_STAGE_DURATION : 3); }
                         fallingShips.splice(i, 1); dockedThisFrame = true; continue;
                     } else {
                         fallingShips.splice(i, 1); dockedThisFrame = true; continue;
@@ -4448,12 +4483,12 @@ function moveEntities(overrideP1Left = null, overrideP1Right = null) {
                     if (fs.targetPlayerId === 'player1' && ship1 && player1Lives > 0) {
                         targetShipForDocking = ship1;
                         isTargetShipDualAlready = player1IsDualShipActive;
-                        setDualShipFlagEarly = () => { if (!isTargetShipDualAlready) player1IsDualShipActive = true; };
+                        setDualShipFlagEarly = () => { if (!isTargetShipDualAlready) player1IsDualShipActive = true; player1DualShipExpireLevel = level + (typeof DUALSHIP_STAGE_DURATION !== 'undefined' ? DUALSHIP_STAGE_DURATION : 3); };
                         playerNumForDocking = 1;
                     } else if ((fs.targetPlayerId === 'player2' || fs.targetPlayerId === 'ai_p2') && ship2 && player2Lives > 0) {
                         targetShipForDocking = ship2;
                         isTargetShipDualAlready = player2IsDualShipActive;
-                        setDualShipFlagEarly = () => { if (!isTargetShipDualAlready) player2IsDualShipActive = true; };
+                        setDualShipFlagEarly = () => { if (!isTargetShipDualAlready) player2IsDualShipActive = true; player2DualShipExpireLevel = level + (typeof DUALSHIP_STAGE_DURATION !== 'undefined' ? DUALSHIP_STAGE_DURATION : 3); };
                         playerNumForDocking = 2;
                     }
                 } else if (isTwoPlayerMode && selectedGameMode === 'coop') {
@@ -4461,13 +4496,13 @@ function moveEntities(overrideP1Left = null, overrideP1Right = null) {
                         targetShipForDocking = ship1;
                         playerShipCapturedStateForEarlyDock = isPlayer1ShipCaptured;
                         isTargetShipDualAlready = player1IsDualShipActive;
-                        setDualShipFlagEarly = () => { if (!isTargetShipDualAlready) player1IsDualShipActive = true; isPlayer1ShipCaptured = false; };
+                        setDualShipFlagEarly = () => { if (!isTargetShipDualAlready) player1IsDualShipActive = true; player1DualShipExpireLevel = level + (typeof DUALSHIP_STAGE_DURATION !== 'undefined' ? DUALSHIP_STAGE_DURATION : 3); isPlayer1ShipCaptured = false; };
                         playerNumForDocking = 1;
                     } else if (fs.targetPlayerId === 'player2' && ship2 && player2Lives > 0 ) {
                         targetShipForDocking = ship2;
                         playerShipCapturedStateForEarlyDock = isPlayer2ShipCaptured;
                         isTargetShipDualAlready = player2IsDualShipActive;
-                        setDualShipFlagEarly = () => { if (!isTargetShipDualAlready) player2IsDualShipActive = true; isPlayer2ShipCaptured = false; };
+                        setDualShipFlagEarly = () => { if (!isTargetShipDualAlready) player2IsDualShipActive = true; player2DualShipExpireLevel = level + (typeof DUALSHIP_STAGE_DURATION !== 'undefined' ? DUALSHIP_STAGE_DURATION : 3); isPlayer2ShipCaptured = false; };
                         playerNumForDocking = 2;
                     }
                 } else { // 1P Classic, 1P_VS_AI_NORMAL, 2P_NORMAL
@@ -4477,10 +4512,10 @@ function moveEntities(overrideP1Left = null, overrideP1Right = null) {
                         isTargetShipDualAlready = isDualShipActive;
                         setDualShipFlagEarly = () => {
                             if (!isTargetShipDualAlready) {
-                                isDualShipActive = true;
+                                isDualShipActive = true; isDualShipActiveExpireLevel = level + (typeof DUALSHIP_STAGE_DURATION !== 'undefined' ? DUALSHIP_STAGE_DURATION : 3);
                                 if (isTwoPlayerMode && selectedGameMode === 'normal') {
-                                    if (currentPlayer === 1) player1IsDualShipActive = true; else player2IsDualShipActive = true;
-                                } else if (!isTwoPlayerMode) player1IsDualShipActive = true;
+                                    if (currentPlayer === 1) { player1IsDualShipActive = true; player1DualShipExpireLevel = level + (typeof DUALSHIP_STAGE_DURATION !== 'undefined' ? DUALSHIP_STAGE_DURATION : 3); } else { player2IsDualShipActive = true; player2DualShipExpireLevel = level + (typeof DUALSHIP_STAGE_DURATION !== 'undefined' ? DUALSHIP_STAGE_DURATION : 3); }
+                                } else if (!isTwoPlayerMode) player1IsDualShipActive = true; player1DualShipExpireLevel = level + (typeof DUALSHIP_STAGE_DURATION !== 'undefined' ? DUALSHIP_STAGE_DURATION : 3);
                             }
                             isShipCaptured = false;
                         };
@@ -4614,24 +4649,39 @@ function moveEntities(overrideP1Left = null, overrideP1Right = null) {
                             let isUpgradeBeam = false;
                             let upgradeTypeForBeam = null;
                             let beamerIconReady = true;
+                            let isDualUpgradeCapture = false;
                             try {
                                 if (enemy.beamerUpgradeAvailableAt && Date.now() < enemy.beamerUpgradeAvailableAt) {
                                     beamerIconReady = false;
                                 }
                             } catch(e) {}
                             try {
-                                if (enemy.beamerUpgradeType && enemy.beamerUpgradeType !== 'DUAL') {
+                                // DUAL moet WEL door boss gepakt worden (omhoog grid in) zoals eerder, maar mag GEEN leven kosten
+                                if (enemy.beamerUpgradeType === 'DUAL') {
+                                    isDualUpgradeCapture = true;
+                                    upgradeTypeForBeam = 'DUAL';
+                                } else if (enemy.beamerUpgradeType && enemy.beamerUpgradeType !== 'DUAL') {
                                     isUpgradeBeam = true;
                                     upgradeTypeForBeam = enemy.beamerUpgradeType;
-                                } else if (typeof activeBeamerUpgradeType !== 'undefined' && activeBeamerUpgradeType && activeBeamerUpgradeType !== 'DUAL') {
-                                    isUpgradeBeam = true;
-                                    upgradeTypeForBeam = activeBeamerUpgradeType;
+                                } else if (typeof activeBeamerUpgradeType !== 'undefined' && activeBeamerUpgradeType) {
+                                    if (activeBeamerUpgradeType === 'DUAL') {
+                                        isDualUpgradeCapture = true;
+                                        upgradeTypeForBeam = 'DUAL';
+                                    } else if (activeBeamerUpgradeType !== 'DUAL') {
+                                        isUpgradeBeam = true;
+                                        upgradeTypeForBeam = activeBeamerUpgradeType;
+                                    }
                                 }
                             } catch(e) {}
                             // FIX: 2 sec zichtbaar voordat icoon gepakt mag worden
                             if (isUpgradeBeam && !beamerIconReady) {
                                 shipHitObject = null;
                                 isUpgradeBeam = false;
+                                upgradeTypeForBeam = null;
+                            }
+                            if (isDualUpgradeCapture && !beamerIconReady) {
+                                shipHitObject = null;
+                                isDualUpgradeCapture = false;
                                 upgradeTypeForBeam = null;
                             }
                                                         if (shipHitObject && isUpgradeBeam && upgradeTypeForBeam) {
@@ -4698,7 +4748,43 @@ function moveEntities(overrideP1Left = null, overrideP1Right = null) {
                                 enemy.captureStartTime = 0; enemy.state = 'showing_capture_message'; enemy.targetGridX = null; enemy.targetGridY = null; enemy.initialCaptureAnimationY = shipHitObject.y; enemy.captureAnimationRotation = 0;
                                 isShowingCaptureMessage = true; captureMessageStartTime = now; capturedBossIdWithMessage = enemy.id; playSound('shipCapturedSound', false, 0.3);
                                 csCurrentChainHits = 0; csCurrentChainScore = 0; csLastHitTime = 0; csLastChainHitPosition = null; normalWaveCurrentChainHits = 0; normalWaveCurrentChainScore = 0; normalWaveLastHitTime = 0; normalWaveLastHitPosition = null;
-                                handlePlayerShipCollision(playerHitId, false, now, true);
+                                if (typeof isDualUpgradeCapture !== 'undefined' && isDualUpgradeCapture) {
+                                    // DUAL UPGRADE CAPTURE - BOSS NEEMT OMHOOG MEE ZONDER LEVEN TE KOSTEN (speler + AI)
+                                    try {
+                                        if (isTwoPlayerMode && selectedGameMode === 'coop') {
+                                            if (playerHitId === 1) {
+                                                isPlayer1ShipCaptured = true;
+                                                player1IsDualShipActive = false;
+                                                // GEEN player1Lives-- !
+                                                if (isCoopAIDemoActive || (isPlayerTwoAI && selectedOnePlayerGameVariant === '1P_VS_AI_COOP')) coopPartner1CapturedTime = now;
+                                                player1NeedsRespawnAfterCapture = true;
+                                                ship1 = null;
+                                            } else {
+                                                isPlayer2ShipCaptured = true;
+                                                player2IsDualShipActive = false;
+                                                // GEEN player2Lives-- !
+                                                if (isCoopAIDemoActive || (isPlayerTwoAI && selectedOnePlayerGameVariant === '1P_VS_AI_COOP')) coopPartner2CapturedTime = now;
+                                                player2NeedsRespawnAfterCapture = true;
+                                                ship2 = null;
+                                            }
+                                        } else {
+                                            isShipCaptured = true;
+                                            isDualShipActive = false;
+                                            // GEEN playerLives-- !
+                                            isWaitingForRespawn = true;
+                                            if (isTwoPlayerMode && selectedGameMode === 'normal') {
+                                                if (playerHitId === 1) player1CaptureRespawnX = shipHitObject.x;
+                                                else player2CaptureRespawnX = shipHitObject.x;
+                                            } else {
+                                                capturedShipRespawnX_NormalMode = shipHitObject.x;
+                                            }
+                                            ship = null;
+                                        }
+                                        console.log("[DUAL CAPTURE NO LIFE COST] Player " + playerHitId + " captured for DUAL upgrade, boss takes to grid");
+                                    } catch(e) { console.error("dual capture no life error", e); handlePlayerShipCollision(playerHitId, false, now, true); }
+                                } else {
+                                    handlePlayerShipCollision(playerHitId, false, now, true);
+                                }
                                 if(isCoopAIDemoActive) {
                                      aiPlayerActivelySeekingCaptureById = null;
                                      coopAICaptureDiveAnticipationActive = false;
@@ -4817,7 +4903,7 @@ function moveEntities(overrideP1Left = null, overrideP1Right = null) {
         }
         updateHitSparks();
 
-    } catch (e) { console.error("FATAL Error in moveEntities:", e, e.stack); isGridSoundPlaying = false; stopSound('gridBackgroundSound'); isEntrancePhaseActive = false; stopSound('entranceSound'); isShowingPlayerGameOverMessage = false; playerGameOverMessageStartTime = 0; playerWhoIsGameOver = 0; nextActionAfterPlayerGameOver = ''; isPlayer1ShowingGameOverMessage = false; player1GameOverMessageStartTime = 0; isPlayer2ShowingGameOverMessage = false; player2GameOverMessageStartTime = 0; isShipCaptured = false; captureBeamActive = false; capturingBossId = null; stopSound('captureSound'); stopSound('shipCapturedSound'); isWaitingForRespawn = false; fallingShips = []; isDualShipActive = false; player1IsDualShipActive = false; player2IsDualShipActive = false; isInvincible = false; invincibilityEndTime = 0; hitSparks = []; if(typeof showMenuState === 'function') showMenuState(); if (mainLoopId) cancelAnimationFrame(mainLoopId); mainLoopId = null; alert("Critical error during entity movement/collision. Returning to menu."); }
+    } catch (e) { console.error("FATAL Error in moveEntities:", e, e.stack); isGridSoundPlaying = false; stopSound('gridBackgroundSound'); isEntrancePhaseActive = false; stopSound('entranceSound'); isShowingPlayerGameOverMessage = false; playerGameOverMessageStartTime = 0; playerWhoIsGameOver = 0; nextActionAfterPlayerGameOver = ''; isPlayer1ShowingGameOverMessage = false; player1GameOverMessageStartTime = 0; isPlayer2ShowingGameOverMessage = false; player2GameOverMessageStartTime = 0; isShipCaptured = false; captureBeamActive = false; capturingBossId = null; stopSound('captureSound'); stopSound('shipCapturedSound'); isWaitingForRespawn = false; fallingShips = []; isDualShipActive = false; player1IsDualShipActive = false; player2IsDualShipActive = false; isDualShipActiveExpireLevel = 0; player1DualShipExpireLevel = 0; player2DualShipExpireLevel = 0; isInvincible = false; invincibilityEndTime = 0; hitSparks = []; if(typeof showMenuState === 'function') showMenuState(); if (mainLoopId) cancelAnimationFrame(mainLoopId); mainLoopId = null; alert("Critical error during entity movement/collision. Returning to menu."); }
 }
 
 
@@ -4907,7 +4993,7 @@ function handlePlayerShipCollision(playerNumber, hitDualPart, collisionTime, was
                 }
             } else {
                 if (player1IsDualShipActive && ship1) {
-                    player1IsDualShipActive = false;
+                    player1IsDualShipActive = false; player1DualShipExpireLevel = 0;
                     const explX = hitDualPart ? (ship1.x + DUAL_SHIP_OFFSET_X + ship1.width/2) : (ship1.x + ship1.width/2);
                     createExplosion(explX, ship1.y + ship1.height/2);
                     ship1.x = lastKnownX; ship1.y = shipBaseY; ship1.targetX = ship1.x;
@@ -4973,7 +5059,7 @@ function handlePlayerShipCollision(playerNumber, hitDualPart, collisionTime, was
                 }
             } else {
                 if (player2IsDualShipActive && ship2) {
-                    player2IsDualShipActive = false;
+                    player2IsDualShipActive = false; player2DualShipExpireLevel = 0;
                     const explX = hitDualPart ? (ship2.x + DUAL_SHIP_OFFSET_X + ship2.width/2) : (ship2.x + ship2.width/2);
                     createExplosion(explX, ship2.y + ship2.height/2);
                     ship2.x = lastKnownX; ship2.y = shipBaseY; ship2.targetX = ship2.x;
@@ -5397,6 +5483,7 @@ function runSingleGameUpdate(timestamp) {
                     if (switchPlayerTurn()) {
                         if (prevPlayerGameOver === 2 && currentPlayer === 1 && player1CompletedLevel === level) {
                            level++;
+                            if (typeof window !== 'undefined' && typeof window.checkAndExpireDualShips === 'function') window.checkAndExpireDualShips(); else if (typeof checkAndExpireDualShips === 'function') checkAndExpireDualShips();
                            player1CompletedLevel = -1;
                            player1MaxLevelReached = Math.max(player1MaxLevelReached, level);
                         }
@@ -6194,6 +6281,7 @@ function runSingleGameUpdate(timestamp) {
 
                         if (advanceLevelGlobally) {
                             level++;
+                            if (typeof window !== 'undefined' && typeof window.checkAndExpireDualShips === 'function') window.checkAndExpireDualShips(); else if (typeof checkAndExpireDualShips === 'function') checkAndExpireDualShips();
                             if (isTwoPlayerMode && selectedGameMode === 'coop') {
                                 if (player1Lives > 0) player1MaxLevelReached = Math.max(player1MaxLevelReached, level);
                                 if (player2Lives > 0) player2MaxLevelReached = Math.max(player2MaxLevelReached, level);

@@ -943,7 +943,7 @@ function renderHitSparks() { if (!gameCtx || !hitSparks || hitSparks.length === 
 
 
 /**
- * Tekent de volledige game scÃƒÆ’Ã‚Â¨ne.
+ * Tekent de volledige game scÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¨ne.
  */
 
 /** Tekent een mooie transparante blauwe halve cirkel shield over het schip */
