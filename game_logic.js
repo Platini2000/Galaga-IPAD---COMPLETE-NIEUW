@@ -77,50 +77,197 @@ function forceGameOverIfAllDead() {
 }
 window.forceGameOverIfAllDead = forceGameOverIfAllDead;
 
+
+// --- NIEUW: Shield helpers voor coop bescherming ---
+function getShieldOwnerShip() {
+    try {
+        if (typeof shieldActivePlayer === 'undefined' || shieldActivePlayer === null) {
+            if (typeof ship !== 'undefined' && ship) return ship;
+            if (typeof ship1 !== 'undefined' && ship1) return ship1;
+            return null;
+        }
+        if (isTwoPlayerMode && selectedGameMode === 'coop') {
+            if (shieldActivePlayer === 1 && typeof ship1 !== 'undefined') return ship1;
+            if (shieldActivePlayer === 2 && typeof ship2 !== 'undefined') return ship2;
+        }
+        if (typeof ship !== 'undefined' && ship) return ship;
+        if (shieldActivePlayer === 1 && typeof ship1 !== 'undefined') return ship1;
+        if (shieldActivePlayer === 2 && typeof ship2 !== 'undefined') return ship2;
+        return null;
+    } catch(e){ return null; }
+}
+function isShipNearShieldOwner(otherShip) {
+    try {
+        if (!otherShip) return false;
+        const owner = getShieldOwnerShip();
+        if (!owner || !otherShip) return false;
+        if (owner === otherShip) return true;
+        const ownerCX = owner.x + owner.width/2;
+        const ownerCY = owner.y + owner.height/2;
+        const otherCX = otherShip.x + otherShip.width/2;
+        const otherCY = otherShip.y + otherShip.height/2;
+        const dist = Math.hypot(ownerCX - otherCX, ownerCY - otherCY);
+        // shield radius ~85% of ship size + pulse ~ 60px, we allow 140px
+        const shieldRadius = Math.max(owner.width, owner.height) * 0.85 + 25;
+        const protectionRange = shieldRadius + Math.max(otherShip.width, otherShip.height) * 0.6 + 45;
+        return dist <= protectionRange;
+    } catch(e){ return false; }
+}
+function isShipProtectedByShield(playerNum, shipObj) {
+    try {
+        if (typeof shieldActive === 'undefined' || !shieldActive) return false;
+        if (typeof shieldActivePlayer !== 'undefined' && shieldActivePlayer !== null) {
+            if (isTwoPlayerMode && selectedGameMode === 'coop') {
+                if (shieldActivePlayer === playerNum) return true;
+                // coop: als andere speler dichtbij staat, ook beschermd
+                if (shipObj && isShipNearShieldOwner(shipObj)) return true;
+            } else {
+                // single player: shield beschermt iedereen
+                return true;
+            }
+        } else {
+            return true;
+        }
+        return false;
+    } catch(e){ return false; }
+}
+window.getShieldOwnerShip = getShieldOwnerShip;
+window.isShipNearShieldOwner = isShipNearShieldOwner;
+window.isShipProtectedByShield = isShipProtectedByShield;
+
+
+
 // --- NIEUW: Echte random beamer upgrades zonder herhaling ---
+var _beamer1UPPityCounter = 0;
+var lastBeamerUpgradeType = null;
+var beamerUpgradeShuffleBag = typeof beamerUpgradeShuffleBag !== 'undefined' ? beamerUpgradeShuffleBag : [];
+var beamerUpgradeBagIndex = typeof beamerUpgradeBagIndex !== 'undefined' ? beamerUpgradeBagIndex : 0;
 function refillBeamerShuffleBag() {
-    const allTypes = ['DUAL', 'SHIELD', 'RAPID', 'SPREAD', 'CLEAR', '1UP'];
-    for (let i = allTypes.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [allTypes[i], allTypes[j]] = [allTypes[j], allTypes[i]];
-    }
-    beamerUpgradeShuffleBag = allTypes;
-    beamerUpgradeBagIndex = 0;
+    try {
+        beamerUpgradeShuffleBag = [];
+        beamerUpgradeBagIndex = 0;
+        window.beamerUpgradeShuffleBag = beamerUpgradeShuffleBag;
+        window.beamerUpgradeBagIndex = beamerUpgradeBagIndex;
+    } catch(e) {}
 }
 function getNextBeamerUpgradeType() {
     try {
-        if (typeof beamerUpgradeShuffleBag === 'undefined' || !Array.isArray(beamerUpgradeShuffleBag) || beamerUpgradeShuffleBag.length === 0 || beamerUpgradeBagIndex >= beamerUpgradeShuffleBag.length) {
-            refillBeamerShuffleBag();
+        const types = ['DUAL', 'SHIELD', 'RAPID', 'SPREAD', 'CLEAR', '1UP'];
+        let p1L = 99, p2L = 99, singleL = 99;
+        try {
+            if (typeof player1Lives !== 'undefined') p1L = player1Lives;
+            if (typeof player2Lives !== 'undefined') p2L = player2Lives;
+            if (typeof playerLives !== 'undefined') singleL = playerLives;
+            if (p1L===0 && singleL!==99) p1L = singleL;
+        } catch(e) {}
+        let minLives = 99;
+        if (typeof isTwoPlayerMode !== 'undefined' && isTwoPlayerMode && typeof selectedGameMode !== 'undefined' && selectedGameMode === 'coop') {
+            minLives = Math.min(p1L, p2L);
+        } else {
+            minLives = (typeof playerLives !== 'undefined' && playerLives>0) ? playerLives : Math.min(p1L, p2L);
+            if (!isFinite(minLives)) minLives = 99;
         }
-        let attempts = 0;
-        let picked = beamerUpgradeShuffleBag[beamerUpgradeBagIndex++];
-        while (typeof lastBeamerUpgradeType !== 'undefined' && lastBeamerUpgradeType !== null && picked === lastBeamerUpgradeType && attempts < 10) {
-            if (beamerUpgradeBagIndex >= beamerUpgradeShuffleBag.length) refillBeamerShuffleBag();
-            let remaining = beamerUpgradeShuffleBag.slice(beamerUpgradeBagIndex);
-            let filtered = remaining.filter(t => t !== lastBeamerUpgradeType);
-            if (filtered.length > 0) {
-                picked = filtered[Math.floor(Math.random()*filtered.length)];
-                let idx = beamerUpgradeShuffleBag.indexOf(picked, beamerUpgradeBagIndex);
-                if (idx >=0) beamerUpgradeShuffleBag.splice(idx,1);
-                else beamerUpgradeBagIndex++;
-            } else {
-                picked = beamerUpgradeShuffleBag[beamerUpgradeBagIndex++];
+        const weights = {
+            'DUAL': 1.0,
+            'SHIELD': 1.2,
+            'RAPID': 1.0,
+            'SPREAD': 1.0,
+            'CLEAR': 1.0,
+            '1UP': 1.0
+        };
+        // Lives gebaseerd: sneller 1UP bij lage levens
+        if (minLives <= 1) weights['1UP'] = 5.0;
+        else if (minLives <= 2) weights['1UP'] = 3.5;
+        else if (minLives <= 3) weights['1UP'] = 2.2;
+
+        try {
+            const isAIDemo = (typeof isManualControl !== 'undefined' && !isManualControl) || (typeof isCoopAIDemoActive !== 'undefined' && isCoopAIDemoActive);
+            if (isAIDemo) {
+                weights['SHIELD'] = 1.8;
+                weights['DUAL'] = 0.8;
             }
-            attempts++;
+        } catch(e) {}
+
+        // Pity counter adaptief
+        _beamer1UPPityCounter++;
+        let pityThreshold = 12;
+        if (minLives <= 2) pityThreshold = 4;
+        else if (minLives <= 3) pityThreshold = 6;
+        else pityThreshold = 9;
+        if (_beamer1UPPityCounter >= pityThreshold) {
+            _beamer1UPPityCounter = 0;
+            lastBeamerUpgradeType = '1UP';
+            console.log("[BEAMER PITY] "+pityThreshold+" zonder 1UP -> FORCE 1UP (minLives="+minLives+")");
+            window._beamer1UPPityCounter = _beamer1UPPityCounter;
+            // reset bag zodat 1UP niet meteen weer verdwijnt
+            try { beamerUpgradeShuffleBag = []; } catch(e) {}
+            return '1UP';
         }
-        if (beamerUpgradeBagIndex >= beamerUpgradeShuffleBag.length) refillBeamerShuffleBag();
-        lastBeamerUpgradeType = picked;
-        return picked;
+
+        // Shuffle bag voor gelijkmatige verdeling - alle 6 komen voor
+        if (typeof beamerUpgradeShuffleBag === 'undefined' || !Array.isArray(beamerUpgradeShuffleBag)) beamerUpgradeShuffleBag = [];
+        if (beamerUpgradeShuffleBag.length === 0) {
+            // bouw nieuwe bag: elk type minimaal 1x, plus extra gewicht voor 1UP en SHIELD bij lage lives
+            beamerUpgradeShuffleBag = [];
+            for (let t of types) {
+                let count = 1;
+                if (t === '1UP' && minLives <= 2) count = 2;
+                if (t === '1UP' && minLives <= 3) count = Math.max(count, 2);
+                // gewichten vertalen naar counts voor shuffle bag (afgerond)
+                let w = weights[t] || 1;
+                // extra kopieen voor hoge weight
+                if (w >= 3) count += 1;
+                if (w >= 4) count += 1;
+                for (let c=0;c<count;c++) beamerUpgradeShuffleBag.push(t);
+            }
+            // shuffle Fisher-Yates
+            for (let i=beamerUpgradeShuffleBag.length-1;i>0;i--) {
+                const j = Math.floor(Math.random()*(i+1));
+                const tmp = beamerUpgradeShuffleBag[i];
+                beamerUpgradeShuffleBag[i]=beamerUpgradeShuffleBag[j];
+                beamerUpgradeShuffleBag[j]=tmp;
+            }
+            // voorkom directe herhaling van vorige
+            if (lastBeamerUpgradeType && beamerUpgradeShuffleBag.length>1 && beamerUpgradeShuffleBag[0]===lastBeamerUpgradeType) {
+                const swapIdx = 1 + Math.floor(Math.random()*(beamerUpgradeShuffleBag.length-1));
+                const tmp = beamerUpgradeShuffleBag[0];
+                beamerUpgradeShuffleBag[0]=beamerUpgradeShuffleBag[swapIdx];
+                beamerUpgradeShuffleBag[swapIdx]=tmp;
+            }
+            window.beamerUpgradeShuffleBag = beamerUpgradeShuffleBag;
+        }
+        let next = beamerUpgradeShuffleBag.shift();
+        window.beamerUpgradeShuffleBag = beamerUpgradeShuffleBag;
+        if (!next) {
+            // fallback weighted random
+            let total = 0;
+            for (let t of types) total += (weights[t]||1);
+            let r = Math.random()*total;
+            let acc=0;
+            for (let t of types) {
+                acc += (weights[t]||1);
+                if (r <= acc) { next=t; break; }
+            }
+            if (!next) next = types[Math.floor(Math.random()*types.length)];
+        }
+        if (next === '1UP') _beamer1UPPityCounter = 0;
+        lastBeamerUpgradeType = next;
+        window._beamer1UPPityCounter = _beamer1UPPityCounter;
+        console.log("[BEAMER] Bag len "+beamerUpgradeShuffleBag.length+" -> "+next+" minLives="+minLives);
+        return next;
     } catch(e){
+        console.error("beamer randomizer fallback", e);
         const fallback = ['DUAL','SHIELD','RAPID','SPREAD','CLEAR','1UP'];
         let f = fallback[Math.floor(Math.random()*fallback.length)];
-        if (f === lastBeamerUpgradeType) f = fallback[(fallback.indexOf(f)+1)%fallback.length];
+        if (f === '1UP') _beamer1UPPityCounter = 0;
         lastBeamerUpgradeType = f;
+        window._beamer1UPPityCounter = _beamer1UPPityCounter;
         return f;
     }
 }
 window.getNextBeamerUpgradeType = getNextBeamerUpgradeType;
 window.refillBeamerShuffleBag = refillBeamerShuffleBag;
+window._beamer1UPPityCounter = _beamer1UPPityCounter;
 
 
 
@@ -358,6 +505,16 @@ function resetGameInternal() {
         player2IsDualShipActive = false;
         isPlayer1ShipCaptured = false;
         isPlayer2ShipCaptured = false;
+        // FIX: reset beamer randomizer voor gelijkmatige verdeling per nieuwe game
+        try {
+            beamerUpgradeShuffleBag = [];
+            _beamer1UPPityCounter = 0;
+            lastBeamerUpgradeType = null;
+            if (typeof window !== 'undefined') {
+                window.beamerUpgradeShuffleBag = [];
+                window._beamer1UPPityCounter = 0;
+            }
+        } catch(e) {}
         isPlayer1WaitingForRespawn = false;
         isPlayer2WaitingForRespawn = false;
         isPlayer1Invincible = false;
@@ -526,25 +683,63 @@ function resetWaveInternal() {
     captureAttemptMadeThisLevel = false;
     try { if (typeof currentSubWave !== 'undefined') currentSubWave = 1; if (typeof beamerUpgradeAttemptsThisLevel !== 'undefined') beamerUpgradeAttemptsThisLevel = 0; if (typeof isNextWaveMessageActive !== 'undefined') isNextWaveMessageActive = false; } catch(e) {}
     try { if (typeof currentSubWave !== 'undefined') currentSubWave = 1; if (typeof beamerUpgradeAttemptsThisLevel !== 'undefined') beamerUpgradeAttemptsThisLevel = 0; if (typeof isNextWaveMessageActive !== 'undefined') isNextWaveMessageActive = false; } catch(e) {}
-    // FIX: alle upgrades uit bij nieuwe stage (per verzoek)
+    // NIEUW: upgrades gaan 2 stages mee, dual 3 stages mee
     try {
-        if (typeof shieldActive !== 'undefined') shieldActive = false;
-        if (typeof shieldActivePlayer !== 'undefined') shieldActivePlayer = null;
-        if (typeof rapidActive !== 'undefined') rapidActive = false;
-        if (typeof rapidActiveUntil !== 'undefined') rapidActiveUntil = 0;
-        if (typeof rapidActivePlayer !== 'undefined') rapidActivePlayer = null;
-        if (typeof spreadActive !== 'undefined') spreadActive = false;
-        if (typeof spreadActiveUntil !== 'undefined') spreadActiveUntil = 0;
-        if (typeof spreadActivePlayer !== 'undefined') spreadActivePlayer = null;
-        if (typeof isClearNoBulletsActive !== 'undefined') isClearNoBulletsActive = false;
-        if (typeof clearActiveUntil !== 'undefined') clearActiveUntil = 0;
+        let expiredTypes = [];
+        if (typeof decrementUpgradeStagesOnNewStage === 'function') {
+            expiredTypes = decrementUpgradeStagesOnNewStage();
+        } else {
+            // fallback oude counters decrement
+            if (typeof shieldStagesRemaining !== 'undefined' && shieldStagesRemaining>0) { shieldStagesRemaining--; if(shieldStagesRemaining<=0) expiredTypes.push('SHIELD'); }
+            if (typeof rapidStagesRemaining !== 'undefined' && rapidStagesRemaining>0) { rapidStagesRemaining--; if(rapidStagesRemaining<=0) expiredTypes.push('RAPID'); }
+            if (typeof spreadStagesRemaining !== 'undefined' && spreadStagesRemaining>0) { spreadStagesRemaining--; if(spreadStagesRemaining<=0) expiredTypes.push('SPREAD'); }
+            if (typeof clearStagesRemaining !== 'undefined' && clearStagesRemaining>0) { clearStagesRemaining--; if(clearStagesRemaining<=0) expiredTypes.push('CLEAR'); }
+            if (typeof dualStagesRemaining !== 'undefined' && dualStagesRemaining>0) { dualStagesRemaining--; if(dualStagesRemaining<=0) expiredTypes.push('DUAL'); }
+        }
+        // Expire alleen wat echt op is
+        if (expiredTypes.includes('SHIELD')) { if (typeof shieldActive !== 'undefined') shieldActive = false; if (typeof shieldActivePlayer !== 'undefined') shieldActivePlayer = null; shieldStagesRemaining = 0; console.log("[UPGRADE PERSIST] SHIELD expired na 2 stages"); }
+        if (expiredTypes.includes('RAPID')) { if (typeof rapidActive !== 'undefined') rapidActive = false; if (typeof rapidActiveUntil !== 'undefined') rapidActiveUntil = 0; if (typeof rapidActivePlayer !== 'undefined') rapidActivePlayer = null; rapidStagesRemaining = 0; console.log("[UPGRADE PERSIST] RAPID expired"); }
+        if (expiredTypes.includes('SPREAD')) { if (typeof spreadActive !== 'undefined') spreadActive = false; if (typeof spreadActiveUntil !== 'undefined') spreadActiveUntil = 0; if (typeof spreadActivePlayer !== 'undefined') spreadActivePlayer = null; spreadStagesRemaining = 0; console.log("[UPGRADE PERSIST] SPREAD expired"); }
+        if (expiredTypes.includes('CLEAR')) { if (typeof isClearNoBulletsActive !== 'undefined') isClearNoBulletsActive = false; if (typeof clearActiveUntil !== 'undefined') clearActiveUntil = 0; clearStagesRemaining = 0; console.log("[UPGRADE PERSIST] CLEAR expired"); }
+        if (expiredTypes.includes('DUAL')) {
+            // dual ship verloopt na 3 stages
+            if (typeof isDualShipActive !== 'undefined') isDualShipActive = false;
+            if (typeof player1IsDualShipActive !== 'undefined') player1IsDualShipActive = false;
+            if (typeof player2IsDualShipActive !== 'undefined') player2IsDualShipActive = false;
+            if (typeof isDualShipActiveExpireLevel !== 'undefined') isDualShipActiveExpireLevel = 0;
+            if (typeof player1DualShipExpireLevel !== 'undefined') player1DualShipExpireLevel = 0;
+            if (typeof player2DualShipExpireLevel !== 'undefined') player2DualShipExpireLevel = 0;
+            dualStagesRemaining = 0;
+            console.log("[UPGRADE PERSIST] DUAL expired na 3 stages");
+        }
+        // Voor nog actieve upgrades: timers verversen zodat ze hele stage duren
+        if (typeof shieldStagesRemaining !== 'undefined' && shieldStagesRemaining > 0 && typeof shieldActive !== 'undefined' && shieldActive) {
+            console.log("[UPGRADE PERSIST] SHIELD blijft actief, nog "+shieldStagesRemaining+" stage(s)");
+        }
+        if (typeof rapidStagesRemaining !== 'undefined' && rapidStagesRemaining > 0 && typeof rapidActive !== 'undefined' && rapidActive) {
+            if (typeof rapidActiveUntil !== 'undefined') rapidActiveUntil = Date.now() + 999999999; // hele stage
+            console.log("[UPGRADE PERSIST] RAPID blijft actief, nog "+rapidStagesRemaining+" stage(s)");
+        }
+        if (typeof spreadStagesRemaining !== 'undefined' && spreadStagesRemaining > 0 && typeof spreadActive !== 'undefined' && spreadActive) {
+            if (typeof spreadActiveUntil !== 'undefined') spreadActiveUntil = Date.now() + 999999999;
+            console.log("[UPGRADE PERSIST] SPREAD blijft actief, nog "+spreadStagesRemaining+" stage(s)");
+        }
+        if (typeof clearStagesRemaining !== 'undefined' && clearStagesRemaining > 0 && typeof isClearNoBulletsActive !== 'undefined' && isClearNoBulletsActive) {
+            if (typeof clearActiveUntil !== 'undefined') clearActiveUntil = Date.now() + 999999999; // blokkeert hele stage(s)
+            if (typeof enemyBullets !== 'undefined') enemyBullets = [];
+            console.log("[UPGRADE PERSIST] CLEAR blijft actief, nog "+clearStagesRemaining+" stage(s)");
+        }
+        // dual blijft actief via expireLevel, ook verlengen indien nodig
+        if (typeof dualStagesRemaining !== 'undefined' && dualStagesRemaining > 0) {
+            console.log("[UPGRADE PERSIST] DUAL blijft actief, nog "+dualStagesRemaining+" stage(s)");
+        }
+        // alleen message icon rotatie resetten
         if (typeof upgradeMessageActive !== 'undefined') upgradeMessageActive = false;
         if (typeof upgradeMessageText !== 'undefined') upgradeMessageText = "";
         if (typeof upgradeMessagePlayer !== 'undefined') upgradeMessagePlayer = null;
         if (typeof activeBeamerUpgradeType !== 'undefined') activeBeamerUpgradeType = null;
         if (typeof captureBeamUpgradeIconRotation !== 'undefined') captureBeamUpgradeIconRotation = 0;
-        console.log("[FIX] Upgrades gereset bij nieuwe stage");
-    } catch(e) {}
+    } catch(e) { console.error("upgrade persist error", e); }
     gameJustStartedAndWaveLaunched = false;
     aiPlayerActivelySeekingCaptureById = null;
     coopAICaptureDiveAnticipationActive = false;
@@ -2726,19 +2921,30 @@ function firePlayerBullet(shooterId = null, isTapEvent = false) {
     try {
         const bulletY = shootingShipObject.y;
         let bulletsCreated = 0;
+        const spreadOffsets = [-12, 0, 12];
         if (isDual) {
             const ship1CenterX = shootingShipObject.x + shootingShipObject.width / 2;
             const ship2CenterX = shootingShipObject.x + DUAL_SHIP_OFFSET_X + shootingShipObject.width / 2;
-            const bulletX1 = ship1CenterX - PLAYER_BULLET_WIDTH / 2;
-            const bulletX2 = ship2CenterX - PLAYER_BULLET_WIDTH / 2;
-            bullets.push({ x: bulletX1, y: bulletY, width: PLAYER_BULLET_WIDTH, height: PLAYER_BULLET_HEIGHT, speed: PLAYER_BULLET_SPEED, playerId: currentShooterPlayerId });
-            bullets.push({ x: bulletX2, y: bulletY, width: PLAYER_BULLET_WIDTH, height: PLAYER_BULLET_HEIGHT, speed: PLAYER_BULLET_SPEED, playerId: currentShooterPlayerId });
-            bulletsCreated = 2;
+            if (_isSpreadForThisShooter) {
+                // DUAL + SPREAD: 3 kogels per schip = 6 totaal, op beide schepen
+                for (let off of spreadOffsets) {
+                    bullets.push({ x: ship1CenterX - PLAYER_BULLET_WIDTH / 2 + off, y: bulletY, width: PLAYER_BULLET_WIDTH, height: PLAYER_BULLET_HEIGHT, speed: PLAYER_BULLET_SPEED, playerId: currentShooterPlayerId, spread: true, spreadOffset: off });
+                }
+                for (let off of spreadOffsets) {
+                    bullets.push({ x: ship2CenterX - PLAYER_BULLET_WIDTH / 2 + off, y: bulletY, width: PLAYER_BULLET_WIDTH, height: PLAYER_BULLET_HEIGHT, speed: PLAYER_BULLET_SPEED, playerId: currentShooterPlayerId, spread: true, spreadOffset: off });
+                }
+                bulletsCreated = 6;
+            } else {
+                // DUAL zonder spread: 2 kogels
+                const bulletX1 = ship1CenterX - PLAYER_BULLET_WIDTH / 2;
+                const bulletX2 = ship2CenterX - PLAYER_BULLET_WIDTH / 2;
+                bullets.push({ x: bulletX1, y: bulletY, width: PLAYER_BULLET_WIDTH, height: PLAYER_BULLET_HEIGHT, speed: PLAYER_BULLET_SPEED, playerId: currentShooterPlayerId });
+                bullets.push({ x: bulletX2, y: bulletY, width: PLAYER_BULLET_WIDTH, height: PLAYER_BULLET_HEIGHT, speed: PLAYER_BULLET_SPEED, playerId: currentShooterPlayerId });
+                bulletsCreated = 2;
+            }
         } else if (_isSpreadForThisShooter) {
             const centerX = shootingShipObject.x + shootingShipObject.width / 2;
-            const bulletY = shootingShipObject.y;
-            const offsets = [-12, 0, 12]; // TERUG NAAR 3 kogels (was 5)
-            for(let off of offsets) {
+            for(let off of spreadOffsets) {
                 bullets.push({ x: centerX - PLAYER_BULLET_WIDTH / 2 + off, y: bulletY, width: PLAYER_BULLET_WIDTH, height: PLAYER_BULLET_HEIGHT, speed: PLAYER_BULLET_SPEED, playerId: currentShooterPlayerId, spread: true, spreadOffset: off });
             }
             bulletsCreated = 3;
@@ -3090,41 +3296,93 @@ function aiControl() {
             aiPreviousDodgeDirection = 0;
         }
 
-        // --- BOSS STAGE AI LOGIC - VEILIGHEID EERST, DAN BOSS AANVALLEN ---
-        if (typeof isBossStage !== 'undefined' && isBossStage && typeof bossStageBoss !== 'undefined' && bossStageBoss && bossStagePhase === 'fighting' && bossStageBoss.isVisible !== false && !isInvincibleForAI && !isShowingBlockingMessage) {
+        // SHIELD ACTIEF: geen ontwijken nodig voor kogels noch vijanden
+        try {
+            let shieldProtectsSingle = false;
+            if (typeof shieldActive !== 'undefined' && shieldActive) {
+                if (typeof isShipProtectedByShield === 'function' && activeShipForAI) {
+                    // voor single player is playerNum = currentPlayer
+                    const pNum = (typeof currentPlayer !== 'undefined' ? currentPlayer : 1);
+                    shieldProtectsSingle = isShipProtectedByShield(pNum, activeShipForAI);
+                } else {
+                    shieldProtectsSingle = true;
+                }
+                const bossCapturing = (typeof capturingBossId !== 'undefined' && capturingBossId && typeof enemies !== 'undefined' && enemies.some(e=>e.id===capturingBossId));
+                if (shieldProtectsSingle && !bossCapturing) {
+                    // Forceer geen dodge
+                    isDodgingThreat = false;
+                    aiPreviousDodgeDirection = 0;
+                    aiDodgeCommitEndTime = 0;
+                }
+            }
+        } catch(e) {}
+
+        // --- BOSS STAGE AI LOGIC - VEILIGHEID EERST, DAN BOSS AANVALLEN --- FIXED VOOR STAGE 6 PRECIES OP AI
+        // SHIELD: geen dodge nodig als shield actief en geen boss capture
+        let _bossShieldSkip = false;
+        try {
+            if (typeof shieldActive !== 'undefined' && shieldActive) {
+                const bossCap = (typeof capturingBossId !== 'undefined' && capturingBossId);
+                if (!bossCap) _bossShieldSkip = true;
+            }
+        } catch(e) {}
+        if (typeof isBossStage !== 'undefined' && isBossStage && typeof bossStageBoss !== 'undefined' && bossStageBoss && bossStagePhase === 'fighting' && bossStageBoss.isVisible !== false && !isInvincibleForAI && !isShowingBlockingMessage && !_bossShieldSkip) {
             const bossCenterX = bossStageBoss.x + bossStageBoss.width / 2;
             const bossTargetX = bossCenterX - effectiveShipWidth / 2;
             targetEnemyForAI = bossStageBoss;
-            // AGGRESSIVE PATCH boss: minder overdreven ontwijken
-            const BOSS_AI_LOOKAHEAD_Y = SHIP_HEIGHT * 8.0;
-            const BOSS_AI_BULLET_PROJ_MS = 500;
-            const BOSS_AI_SAFETY_X = effectiveShipWidth * 0.75;
-            const BOSS_AI_SAFETY_Y = SHIP_HEIGHT * 0.5;
+            // FIX: eindboss kogels zijn traag maar vallen precies op AI -> veel grotere lookahead + safety
+            let BOSS_AI_LOOKAHEAD_Y = SHIP_HEIGHT * 14.0;
+            let BOSS_AI_BULLET_PROJ_MS = 950;
+            let BOSS_AI_BULLET_PROJ_MS_FAR = 1400;
+            let BOSS_AI_SAFETY_X = effectiveShipWidth * 1.45;
+            let BOSS_AI_SAFETY_Y = SHIP_HEIGHT * 1.15;
+            try { if (typeof shieldActive !== 'undefined' && shieldActive) { BOSS_AI_SAFETY_X *= 0.45; BOSS_AI_SAFETY_Y *= 0.45; BOSS_AI_LOOKAHEAD_Y *= 0.7; } } catch(e){}
             let bossThreats = [];
             for (const bullet of enemyBullets) {
-                if (bullet.y < activeShipForAI.y + BOSS_AI_LOOKAHEAD_Y && bullet.y + bullet.height > activeShipForAI.y - SHIP_HEIGHT * 4) {
-                    const framesToProj = BOSS_AI_BULLET_PROJ_MS / 16.67;
-                    let projX = bullet.x + bullet.vx * framesToProj;
-                    let projY = bullet.y + bullet.vy * framesToProj;
-                    let isFromAbove = bullet.vy > 0;
-                    let safetyX = BOSS_AI_SAFETY_X * (isFromAbove ? 2.0 : 1.0);
-                    let safetyY = BOSS_AI_SAFETY_Y * (isFromAbove ? 2.8 : 1.0);
+                if (bullet.y < activeShipForAI.y + BOSS_AI_LOOKAHEAD_Y && bullet.y + bullet.height > activeShipForAI.y - SHIP_HEIGHT * 6) {
+                    const isFromAbove = bullet.vy > 0;
+                    // Projectie op 2 tijdstippen om trage kogels die precies mikken te vangen
+                    const projPoints = [];
+                    for (const ms of [BOSS_AI_BULLET_PROJ_MS, BOSS_AI_BULLET_PROJ_MS_FAR]) {
+                        const frames = ms / 16.67;
+                        projPoints.push({
+                            x: bullet.x + bullet.vx * frames,
+                            y: bullet.y + bullet.vy * frames
+                        });
+                    }
+                    for (const p of projPoints) {
+                        let safetyX = BOSS_AI_SAFETY_X * (isFromAbove ? 2.2 : 1.2);
+                        let safetyY = BOSS_AI_SAFETY_Y * (isFromAbove ? 3.0 : 1.0);
+                        bossThreats.push({
+                            x: p.x - bullet.width/2 - safetyX,
+                            y: p.y - bullet.height/2 - safetyY,
+                            width: bullet.width + 2*safetyX,
+                            height: bullet.height + 2*safetyY,
+                            isFromAbove: isFromAbove,
+                            vx: bullet.vx,
+                            vy: bullet.vy
+                        });
+                    }
+                    // Ook directe positie als dreiging (voor kogels die al dichtbij zijn)
                     bossThreats.push({
-                        x: projX - bullet.width/2 - safetyX,
-                        y: projY - bullet.height/2 - safetyY,
-                        width: bullet.width + 2*safetyX,
-                        height: bullet.height + 2*safetyY,
-                        isFromAbove: isFromAbove
+                        x: bullet.x - bullet.width/2 - BOSS_AI_SAFETY_X*0.8,
+                        y: bullet.y - bullet.height/2 - BOSS_AI_SAFETY_Y*0.8,
+                        width: bullet.width + BOSS_AI_SAFETY_X*1.6,
+                        height: bullet.height + BOSS_AI_SAFETY_Y*1.6,
+                        isFromAbove: isFromAbove,
+                        vx: bullet.vx,
+                        vy: bullet.vy
                     });
                 }
             }
             if (bossStageBoss.state === 'attacking') {
                 bossThreats.push({
-                    x: bossStageBoss.x - effectiveShipWidth*0.3,
-                    y: bossStageBoss.y - SHIP_HEIGHT*0.2,
-                    width: bossStageBoss.width + effectiveShipWidth*0.6,
-                    height: bossStageBoss.height + SHIP_HEIGHT*0.6,
-                    isFromAbove: true
+                    x: bossStageBoss.x - effectiveShipWidth*0.5,
+                    y: bossStageBoss.y - SHIP_HEIGHT*0.5,
+                    width: bossStageBoss.width + effectiveShipWidth*1.0,
+                    height: bossStageBoss.height + SHIP_HEIGHT*1.0,
+                    isFromAbove: true,
+                    vx: 0, vy: 0
                 });
             }
             if (bossThreats.length > 0) {
@@ -3132,11 +3390,13 @@ function aiControl() {
                 let bestX = currentSmoothedShipXForAI;
                 let minColl = Infinity;
                 let maxSafeDist = -1;
-                const steps = 7;
-                const stepSize = effectiveShipWidth * 0.85;
+                const steps = 14;
+                const stepSize = effectiveShipWidth * 0.55;
+                // Eerst: vind alle veilige plekken
+                let safeCandidates = [];
                 for (let i = -steps; i <= steps; i++) {
                     let testX = currentSmoothedShipXForAI + i * stepSize;
-                    testX = Math.max(AI_EDGE_BUFFER*1.5, Math.min(canvasWidth - effectiveShipWidth - AI_EDGE_BUFFER*1.5, testX));
+                    testX = Math.max(AI_EDGE_BUFFER*1.2, Math.min(canvasWidth - effectiveShipWidth - AI_EDGE_BUFFER*1.2, testX));
                     const shipRect = { x: testX, y: activeShipForAI.y, width: effectiveShipWidth, height: activeShipForAI.height };
                     let coll = 0;
                     let minDist = Infinity;
@@ -3145,6 +3405,7 @@ function aiControl() {
                         const dist = Math.abs((shipRect.x + shipRect.width/2) - (th.x + th.width/2)) - (shipRect.width/2 + th.width/2);
                         if (dist < minDist) minDist = dist;
                     }
+                    if (coll === 0) safeCandidates.push({x: testX, dist: minDist, idx: i});
                     if (coll < minColl || (coll === minColl && minDist > maxSafeDist)) {
                         minColl = coll;
                         maxSafeDist = minDist;
@@ -3154,18 +3415,41 @@ function aiControl() {
                         if (Math.abs(testX - bossTargetX) < Math.abs(bestX - bossTargetX)) bestX = testX;
                     }
                 }
+                // Als er veilige plekken zijn, kies degene die meeste bewegingsruimte laat (gap detection)
+                if (safeCandidates.length > 0) {
+                    // Sorteer op afstand tot huidige positie - liefst kleine beweging als het veilig is
+                    safeCandidates.sort((a,b) => {
+                        const moveA = Math.abs(a.x - currentSmoothedShipXForAI);
+                        const moveB = Math.abs(b.x - currentSmoothedShipXForAI);
+                        // Als beide ver weg, kies die met grotere dist tot threats
+                        if (moveA < effectiveShipWidth*1.5 && moveB < effectiveShipWidth*1.5) {
+                            return b.dist - a.dist;
+                        }
+                        return moveA - moveB;
+                    });
+                    // Kies beste safe die niet te ver van bossTarget is voor agressie, maar veiligheid primeert
+                    bestX = safeCandidates[0].x;
+                }
                 dodgeTargetX = bestX;
                 desiredTargetX = bestX;
                 if (minColl === 0) {
-                    desiredTargetX = desiredTargetX * 0.65 + bossTargetX * 0.35;
-                    if (aiPreviousDodgeDirection !== 0) aiDodgeCommitEndTime = now + 220;
+                    // FIX: NIET meer terugblenden naar bossTarget als we ontwijken - 100% ontwijken
+                    // Alleen als we al veilig zijn, klein beetje terug naar boss
+                    if (safeCandidates.length >= 3) {
+                        desiredTargetX = desiredTargetX * 0.82 + bossTargetX * 0.18;
+                    }
+                    if (aiPreviousDodgeDirection !== 0) aiDodgeCommitEndTime = now + 340;
                 } else {
-                    aiDodgeCommitEndTime = now + 300;
+                    // Geen veilige plek? Dan vol gas weg, commit langer
+                    aiDodgeCommitEndTime = now + 520;
                 }
             } else {
                 isDodgingThreat = false;
                 const wiggle = Math.sin(now/280)*12;
-                desiredTargetX = Math.max(AI_EDGE_BUFFER, Math.min(canvasWidth - effectiveShipWidth - AI_EDGE_BUFFER, bossTargetX + wiggle));
+                // NIEUW: strakker boss volgen
+                const bossCenterForSingle = bossStageBoss.x + bossStageBoss.width/2;
+                const predBossX = bossCenterForSingle + (bossStageBoss.velocityX || 0) * 10;
+                desiredTargetX = Math.max(AI_EDGE_BUFFER, Math.min(canvasWidth - effectiveShipWidth - AI_EDGE_BUFFER, predBossX - effectiveShipWidth/2 + wiggle*0.5));
                 aiPreviousDodgeDirection = 0;
             }
             shouldTryShoot_AI = true;
@@ -3430,6 +3714,21 @@ function aiControl() {
                             if (isProblematicStateForBaldBoss && !isThisAIsCaptureTarget && !isTargetingThreeSecondRuleBoss) {
                                 canActuallyShootTarget = false;
                             }
+                            // NIEUW: Dualship + RAPID/SPREAD respect - speler schiet niet op capture boss in grid, behalve in boss stage enemy3
+                            try {
+                                const isBossStageFree = (typeof isBossStage !== 'undefined' && isBossStage && typeof bossStageVariant !== 'undefined' && bossStageVariant === 'enemy3');
+                                if (!isBossStageFree && targetEnemyForAI && !targetEnemyForAI.hasCapturedShip && targetEnemyForAI.state === 'in_grid') {
+                                    const needsCap = (typeof captureAttemptMadeThisLevel !== 'undefined' && !captureAttemptMadeThisLevel);
+                                    if (needsCap) {
+                                        if (isDualActiveForAI) canActuallyShootTarget = false;
+                                        try {
+                                            if ((typeof rapidActive !== 'undefined' && rapidActive) || (typeof spreadActive !== 'undefined' && spreadActive)) {
+                                                canActuallyShootTarget = false;
+                                            }
+                                        } catch(e) {}
+                                    }
+                                }
+                            } catch(e) {}
                         }
                         if (targetEnemyForAI.type === ENEMY3_TYPE &&
                             targetEnemyForAI.captureDiveInitiationTime && targetEnemyForAI.captureDiveInitiationTime > 0 &&
@@ -3545,6 +3844,33 @@ function fireCoopAIBullet(shootingShip, isDual, shooterPlayerId) {
 }
 
 function calculateAIDesiredState(currentShip, currentSmoothedX, isShipDual, gameEnemies, gameEnemyBullets, gameFallingShips, isShipInvincible, isThisShipCaptured, isThisShipWaitingForRespawn, currentTime, gameCanvasWidth, isCurrentShipCompletelyBlocked, shipIdentifier, ignoreBossId_passed = null, previousDodgeDirForThisAI = 0) {
+    // --- PATCH: Shield upgrade actief -> AI hoeft niet meer te ontwijken, kogels ketsen af ---
+    let _shieldBoostActive = false;
+    let _isBossCapturingForShieldCheck = false;
+    try {
+        if (typeof shieldActive !== 'undefined' && shieldActive) {
+            if (typeof isShipProtectedByShield === 'function') {
+                const pNum = (shipIdentifier === 'p1' ? 1 : 2);
+                _shieldBoostActive = isShipProtectedByShield(pNum, currentShip);
+            } else if (typeof shieldActivePlayer !== 'undefined' && shieldActivePlayer !== null) {
+                const pNum = (shipIdentifier === 'p1' ? 1 : 2);
+                if (shieldActivePlayer === pNum) _shieldBoostActive = true;
+            } else {
+                _shieldBoostActive = true;
+            }
+        }
+        // check of boss aan het capturen is - dan wel respecteren
+        if (typeof capturingBossId !== 'undefined' && capturingBossId) {
+            _isBossCapturingForShieldCheck = gameEnemies.some(e => e.id === capturingBossId);
+        }
+        if (!_isBossCapturingForShieldCheck && typeof captureBeamActive !== 'undefined' && captureBeamActive) {
+            _isBossCapturingForShieldCheck = true;
+        }
+        if (!_isBossCapturingForShieldCheck && ignoreBossId_passed) {
+            _isBossCapturingForShieldCheck = true;
+        }
+    } catch(e){}
+
     let desiredTargetX = currentSmoothedX;
     let shouldTryShoot_AI_Calc = false;
     let targetEnemyForAI = null;
@@ -3579,43 +3905,69 @@ function calculateAIDesiredState(currentShip, currentSmoothedX, isShipDual, game
 
     let dodgeTargetX = currentSmoothedX;
     const isBossFightActive = (typeof isBossStage !== 'undefined' && isBossStage && typeof bossStagePhase !== 'undefined' && bossStagePhase === 'fighting');
-    if (!isChallengingStage && !isShipInvincible) {
-        // BOSS FIGHT: veel grotere lookahead en safety margins
-        // AGGRESSIVE PATCH coop: veel minder bang
-        const AI_DANGER_LOOKAHEAD_Y_COOP = isBossFightActive ? SHIP_HEIGHT * 8.0 : SHIP_HEIGHT * 5.0;
-        const AI_BULLET_PROJECTION_MS_COOP = isBossFightActive ? 500 : 350;
-        const AI_ENEMY_PROJECTION_MS_COOP = isBossFightActive ? 300 : 220;
-        const AI_THREAT_SAFETY_MARGIN_X_BULLET_BASE = effectiveShipWidth * (isBossFightActive ? 0.75 : 0.35);
-        const AI_THREAT_SAFETY_MARGIN_Y_BULLET_BASE = SHIP_HEIGHT * (isBossFightActive ? 0.55 : 0.25);
-        const AI_THREAT_SAFETY_MARGIN_X_ENEMY = effectiveShipWidth * (isBossFightActive ? 0.7 : 0.35);
-        const AI_THREAT_SAFETY_MARGIN_Y_ENEMY = SHIP_HEIGHT * (isBossFightActive ? 0.6 : 0.35);
+    if (_shieldBoostActive && !_isBossCapturingForShieldCheck) {
+        // SHIELD UPGRADE ACTIEF: AI hoeft kogels niet meer te ontwijken, kets af op shield
+        // Geen dodge, direct door naar aanval-logica
+        chosenDodgeDirThisFrame = 0;
+        predictedCollisionsForReturn = 0;
+        isDodgingThreatCurrentFrame = false;
+        dodgeTargetX = currentSmoothedX;
+    } else if (!isChallengingStage && !isShipInvincible) {
+        // BOSS FIGHT: FIX VOOR PRECIES MIKKEN OP AI - veel grotere lookahead en safety
+        let AI_DANGER_LOOKAHEAD_Y_COOP = isBossFightActive ? SHIP_HEIGHT * 14.0 : SHIP_HEIGHT * 5.0;
+        let AI_BULLET_PROJECTION_MS_COOP = isBossFightActive ? 950 : 350;
+        let AI_BULLET_PROJECTION_MS_COOP_FAR = isBossFightActive ? 1400 : 500;
+        let AI_ENEMY_PROJECTION_MS_COOP = isBossFightActive ? 500 : 220;
+        let AI_THREAT_SAFETY_MARGIN_X_BULLET_BASE = effectiveShipWidth * (isBossFightActive ? 1.45 : 0.35);
+        let AI_THREAT_SAFETY_MARGIN_Y_BULLET_BASE = SHIP_HEIGHT * (isBossFightActive ? 1.15 : 0.25);
+        // Shield boost: minder angst
+        if (_shieldBoostActive) {
+            AI_THREAT_SAFETY_MARGIN_X_BULLET_BASE *= 0.45;
+            AI_THREAT_SAFETY_MARGIN_Y_BULLET_BASE *= 0.45;
+            AI_DANGER_LOOKAHEAD_Y_COOP *= 0.7;
+        }
+        const AI_THREAT_SAFETY_MARGIN_X_ENEMY = effectiveShipWidth * (isBossFightActive ? 1.2 : 0.35);
+        const AI_THREAT_SAFETY_MARGIN_Y_ENEMY = SHIP_HEIGHT * (isBossFightActive ? 1.0 : 0.35);
 
         let allProjectedThreats = [];
 
         for (const bullet of gameEnemyBullets) {
-            if (bullet.y < currentShip.y + AI_DANGER_LOOKAHEAD_Y_COOP && bullet.y + bullet.height > currentShip.y - SHIP_HEIGHT * 3) {
-                const framesToProject = AI_BULLET_PROJECTION_MS_COOP / 16.67;
-                let projX = bullet.x + bullet.vx * framesToProject;
-                let projY = bullet.y + bullet.vy * framesToProject;
+            if (bullet.y < currentShip.y + AI_DANGER_LOOKAHEAD_Y_COOP && bullet.y + bullet.height > currentShip.y - SHIP_HEIGHT * 6) {
+                const projTimes = isBossFightActive ? [AI_BULLET_PROJECTION_MS_COOP, AI_BULLET_PROJECTION_MS_COOP_FAR] : [AI_BULLET_PROJECTION_MS_COOP];
+                for (const projMs of projTimes) {
+                    const framesToProject = projMs / 16.67;
+                    let projX = bullet.x + bullet.vx * framesToProject;
+                    let projY = bullet.y + bullet.vy * framesToProject;
 
-                let isFromAbove = false;
-                let currentThreatSafetyMarginY = AI_THREAT_SAFETY_MARGIN_Y_BULLET_BASE;
-                let currentThreatSafetyMarginX = AI_THREAT_SAFETY_MARGIN_X_BULLET_BASE;
-                const effectiveBulletSpeed = Math.sqrt(bullet.vx * bullet.vx + bullet.vy * bullet.vy) || BASE_ENEMY_BULLET_SPEED;
+                    let isFromAbove = false;
+                    let currentThreatSafetyMarginY = AI_THREAT_SAFETY_MARGIN_Y_BULLET_BASE;
+                    let currentThreatSafetyMarginX = AI_THREAT_SAFETY_MARGIN_X_BULLET_BASE;
+                    const effectiveBulletSpeed = Math.sqrt(bullet.vx * bullet.vx + bullet.vy * bullet.vy) || BASE_ENEMY_BULLET_SPEED;
 
-                if (bullet.vy > effectiveBulletSpeed * 0.6 &&
-                    Math.abs((bullet.x + bullet.width / 2) - (currentShip.x + effectiveShipWidth / 2)) < effectiveShipWidth * 0.9) {
-                    isFromAbove = true;
-                    currentThreatSafetyMarginY = AI_THREAT_SAFETY_MARGIN_Y_BULLET_BASE * 1.85;
+                    if (bullet.vy > effectiveBulletSpeed * 0.6 &&
+                        Math.abs((bullet.x + bullet.width / 2) - (currentShip.x + effectiveShipWidth / 2)) < effectiveShipWidth * 0.9) {
+                        isFromAbove = true;
+                        currentThreatSafetyMarginY = AI_THREAT_SAFETY_MARGIN_Y_BULLET_BASE * 1.85;
+                    }
+
+                    allProjectedThreats.push({
+                        x: projX - bullet.width / 2 - currentThreatSafetyMarginX,
+                        y: projY - bullet.height / 2 - currentThreatSafetyMarginY,
+                        width: bullet.width + 2 * currentThreatSafetyMarginX,
+                        height: bullet.height + 2 * currentThreatSafetyMarginY,
+                        isCritical: true,
+                        isFromAbove: isFromAbove
+                    });
                 }
-
+                // Ook directe positie als extra dreiging voor trage kogels die precies mikken
+                let isFromAboveDirect = bullet.vy > 0;
                 allProjectedThreats.push({
-                    x: projX - bullet.width / 2 - currentThreatSafetyMarginX,
-                    y: projY - bullet.height / 2 - currentThreatSafetyMarginY,
-                    width: bullet.width + 2 * currentThreatSafetyMarginX,
-                    height: bullet.height + 2 * currentThreatSafetyMarginY,
+                    x: bullet.x - bullet.width / 2 - AI_THREAT_SAFETY_MARGIN_X_BULLET_BASE*0.8,
+                    y: bullet.y - bullet.height / 2 - AI_THREAT_SAFETY_MARGIN_Y_BULLET_BASE*0.8,
+                    width: bullet.width + AI_THREAT_SAFETY_MARGIN_X_BULLET_BASE*1.6,
+                    height: bullet.height + AI_THREAT_SAFETY_MARGIN_Y_BULLET_BASE*1.6,
                     isCritical: true,
-                    isFromAbove: isFromAbove
+                    isFromAbove: isFromAboveDirect
                 });
             }
         }
@@ -3727,6 +4079,8 @@ function calculateAIDesiredState(currentShip, currentSmoothedX, isShipDual, game
             targetEnemyForAI = generalTargetWhileDodgingCoop;
         }
         shouldTryShoot_AI_Calc = (targetEnemyForAI !== null);
+        // Shield boost: schiet ook als niet perfect uitgelijnd
+        if (_shieldBoostActive && targetEnemyForAI) { shouldTryShoot_AI_Calc = true; }
 
     } else { // Niet aan het ontwijken, normale flow
         isMovingForOwnFallingShip = false; isMovingToCaptureBeam = false; isTargetingPartnerRescue = false; isTargetingThreeSecondRuleBoss = false;
@@ -3745,16 +4099,35 @@ function calculateAIDesiredState(currentShip, currentSmoothedX, isShipDual, game
             if (canThisAIShipBeCapturedPhysically && beamActiveForThisShip) {
                 let proceedWithCapture = false;
                 if (isThisACoopAIMode) {
-                    // <<< GEWIJZIGD: AI P2 in "1P vs AI COOP" zal zichzelf altijd laten vangen als doelwit. >>>
                     if (isPlayerTwoAI && selectedOnePlayerGameVariant === '1P_VS_AI_COOP' && shipIdentifier === 'ai_p2') {
                         proceedWithCapture = true;
-                         if (aiPlayerActivelySeekingCaptureById === null) aiPlayerActivelySeekingCaptureById = shipIdentifier; // Markeer dat deze AI nu bezig is met gevangen worden
-                    } else if (isCoopAIDemoActive) { // Voor COOP AI Demo, originele logica
+                         if (aiPlayerActivelySeekingCaptureById === null) aiPlayerActivelySeekingCaptureById = shipIdentifier;
+                    } else if (isCoopAIDemoActive) {
                         if (aiPlayerActivelySeekingCaptureById === null || aiPlayerActivelySeekingCaptureById === shipIdentifier) {
                             if (aiPlayerActivelySeekingCaptureById === null) aiPlayerActivelySeekingCaptureById = shipIdentifier;
                             proceedWithCapture = true;
                         }
                     }
+                    // --- NIEUW 1UP REGEL: AI met minste levens MOET 1UP pakken, andere AI niet ---
+                    try {
+                        if (proceedWithCapture && activeCapturingBoss && activeCapturingBoss.beamerUpgradeType === '1UP') {
+                            const isP1 = (shipIdentifier === 'p1');
+                            const myLives = livesOfThisAIShip;
+                            const otherLives = isP1 ? player2Lives : player1Lives;
+                            if (myLives > otherLives) {
+                                // ik heb meer levens, laat andere met minste levens de 1UP pakken
+                                console.log(`[AI 1UP] ${shipIdentifier} heeft ${myLives} vs ${otherLives} - skipt 1UP, laat minste pakken`);
+                                proceedWithCapture = false;
+                                if (aiPlayerActivelySeekingCaptureById === shipIdentifier) aiPlayerActivelySeekingCaptureById = null;
+                            } else if (myLives < otherLives) {
+                                console.log(`[AI 1UP] ${shipIdentifier} minst levens (${myLives} vs ${otherLives}) - PAKT 1UP`);
+                                proceedWithCapture = true;
+                            } else {
+                                // gelijk: 1 speler pakt gewoon upgrade, degene die al seeking is mag door
+                                console.log(`[AI 1UP] Gelijk levens (${myLives}) - ${shipIdentifier} pakt 1UP`);
+                            }
+                        }
+                    } catch(e) { console.warn("AI 1UP error", e); }
                 }
                 if (proceedWithCapture) {
                     isMovingToCaptureBeam = true; const beamCenterX = activeCapturingBoss.x + activeCapturingBoss.width / 2;
@@ -3831,7 +4204,7 @@ function calculateAIDesiredState(currentShip, currentSmoothedX, isShipDual, game
                 if(targetEnemyForAI){
                     desiredTargetX=(targetEnemyForAI.x+targetEnemyForAI.width/2)-effectiveShipWidth/2;
                     const isBossEnemy3Align = (typeof isBossStage !== 'undefined' && isBossStage && typeof bossStageVariant !== 'undefined' && bossStageVariant === 'enemy3' && targetEnemyForAI.type===ENEMY3_TYPE && !targetEnemyForAI.hasCapturedShip);
-                    const COOP_AI_SHOOT_ALIGNMENT_THRESHOLD_FACTOR = (isPlayerTwoAI && selectedOnePlayerGameVariant === '1P_VS_AI_COOP') ? 2.5 : 1.8; // AGGRESSIVE: ruimere threshold
+                    const COOP_AI_SHOOT_ALIGNMENT_THRESHOLD_FACTOR = _shieldBoostActive ? 3.2 : ((isPlayerTwoAI && selectedOnePlayerGameVariant === '1P_VS_AI_COOP') ? 1.2 : 0.85); // FIX: strakker voor meer raken, losser met shield
                     if(isBossEnemy3Align){
                         // Direct vuren, veel ruimere alignment in boss enemy3
                         if(Math.abs(shipCenterX-(targetEnemyForAI.x+targetEnemyForAI.width/2)) < effectiveShipWidth * 2.5) {
@@ -3898,6 +4271,22 @@ function calculateAIDesiredState(currentShip, currentSmoothedX, isShipDual, game
                 else{pNeedsDual=(ship2&&player2Lives>0&&!isPlayer2ShipCaptured&&!player2IsDualShipActive);}
                 if(pNeedsDual)shouldTryShoot_AI_Calc=false;
             }
+            // NIEUW: Dualship + RAPID/SPREAD respect voor capture boss - alleen vogelvrij in boss stage enemy3
+            try {
+                const isBossStageFreeDual = (typeof isBossStage !== 'undefined' && isBossStage && typeof bossStageVariant !== 'undefined' && bossStageVariant === 'enemy3');
+                if (!isBossStageFreeDual && targetEnemyForAI && targetEnemyForAI.type===ENEMY3_TYPE && !targetEnemyForAI.hasCapturedShip && targetEnemyForAI.state==='in_grid') {
+                    const needsCapDual = (typeof captureAttemptMadeThisLevel !== 'undefined' && !captureAttemptMadeThisLevel);
+                    if (needsCapDual) {
+                        if (isShipDual) shouldTryShoot_AI_Calc=false;
+                        // rapid/spread ook respecteren
+                        try {
+                            if ((typeof rapidActive !== 'undefined' && rapidActive) || (typeof spreadActive !== 'undefined' && spreadActive)) {
+                                shouldTryShoot_AI_Calc=false;
+                            }
+                        } catch(e) {}
+                    }
+                }
+            } catch(e) {}
             if(targetEnemyForAI.type===ENEMY3_TYPE&&targetEnemyForAI.hasCapturedShip&&livesOfThisAIShip<=1){
                 const isPtnrBoss=(isThisACoopAIMode&&targetEnemyForAI.id===capturedBossIdWithMessage&&partnerIsCaptured);
                 if(!isPtnrBoss&&!isTargetingThreeSecondRuleBoss&&!isTargetingPartnerRescue)shouldTryShoot_AI_Calc=false;
@@ -4036,65 +4425,86 @@ function triggerImmediateCaptureDive() {
         } else if (captureAttemptMadeThisLevel) {
             return;
         }
-        // REGEL: Als er 2 dual ships zijn (coop beide dual) -> geen capture door boss 3
-        if (isTwoPlayerMode && selectedGameMode === 'coop' && player1IsDualShipActive && player2IsDualShipActive) {
-            return;
-        }
-        // REGEL: Dual ship mag nooit in beamer -> als 1P dual is, ook geen capture dive starten
-        if (!isTwoPlayerMode && isDualShipActive) {
-            return;
-        }
+        // FIX: In ALLE modes toestaan, ook met dualship - was geblokt
+        // Vroeger: return als beide dual of single dual. Nu: altijd door laten gaan.
+
 
         let potentialTargets = [];
         if (isTwoPlayerMode && selectedGameMode === 'coop') {
-            if (ship1 && player1Lives > 1 && !player1IsDualShipActive && !isPlayer1ShipCaptured && !isPlayer1WaitingForRespawn && !player1NeedsRespawnAfterCapture) {
+            // FIX: dual mag ook captured worden
+            if (ship1 && player1Lives > 1 && !isPlayer1ShipCaptured && !isPlayer1WaitingForRespawn && !player1NeedsRespawnAfterCapture) {
                 potentialTargets.push({ playerShip: ship1, playerNum: 1 });
             }
-            if (ship2 && player2Lives > 1 && !player2IsDualShipActive && !isPlayer2ShipCaptured && !isPlayer2WaitingForRespawn && !player2NeedsRespawnAfterCapture) {
+            // FIX: dual mag ook captured worden
+            if (ship2 && player2Lives > 1 && !isPlayer2ShipCaptured && !isPlayer2WaitingForRespawn && !player2NeedsRespawnAfterCapture) {
                 potentialTargets.push({ playerShip: ship2, playerNum: 2 });
             }
         } else { // 1P Classic, 1P_VS_AI_NORMAL, 2P_NORMAL
-            if (ship && playerLives > 1 && !isDualShipActive && !isShipCaptured && !isWaitingForRespawn) {
+            // FIX: dual mag ook captured worden
+            if (ship && playerLives > 1 && !isShipCaptured && !isWaitingForRespawn) {
                 potentialTargets.push({ playerShip: ship, playerNum: currentPlayer });
             }
         }
 
         if (potentialTargets.length === 0) {
-            return; // Geen geschikt doelwit
+            return;
         }
 
-        // --- FAIR BEAMER LOGICA ---
-        // Speler met minst levens krijgt beamer, bij gelijk om en om links/rechts
+        // --- NIEUW: Bepaal upgrade VOOR keuze, voor 1UP regel ---
+        let pendingBeamerUpgradeType = null;
+        try {
+            if (typeof getNextBeamerUpgradeType === 'function') {
+                pendingBeamerUpgradeType = getNextBeamerUpgradeType();
+            }
+        } catch(e) {}
+        if (!pendingBeamerUpgradeType) pendingBeamerUpgradeType = 'DUAL';
+
+        // --- FAIR BEAMER LOGICA + 1UP REGEL ---
+        // AI speler met minste levens pakt 1UP, als gelijk pakt 1 speler gewoon de upgrade
         let targetInfo;
         if (isTwoPlayerMode && selectedGameMode === 'coop' && potentialTargets.length === 2) {
             const p1Target = potentialTargets.find(t => t.playerNum === 1);
             const p2Target = potentialTargets.find(t => t.playerNum === 2);
             if (p1Target && p2Target) {
-                if (player1Lives < player2Lives) {
-                    targetInfo = p1Target;
-                    console.log(`[BEAMER FAIR] P1 heeft minder levens (${player1Lives} vs ${player2Lives}) -> beamer naar LINKS (P1)`);
-                } else if (player2Lives < player1Lives) {
-                    targetInfo = p2Target;
-                    console.log(`[BEAMER FAIR] P2 heeft minder levens (${player2Lives} vs ${player1Lives}) -> beamer naar RECHTS (P2)`);
-                } else {
-                    // Gelijk aantal levens -> om en om
-                    if (typeof beamerTargetAlternation === 'undefined') {
-                        beamerTargetAlternation = 0;
+                const is1UP = (pendingBeamerUpgradeType === '1UP');
+                if (is1UP) {
+                    if (player1Lives < player2Lives) {
+                        targetInfo = p1Target;
+                        console.log(`[BEAMER 1UP] 1UP! P1 minst levens (${player1Lives} vs ${player2Lives}) -> LINKS P1 pakt`);
+                    } else if (player2Lives < player1Lives) {
+                        targetInfo = p2Target;
+                        console.log(`[BEAMER 1UP] 1UP! P2 minst levens (${player2Lives} vs ${player1Lives}) -> RECHTS P2 pakt`);
+                    } else {
+                        // GELIJK: 1 speler pakt gewoon upgrade (om en om voor fairness)
+                        if (typeof beamerTargetAlternation === 'undefined') beamerTargetAlternation = 0;
+                        targetInfo = (beamerTargetAlternation === 0) ? p1Target : p2Target;
+                        console.log(`[BEAMER 1UP] 1UP! Gelijk levens (${player1Lives}) -> ${beamerTargetAlternation === 0 ? 'P1' : 'P2'} pakt upgrade`);
+                        beamerTargetAlternation = 1 - beamerTargetAlternation;
+                        window.beamerTargetAlternation = beamerTargetAlternation;
                     }
-                    targetInfo = (beamerTargetAlternation === 0) ? p1Target : p2Target;
-                    console.log(`[BEAMER FAIR] Gelijk levens (${player1Lives} vs ${player2Lives}) -> beamer naar ${beamerTargetAlternation === 0 ? 'LINKS (P1)' : 'RECHTS (P2)'} (om en om)`);
-                    beamerTargetAlternation = 1 - beamerTargetAlternation;
-                    window.beamerTargetAlternation = beamerTargetAlternation;
+                } else {
+                    if (player1Lives < player2Lives) {
+                        targetInfo = p1Target;
+                        console.log(`[BEAMER FAIR] P1 heeft minder levens (${player1Lives} vs ${player2Lives}) -> beamer naar LINKS (P1)`);
+                    } else if (player2Lives < player1Lives) {
+                        targetInfo = p2Target;
+                        console.log(`[BEAMER FAIR] P2 heeft minder levens (${player2Lives} vs ${player1Lives}) -> beamer naar RECHTS (P2)`);
+                    } else {
+                        if (typeof beamerTargetAlternation === 'undefined') beamerTargetAlternation = 0;
+                        targetInfo = (beamerTargetAlternation === 0) ? p1Target : p2Target;
+                        console.log(`[BEAMER FAIR] Gelijk levens (${player1Lives} vs ${player2Lives}) -> beamer naar ${beamerTargetAlternation === 0 ? 'LINKS (P1)' : 'RECHTS (P2)'} (om en om)`);
+                        beamerTargetAlternation = 1 - beamerTargetAlternation;
+                        window.beamerTargetAlternation = beamerTargetAlternation;
+                    }
                 }
             } else {
                 targetInfo = potentialTargets[Math.floor(Math.random() * potentialTargets.length)];
             }
         } else {
-            // 1P of maar 1 target beschikbaar -> neem die
             targetInfo = potentialTargets[Math.floor(Math.random() * potentialTargets.length)];
         }
         const targetPlayerShipForDive = targetInfo.playerShip;
-        // --- EINDE FAIR BEAMER LOGICA ---
+        // --- EINDE FAIR + 1UP ---
 
         const potentialCapturingBosses = enemies.filter(e =>
             e && e.state === 'in_grid' && e.type === ENEMY3_TYPE && !e.hasCapturedShip && !e.isPreparingForImmediateCapture
@@ -4130,6 +4540,7 @@ function triggerImmediateCaptureDive() {
             playSound('bossGalagaDiveSound', false, 0.2);
             const leaderId = chosenBoss.id;
 
+            const _pendingForClosure = pendingBeamerUpgradeType;
             const prepareTimeoutId = setTimeout(() => {
                 const currentEnemy = enemies.find(e => e?.id === leaderId);
                 if (currentEnemy && currentEnemy.state === 'preparing_capture') {
@@ -4137,12 +4548,12 @@ function triggerImmediateCaptureDive() {
                     captureAttemptMadeThisLevel = true;
                     try {
                         if (typeof beamerUpgradeAttemptsThisLevel !== 'undefined') beamerUpgradeAttemptsThisLevel++;
-                        let upgradeType = (typeof getNextBeamerUpgradeType === 'function') ? getNextBeamerUpgradeType() : 'DUAL';
+                        let upgradeType = _pendingForClosure || ((typeof getNextBeamerUpgradeType === 'function') ? getNextBeamerUpgradeType() : 'DUAL');
                         if (!upgradeType) upgradeType = 'DUAL';
                         currentEnemy.beamerUpgradeType = upgradeType;
                         if (typeof activeBeamerUpgradeType !== 'undefined') activeBeamerUpgradeType = upgradeType;
                         currentEnemy.beamerUpgradeAvailableAt = Date.now() + 4000;
-                        console.log("[BEAMER] Nieuwe upgrade: " + upgradeType);
+                        console.log("[BEAMER] Nieuwe upgrade: " + upgradeType + (upgradeType === '1UP' ? " -> naar minste levens" : ""));
                     } catch(e) { console.error("beamer assign", e); }
                 }
                 if(currentEnemy) currentEnemy.capturePrepareTimeout = null;
@@ -4383,6 +4794,10 @@ function moveEntities(overrideP1Left = null, overrideP1Right = null) {
                     if (enemy.hasCapturedShip && (enemy.state === 'showing_capture_message' || enemy.state === 'returning')) {
                         continue;
                     }
+                    // FIX: Bossen in grid zijn nu WEL beschietbaar, ook met DUAL/RAPID/SPREAD.
+                // Alleen onkwetsbaar tijdens echte capture actie (handled hierboven).
+                // Vroeger werd hier alles geblokkeerd als needsCapture true was - dat is nu verwijderd.
+                
                 }
                 const enemyRect = { x: enemy.x, y: enemy.y, width: (enemy.type === ENEMY3_TYPE) ? BOSS_WIDTH : ((enemy.type === ENEMY1_TYPE) ? ENEMY1_WIDTH : ENEMY_WIDTH), height: (enemy.type === ENEMY3_TYPE) ? BOSS_HEIGHT : ((enemy.type === ENEMY1_TYPE) ? ENEMY1_HEIGHT : ENEMY_HEIGHT) };
                 const bulletRect = { x: b.x, y: b.y, width: b.width, height: b.height };
@@ -4421,30 +4836,30 @@ function moveEntities(overrideP1Left = null, overrideP1Right = null) {
                         if (fs.targetPlayerId === 'player1' && ship1 && player1Lives > 0) {
                             rescuingPlayerShipObject = ship1;
                             rescuerAlreadyDual = player1IsDualShipActive;
-                            setDualShipForRescuer = () => { player1IsDualShipActive = true; player1DualShipExpireLevel = level + (typeof DUALSHIP_STAGE_DURATION !== 'undefined' ? DUALSHIP_STAGE_DURATION : 3); };
+                            setDualShipForRescuer = () => { player1IsDualShipActive = true; player1DualShipExpireLevel = level + (typeof DUALSHIP_STAGE_DURATION !== 'undefined' ? DUALSHIP_STAGE_DURATION : 3); if(typeof dualStagesRemaining !== 'undefined') dualStagesRemaining = 3; if(typeof setUpgradeStages === 'function') setUpgradeStages('DUAL', 3); console.log("[UPGRADE] DUAL P1 gepakt - 3 stages"); };
                             rescuerIsActiveAndExists = true;
                             rescuerPlayerId = 'player1';
                         } else if ((fs.targetPlayerId === 'player2' || fs.targetPlayerId === 'ai_p2') && ship2 && player2Lives > 0) {
                             rescuingPlayerShipObject = ship2;
                             rescuerAlreadyDual = player2IsDualShipActive;
-                            setDualShipForRescuer = () => { player2IsDualShipActive = true; player2DualShipExpireLevel = level + (typeof DUALSHIP_STAGE_DURATION !== 'undefined' ? DUALSHIP_STAGE_DURATION : 3); };
+                            setDualShipForRescuer = () => { player2IsDualShipActive = true; player2DualShipExpireLevel = level + (typeof DUALSHIP_STAGE_DURATION !== 'undefined' ? DUALSHIP_STAGE_DURATION : 3); if(typeof dualStagesRemaining !== 'undefined') dualStagesRemaining = 3; if(typeof setUpgradeStages === 'function') setUpgradeStages('DUAL', 3); console.log("[UPGRADE] DUAL P2 gepakt - 3 stages"); };
                             rescuerIsActiveAndExists = true;
                             rescuerPlayerId = (isPlayerTwoAI && selectedOnePlayerGameVariant === '1P_VS_AI_COOP') ? 'ai_p2' : 'player2';
                         }
                     } else {
                         if (isTwoPlayerMode && selectedGameMode === 'coop') {
-                            if (fs.targetPlayerId === 'player1' && ship1 && player1Lives > 0 ) { rescuingPlayerShipObject = ship1; rescuerAlreadyDual = player1IsDualShipActive; playerShipIsCurrentlyCaptured = isPlayer1ShipCaptured; setDualShipForRescuer = () => { player1IsDualShipActive = true; player1DualShipExpireLevel = level + (typeof DUALSHIP_STAGE_DURATION !== 'undefined' ? DUALSHIP_STAGE_DURATION : 3); isPlayer1ShipCaptured = false;}; rescuerIsActiveAndExists = true; rescuerPlayerId = 'player1';}
-                            else if (fs.targetPlayerId === 'player2' && ship2 && player2Lives > 0 ) { rescuingPlayerShipObject = ship2; rescuerAlreadyDual = player2IsDualShipActive; playerShipIsCurrentlyCaptured = isPlayer2ShipCaptured; setDualShipForRescuer = () => { player2IsDualShipActive = true; player2DualShipExpireLevel = level + (typeof DUALSHIP_STAGE_DURATION !== 'undefined' ? DUALSHIP_STAGE_DURATION : 3); isPlayer2ShipCaptured = false;}; rescuerIsActiveAndExists = true; rescuerPlayerId = 'player2';}
+                            if (fs.targetPlayerId === 'player1' && ship1 && player1Lives > 0 ) { rescuingPlayerShipObject = ship1; rescuerAlreadyDual = player1IsDualShipActive; playerShipIsCurrentlyCaptured = isPlayer1ShipCaptured; setDualShipForRescuer = () => { player1IsDualShipActive = true; player1DualShipExpireLevel = level + (typeof DUALSHIP_STAGE_DURATION !== 'undefined' ? DUALSHIP_STAGE_DURATION : 3); if(typeof dualStagesRemaining !== 'undefined') dualStagesRemaining = 3; if(typeof setUpgradeStages === 'function') setUpgradeStages('DUAL', 3); console.log("[UPGRADE] DUAL P1 gepakt - 3 stages"); isPlayer1ShipCaptured = false;}; rescuerIsActiveAndExists = true; rescuerPlayerId = 'player1';}
+                            else if (fs.targetPlayerId === 'player2' && ship2 && player2Lives > 0 ) { rescuingPlayerShipObject = ship2; rescuerAlreadyDual = player2IsDualShipActive; playerShipIsCurrentlyCaptured = isPlayer2ShipCaptured; setDualShipForRescuer = () => { player2IsDualShipActive = true; player2DualShipExpireLevel = level + (typeof DUALSHIP_STAGE_DURATION !== 'undefined' ? DUALSHIP_STAGE_DURATION : 3); if(typeof dualStagesRemaining !== 'undefined') dualStagesRemaining = 3; if(typeof setUpgradeStages === 'function') setUpgradeStages('DUAL', 3); console.log("[UPGRADE] DUAL P2 gepakt - 3 stages"); isPlayer2ShipCaptured = false;}; rescuerIsActiveAndExists = true; rescuerPlayerId = 'player2';}
                         } else { // 1P Classic, 1P_VS_AI_NORMAL, 2P_NORMAL
                             if (ship && playerLives > 0 ) {
                                 rescuingPlayerShipObject = ship;
                                 rescuerAlreadyDual = isDualShipActive;
                                 playerShipIsCurrentlyCaptured = isShipCaptured;
                                 setDualShipForRescuer = () => {
-                                    isDualShipActive = true; isDualShipActiveExpireLevel = level + (typeof DUALSHIP_STAGE_DURATION !== 'undefined' ? DUALSHIP_STAGE_DURATION : 3);
+                                    isDualShipActive = true; isDualShipActiveExpireLevel = level + (typeof DUALSHIP_STAGE_DURATION !== 'undefined' ? DUALSHIP_STAGE_DURATION : 3); if(typeof dualStagesRemaining !== 'undefined') dualStagesRemaining = 3; if(typeof setUpgradeStages === 'function') setUpgradeStages('DUAL', 3); console.log("[UPGRADE] DUAL gepakt - 3 stages");
                                     if (isTwoPlayerMode && selectedGameMode === 'normal') {
-                                        if (currentPlayer === 1) { player1IsDualShipActive = true; player1DualShipExpireLevel = level + (typeof DUALSHIP_STAGE_DURATION !== 'undefined' ? DUALSHIP_STAGE_DURATION : 3); } else { player2IsDualShipActive = true; player2DualShipExpireLevel = level + (typeof DUALSHIP_STAGE_DURATION !== 'undefined' ? DUALSHIP_STAGE_DURATION : 3); }
-                                    } else if (!isTwoPlayerMode) player1IsDualShipActive = true; player1DualShipExpireLevel = level + (typeof DUALSHIP_STAGE_DURATION !== 'undefined' ? DUALSHIP_STAGE_DURATION : 3);
+                                        if (currentPlayer === 1) { player1IsDualShipActive = true; player1DualShipExpireLevel = level + (typeof DUALSHIP_STAGE_DURATION !== 'undefined' ? DUALSHIP_STAGE_DURATION : 3); if(typeof dualStagesRemaining !== 'undefined') dualStagesRemaining = 3; if(typeof setUpgradeStages === 'function') setUpgradeStages('DUAL', 3); console.log("[UPGRADE] DUAL P1 gepakt - 3 stages"); } else { player2IsDualShipActive = true; player2DualShipExpireLevel = level + (typeof DUALSHIP_STAGE_DURATION !== 'undefined' ? DUALSHIP_STAGE_DURATION : 3); if(typeof dualStagesRemaining !== 'undefined') dualStagesRemaining = 3; if(typeof setUpgradeStages === 'function') setUpgradeStages('DUAL', 3); console.log("[UPGRADE] DUAL P2 gepakt - 3 stages"); }
+                                    } else if (!isTwoPlayerMode) player1IsDualShipActive = true; player1DualShipExpireLevel = level + (typeof DUALSHIP_STAGE_DURATION !== 'undefined' ? DUALSHIP_STAGE_DURATION : 3); if(typeof dualStagesRemaining !== 'undefined') dualStagesRemaining = 3; if(typeof setUpgradeStages === 'function') setUpgradeStages('DUAL', 3); console.log("[UPGRADE] DUAL P1 gepakt - 3 stages");
                                     isShipCaptured = false;
                                 };
                                 rescuerIsActiveAndExists = true;
@@ -4483,12 +4898,12 @@ function moveEntities(overrideP1Left = null, overrideP1Right = null) {
                     if (fs.targetPlayerId === 'player1' && ship1 && player1Lives > 0) {
                         targetShipForDocking = ship1;
                         isTargetShipDualAlready = player1IsDualShipActive;
-                        setDualShipFlagEarly = () => { if (!isTargetShipDualAlready) player1IsDualShipActive = true; player1DualShipExpireLevel = level + (typeof DUALSHIP_STAGE_DURATION !== 'undefined' ? DUALSHIP_STAGE_DURATION : 3); };
+                        setDualShipFlagEarly = () => { if (!isTargetShipDualAlready) player1IsDualShipActive = true; player1DualShipExpireLevel = level + (typeof DUALSHIP_STAGE_DURATION !== 'undefined' ? DUALSHIP_STAGE_DURATION : 3); if(typeof dualStagesRemaining !== 'undefined') dualStagesRemaining = 3; if(typeof setUpgradeStages === 'function') setUpgradeStages('DUAL', 3); console.log("[UPGRADE] DUAL P1 gepakt - 3 stages"); };
                         playerNumForDocking = 1;
                     } else if ((fs.targetPlayerId === 'player2' || fs.targetPlayerId === 'ai_p2') && ship2 && player2Lives > 0) {
                         targetShipForDocking = ship2;
                         isTargetShipDualAlready = player2IsDualShipActive;
-                        setDualShipFlagEarly = () => { if (!isTargetShipDualAlready) player2IsDualShipActive = true; player2DualShipExpireLevel = level + (typeof DUALSHIP_STAGE_DURATION !== 'undefined' ? DUALSHIP_STAGE_DURATION : 3); };
+                        setDualShipFlagEarly = () => { if (!isTargetShipDualAlready) player2IsDualShipActive = true; player2DualShipExpireLevel = level + (typeof DUALSHIP_STAGE_DURATION !== 'undefined' ? DUALSHIP_STAGE_DURATION : 3); if(typeof dualStagesRemaining !== 'undefined') dualStagesRemaining = 3; if(typeof setUpgradeStages === 'function') setUpgradeStages('DUAL', 3); console.log("[UPGRADE] DUAL P2 gepakt - 3 stages"); };
                         playerNumForDocking = 2;
                     }
                 } else if (isTwoPlayerMode && selectedGameMode === 'coop') {
@@ -4496,13 +4911,13 @@ function moveEntities(overrideP1Left = null, overrideP1Right = null) {
                         targetShipForDocking = ship1;
                         playerShipCapturedStateForEarlyDock = isPlayer1ShipCaptured;
                         isTargetShipDualAlready = player1IsDualShipActive;
-                        setDualShipFlagEarly = () => { if (!isTargetShipDualAlready) player1IsDualShipActive = true; player1DualShipExpireLevel = level + (typeof DUALSHIP_STAGE_DURATION !== 'undefined' ? DUALSHIP_STAGE_DURATION : 3); isPlayer1ShipCaptured = false; };
+                        setDualShipFlagEarly = () => { if (!isTargetShipDualAlready) player1IsDualShipActive = true; player1DualShipExpireLevel = level + (typeof DUALSHIP_STAGE_DURATION !== 'undefined' ? DUALSHIP_STAGE_DURATION : 3); if(typeof dualStagesRemaining !== 'undefined') dualStagesRemaining = 3; if(typeof setUpgradeStages === 'function') setUpgradeStages('DUAL', 3); console.log("[UPGRADE] DUAL P1 gepakt - 3 stages"); isPlayer1ShipCaptured = false; };
                         playerNumForDocking = 1;
                     } else if (fs.targetPlayerId === 'player2' && ship2 && player2Lives > 0 ) {
                         targetShipForDocking = ship2;
                         playerShipCapturedStateForEarlyDock = isPlayer2ShipCaptured;
                         isTargetShipDualAlready = player2IsDualShipActive;
-                        setDualShipFlagEarly = () => { if (!isTargetShipDualAlready) player2IsDualShipActive = true; player2DualShipExpireLevel = level + (typeof DUALSHIP_STAGE_DURATION !== 'undefined' ? DUALSHIP_STAGE_DURATION : 3); isPlayer2ShipCaptured = false; };
+                        setDualShipFlagEarly = () => { if (!isTargetShipDualAlready) player2IsDualShipActive = true; player2DualShipExpireLevel = level + (typeof DUALSHIP_STAGE_DURATION !== 'undefined' ? DUALSHIP_STAGE_DURATION : 3); if(typeof dualStagesRemaining !== 'undefined') dualStagesRemaining = 3; if(typeof setUpgradeStages === 'function') setUpgradeStages('DUAL', 3); console.log("[UPGRADE] DUAL P2 gepakt - 3 stages"); isPlayer2ShipCaptured = false; };
                         playerNumForDocking = 2;
                     }
                 } else { // 1P Classic, 1P_VS_AI_NORMAL, 2P_NORMAL
@@ -4512,10 +4927,10 @@ function moveEntities(overrideP1Left = null, overrideP1Right = null) {
                         isTargetShipDualAlready = isDualShipActive;
                         setDualShipFlagEarly = () => {
                             if (!isTargetShipDualAlready) {
-                                isDualShipActive = true; isDualShipActiveExpireLevel = level + (typeof DUALSHIP_STAGE_DURATION !== 'undefined' ? DUALSHIP_STAGE_DURATION : 3);
+                                isDualShipActive = true; isDualShipActiveExpireLevel = level + (typeof DUALSHIP_STAGE_DURATION !== 'undefined' ? DUALSHIP_STAGE_DURATION : 3); if(typeof dualStagesRemaining !== 'undefined') dualStagesRemaining = 3; if(typeof setUpgradeStages === 'function') setUpgradeStages('DUAL', 3); console.log("[UPGRADE] DUAL gepakt - 3 stages");
                                 if (isTwoPlayerMode && selectedGameMode === 'normal') {
-                                    if (currentPlayer === 1) { player1IsDualShipActive = true; player1DualShipExpireLevel = level + (typeof DUALSHIP_STAGE_DURATION !== 'undefined' ? DUALSHIP_STAGE_DURATION : 3); } else { player2IsDualShipActive = true; player2DualShipExpireLevel = level + (typeof DUALSHIP_STAGE_DURATION !== 'undefined' ? DUALSHIP_STAGE_DURATION : 3); }
-                                } else if (!isTwoPlayerMode) player1IsDualShipActive = true; player1DualShipExpireLevel = level + (typeof DUALSHIP_STAGE_DURATION !== 'undefined' ? DUALSHIP_STAGE_DURATION : 3);
+                                    if (currentPlayer === 1) { player1IsDualShipActive = true; player1DualShipExpireLevel = level + (typeof DUALSHIP_STAGE_DURATION !== 'undefined' ? DUALSHIP_STAGE_DURATION : 3); if(typeof dualStagesRemaining !== 'undefined') dualStagesRemaining = 3; if(typeof setUpgradeStages === 'function') setUpgradeStages('DUAL', 3); console.log("[UPGRADE] DUAL P1 gepakt - 3 stages"); } else { player2IsDualShipActive = true; player2DualShipExpireLevel = level + (typeof DUALSHIP_STAGE_DURATION !== 'undefined' ? DUALSHIP_STAGE_DURATION : 3); if(typeof dualStagesRemaining !== 'undefined') dualStagesRemaining = 3; if(typeof setUpgradeStages === 'function') setUpgradeStages('DUAL', 3); console.log("[UPGRADE] DUAL P2 gepakt - 3 stages"); }
+                                } else if (!isTwoPlayerMode) player1IsDualShipActive = true; player1DualShipExpireLevel = level + (typeof DUALSHIP_STAGE_DURATION !== 'undefined' ? DUALSHIP_STAGE_DURATION : 3); if(typeof dualStagesRemaining !== 'undefined') dualStagesRemaining = 3; if(typeof setUpgradeStages === 'function') setUpgradeStages('DUAL', 3); console.log("[UPGRADE] DUAL P1 gepakt - 3 stages");
                             }
                             isShipCaptured = false;
                         };
@@ -4641,10 +5056,13 @@ function moveEntities(overrideP1Left = null, overrideP1Right = null) {
                             const beamBoundingBox = { x: boxX, y: boxY, width: boxWidth, height: boxHeight }; let shipHitObject = null; let playerHitId = 0;
                             // REGEL: Dual ship mag nooit in de beamer stappen
                             if (isTwoPlayerMode && selectedGameMode === 'coop') {
-                                if (ship1 && player1Lives > 0 && !isPlayer1ShipCaptured && !player1IsDualShipActive && checkCollision(ship1, beamBoundingBox)) { shipHitObject = ship1; playerHitId = 1; }
-                                else if (ship2 && player2Lives > 0 && !isPlayer2ShipCaptured && !player2IsDualShipActive && checkCollision(ship2, beamBoundingBox)) { shipHitObject = ship2; playerHitId = 2; }
+                                // FIX: dual mag in beamer
+                                if (ship1 && player1Lives > 0 && !isPlayer1ShipCaptured && checkCollision(ship1, beamBoundingBox)) { shipHitObject = ship1; playerHitId = 1; }
+                                // FIX: dual mag in beamer
+                                else if (ship2 && player2Lives > 0 && !isPlayer2ShipCaptured && checkCollision(ship2, beamBoundingBox)) { shipHitObject = ship2; playerHitId = 2; }
                             } else {
-                                if (ship && playerLives > 0 && !isShipCaptured && !isDualShipActive && checkCollision(ship, beamBoundingBox)) { shipHitObject = ship; playerHitId = currentPlayer; }
+                                // FIX: dual mag in beamer
+                                if (ship && playerLives > 0 && !isShipCaptured && checkCollision(ship, beamBoundingBox)) { shipHitObject = ship; playerHitId = currentPlayer; }
                             }
                             let isUpgradeBeam = false;
                             let upgradeTypeForBeam = null;
@@ -4696,19 +5114,31 @@ function moveEntities(overrideP1Left = null, overrideP1Right = null) {
                                     }
                                     if (upgradeTypeForBeam === 'CLEAR') {
                                             isClearNoBulletsActive = true;
-                                            clearActiveUntil = Date.now() + 10000;
+                                            clearActiveUntil = Date.now() + 999999999; // 2 stages lang
+                                            if (typeof clearStagesRemaining !== 'undefined') clearStagesRemaining = 2;
+                                            if (typeof setUpgradeStages === 'function') setUpgradeStages('CLEAR', 2);
                                             enemyBullets = [];
+                                            console.log("[UPGRADE] CLEAR gepakt - 2 stages actief");
                                         } else if (upgradeTypeForBeam === 'SHIELD') {
                                             shieldActive = true;
                                             shieldActivePlayer = pNum;
+                                            if (typeof shieldStagesRemaining !== 'undefined') shieldStagesRemaining = 2;
+                                            if (typeof setUpgradeStages === 'function') setUpgradeStages('SHIELD', 2);
+                                            console.log("[UPGRADE] SHIELD gepakt - 2 stages actief");
                                         } else if (upgradeTypeForBeam === 'RAPID') {
                                             rapidActive = true;
-                                            rapidActiveUntil = Date.now() + 15000;
+                                            rapidActiveUntil = Date.now() + 999999999; // 2 stages lang ipv 15 sec
                                             rapidActivePlayer = pNum;
+                                            if (typeof rapidStagesRemaining !== 'undefined') rapidStagesRemaining = 2;
+                                            if (typeof setUpgradeStages === 'function') setUpgradeStages('RAPID', 2);
+                                            console.log("[UPGRADE] RAPID gepakt - 2 stages actief");
                                         } else if (upgradeTypeForBeam === 'SPREAD') {
                                             spreadActive = true;
-                                            spreadActiveUntil = Date.now() + 15000;
+                                            spreadActiveUntil = Date.now() + 999999999; // 2 stages lang
                                             spreadActivePlayer = pNum;
+                                            if (typeof spreadStagesRemaining !== 'undefined') spreadStagesRemaining = 2;
+                                            if (typeof setUpgradeStages === 'function') setUpgradeStages('SPREAD', 2);
+                                            console.log("[UPGRADE] SPREAD gepakt - 2 stages actief");
                                         } else if (upgradeTypeForBeam === '1UP') {
                                             if (isTwoPlayerMode && selectedGameMode === 'coop') {
                                                 if (pNum === 1) player1Lives++; else player2Lives++;
@@ -4825,6 +5255,43 @@ function moveEntities(overrideP1Left = null, overrideP1Right = null) {
                         else if (shipData.dual && dualShipPartRect && checkCollision(enemyRectCollision, dualShipPartRect)) { collided = true; hitDual = true; }
 
                         if (collided) {
+                            // SHIELD BESCHERMT TEGEN VIJANDEN ZELF
+                            let isShieldProtecting = false;
+                            try {
+                                if (typeof shieldActive !== 'undefined' && shieldActive) {
+                                    if (typeof isShipProtectedByShield === 'function') {
+                                        isShieldProtecting = isShipProtectedByShield(shipData.playerNum, currentShip);
+                                    } else {
+                                        isShieldProtecting = true;
+                                        if (typeof shieldActivePlayer !== 'undefined' && shieldActivePlayer !== null && isTwoPlayerMode && selectedGameMode === 'coop') {
+                                            isShieldProtecting = (shieldActivePlayer === shipData.playerNum);
+                                        }
+                                    }
+                                }
+                            } catch(e) {}
+                            if (isShieldProtecting) {
+                                // Geen schade, wel inslag effect op shield
+                                const hitX = enemy.x + currentEnemyWidthCorrected/2;
+                                const hitY = enemy.y + currentEnemyHeightCorrected/2;
+                                createExplosion(hitX, hitY);
+                                if (typeof shieldHitEffects !== 'undefined') {
+                                    shieldHitEffects.push({ x: hitX, y: hitY, shipX: currentShip.x, shipY: currentShip.y, shipW: currentShip.width, shipH: currentShip.height, startTime: Date.now(), duration: 450, playerNum: shipData.playerNum });
+                                }
+                                if (typeof explosions !== 'undefined') {
+                                    explosions.push({ x: hitX - 10, y: hitY - 10, size: 28, maxSize: 28, growth: 5, alpha: 0.9, color: 'rgba(80,180,255,0.9)', startTime: Date.now(), duration: 260, isShieldHit: true });
+                                }
+                                if (typeof hitSparks !== 'undefined') {
+                                    for(let hs=0; hs<14; hs++){
+                                        const ang = Math.random()*Math.PI*2;
+                                        const sp = 1.5 + Math.random()*4.0;
+                                        hitSparks.push({ x: hitX, y: hitY, vx: Math.cos(ang)*sp, vy: Math.sin(ang)*sp - 0.8, size: 7, color: 'rgba(120,210,255,0.98)', alpha: 1.0, creationTime: Date.now(), lifetime: 550, duration: 550 });
+                                    }
+                                }
+                                // vijand verwijderen zonder speler schade
+                                enemies.splice(i, 1); enemy = null;
+                                if (enemy === null) break;
+                                continue;
+                            }
                             createExplosion(enemy.x + currentEnemyWidthCorrected / 2, enemy.y + currentEnemyHeightCorrected / 2);
                             playSound('lostLifeSound', false, 0.6);
                             enemies.splice(i, 1); enemy = null;
@@ -4871,7 +5338,10 @@ function moveEntities(overrideP1Left = null, overrideP1Right = null) {
                                 let shieldMatch = true;
                                 if (typeof shieldActivePlayer !== 'undefined' && shieldActivePlayer !== null) {
                                     if (isTwoPlayerMode && selectedGameMode === 'coop') {
-                                        shieldMatch = (shieldActivePlayer === shipData.playerNum);
+                                        // NIEUW: coop bescherming als AI onder shield staat
+                                        try {
+                                            shieldMatch = isShipProtectedByShield(shipData.playerNum, currentShip);
+                                        } catch(e){ shieldMatch = (shieldActivePlayer === shipData.playerNum); }
                                     }
                                 }
                                 if (shieldMatch) {
@@ -4879,13 +5349,19 @@ function moveEntities(overrideP1Left = null, overrideP1Right = null) {
                                     enemyBullets.splice(k, 1);
                                     bulletRemoved = true;
                                     if (typeof shieldHitEffects !== 'undefined') {
-                                        shieldHitEffects.push({ x: eb.x + eb.width/2, y: eb.y + eb.height/2, shipX: currentShip.x, shipY: currentShip.y, shipW: currentShip.width, shipH: currentShip.height, startTime: Date.now(), duration: 350, playerNum: shipData.playerNum });
+                                        shieldHitEffects.push({ x: eb.x + eb.width/2, y: eb.y + eb.height/2, shipX: currentShip.x, shipY: currentShip.y, shipW: currentShip.width, shipH: currentShip.height, startTime: Date.now(), duration: 450, playerNum: shipData.playerNum });
+                                    }
+                                    try { if (typeof createExplosion === 'function') { createExplosion(eb.x + eb.width/2, eb.y + eb.height/2, true); } } catch(e){}
+                                    // NIEUW: zichtbare explosie OP de shield
+                                    if (typeof explosions !== 'undefined') {
+                                        // extra kleine blauwe flash bovenop shield hit
+                                        explosions.push({ x: eb.x + eb.width/2 - 10, y: eb.y + eb.height/2 - 10, size: 22, maxSize: 22, growth: 4, alpha: 0.85, color: 'rgba(80,180,255,0.9)', startTime: Date.now(), duration: 220, isShieldHit: true });
                                     }
                                     if (typeof hitSparks !== 'undefined') {
-                                        for(let hs=0; hs<6; hs++){
+                                        for(let hs=0; hs<10; hs++){
                                             const ang = Math.random()*Math.PI*2;
-                                            const sp = 1 + Math.random()*3;
-                                            hitSparks.push({ x: eb.x, y: eb.y, vx: Math.cos(ang)*sp, vy: Math.sin(ang)*sp, size: 5, color: 'rgba(80,180,255,0.9)', alpha: 1.0, creationTime: Date.now(), duration: 400 });
+                                            const sp = 1.2 + Math.random()*3.5;
+                                            hitSparks.push({ x: eb.x + eb.width/2, y: eb.y + eb.height/2, vx: Math.cos(ang)*sp, vy: Math.sin(ang)*sp - 0.5, size: 6, color: 'rgba(120,210,255,0.95)', alpha: 1.0, creationTime: Date.now(), duration: 500 });
                                         }
                                     }
                                     break;
@@ -4912,6 +5388,21 @@ function moveEntities(overrideP1Left = null, overrideP1Right = null) {
  * `wasCapturedHit` is true als de botsing het gevolg is van gevangenneming (beam, niet een fysieke botsing).
  */
 function handlePlayerShipCollision(playerNumber, hitDualPart, collisionTime, wasCapturedHit = false) {
+    // SHIELD: als shield actief, geen schade bij vijand contact (al afgehandeld, maar extra safety)
+    try {
+        if (typeof shieldActive !== 'undefined' && shieldActive) {
+            let shipObjForCheck = null;
+            if (isTwoPlayerMode && selectedGameMode === 'coop') {
+                shipObjForCheck = (playerNumber === 1) ? ship1 : ship2;
+            } else {
+                shipObjForCheck = ship;
+            }
+            if (typeof isShipProtectedByShield === 'function' && isShipProtectedByShield(playerNumber, shipObjForCheck)) {
+                console.log("[SHIELD] handlePlayerShipCollision geblokkeerd - shield actief");
+                return;
+            }
+        }
+    } catch(e) {}
     // NIEUW V10: In Simultaneous Assault geen collision tijdens invliegen
     if (typeof isSimultaneousAssaultWave !== 'undefined' && isSimultaneousAssaultWave) {
         if (typeof isAllEnemiesInGridForSimultaneous !== 'undefined' && !isAllEnemiesInGridForSimultaneous()) {
@@ -5123,19 +5614,32 @@ function handlePlayerShipCollision(playerNumber, hitDualPart, collisionTime, was
                     let shieldPlayerMatch = true;
                     if (typeof shieldActivePlayer !== 'undefined' && shieldActivePlayer !== null) {
                         if (isTwoPlayerMode && selectedGameMode === 'coop') {
-                            shieldPlayerMatch = (shieldActivePlayer === playerNumber);
+                            try {
+                                // NIEUW: coop bescherming
+                                let shipObj = null;
+                                if (playerNumber === 1 && typeof ship1 !== 'undefined') shipObj = ship1;
+                                else if (playerNumber === 2 && typeof ship2 !== 'undefined') shipObj = ship2;
+                                else if (typeof ship !== 'undefined') shipObj = ship;
+                                shieldPlayerMatch = isShipProtectedByShield(playerNumber, shipObj);
+                            } catch(e){ shieldPlayerMatch = (shieldActivePlayer === playerNumber); }
                         }
                     }
                     if (shieldPlayerMatch) {
-                        // NIEUW: Shield blijft actief hele stage - geen melding per verzoek
+                        // NIEUW: Shield blijft actief hele stage + zichtbare explosie
                         try {
                             if (typeof shieldHitEffects !== 'undefined') {
-                                shieldHitEffects.push({ x: lastKnownX + SHIP_WIDTH/2, y: shipBaseY + SHIP_HEIGHT/2, startTime: Date.now(), duration: 300, playerNum: playerNumber });
+                                shieldHitEffects.push({ x: lastKnownX + SHIP_WIDTH/2, y: shipBaseY + SHIP_HEIGHT/2, startTime: Date.now(), duration: 450, playerNum: playerNumber });
                             }
                             if (typeof hitSparks !== 'undefined') {
-                                for(let hs=0; hs<8; hs++){
-                                    hitSparks.push({ x: lastKnownX + SHIP_WIDTH/2 + (Math.random()-0.5)*SHIP_WIDTH, y: shipBaseY + (Math.random()*SHIP_HEIGHT*0.5), vx: (Math.random()-0.5)*4, vy: (Math.random()-0.5)*4, size: 4, color: 'rgba(0,200,255,0.9)', alpha: 1.0, creationTime: Date.now(), duration: 300 });
+                                for(let hs=0; hs<12; hs++){
+                                    const ang = Math.random()*Math.PI*2;
+                                    const sp = 1 + Math.random()*4;
+                                    hitSparks.push({ x: lastKnownX + SHIP_WIDTH/2 + (Math.random()-0.5)*SHIP_WIDTH*0.5, y: shipBaseY + SHIP_HEIGHT/2, vx: Math.cos(ang)*sp, vy: Math.sin(ang)*sp - 0.8, size: 5, color: 'rgba(100,210,255,0.95)', alpha: 1.0, creationTime: Date.now(), duration: 450 });
                                 }
+                            }
+                            if (typeof createExplosion === 'function') { createExplosion(lastKnownX + SHIP_WIDTH/2, shipBaseY + SHIP_HEIGHT/2, true); }
+                            if (typeof explosions !== 'undefined') {
+                                explosions.push({ x: lastKnownX + SHIP_WIDTH/2 - 12, y: shipBaseY + SHIP_HEIGHT/2 - 12, size: 24, maxSize: 24, growth: 5, alpha: 0.8, color: 'rgba(80,180,255,0.85)', startTime: Date.now(), duration: 260, isShieldHit: true });
                             }
                         } catch(e){}
                         return;

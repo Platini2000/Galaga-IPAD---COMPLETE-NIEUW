@@ -193,6 +193,48 @@ function isClearBlocking() {
     } catch(e){ return false; }
 }
 window.isClearBlocking = isClearBlocking;
+// --- UPGRADE PERSISTENCE: stages mee ---
+let shieldStagesRemaining = 0;
+let rapidStagesRemaining = 0;
+let spreadStagesRemaining = 0;
+let clearStagesRemaining = 0;
+let dualStagesRemaining = 0;
+function resetUpgradePersistenceCounters(){ try{ shieldStagesRemaining=0; rapidStagesRemaining=0; spreadStagesRemaining=0; clearStagesRemaining=0; dualStagesRemaining=0; }catch(e){} }
+window.resetUpgradePersistenceCounters = resetUpgradePersistenceCounters;
+
+// --- NIEUW: Altijd zonder upgrades starten vanuit hoofdmenu / demo ---
+function resetAllUpgradesForCleanStartFromMenu() {
+    try {
+        if (typeof shieldActive !== 'undefined') shieldActive = false;
+        if (typeof shieldActivePlayer !== 'undefined') shieldActivePlayer = null;
+        if (typeof shieldHitEffects !== 'undefined') shieldHitEffects = [];
+        if (typeof rapidActive !== 'undefined') rapidActive = false;
+        if (typeof rapidActiveUntil !== 'undefined') rapidActiveUntil = 0;
+        if (typeof rapidActivePlayer !== 'undefined') rapidActivePlayer = null;
+        if (typeof spreadActive !== 'undefined') spreadActive = false;
+        if (typeof spreadActiveUntil !== 'undefined') spreadActiveUntil = 0;
+        if (typeof spreadActivePlayer !== 'undefined') spreadActivePlayer = null;
+        if (typeof isClearNoBulletsActive !== 'undefined') isClearNoBulletsActive = false;
+        if (typeof clearActiveUntil !== 'undefined') clearActiveUntil = 0;
+        if (typeof isDualShipActive !== 'undefined') isDualShipActive = false;
+        if (typeof player1IsDualShipActive !== 'undefined') player1IsDualShipActive = false;
+        if (typeof player2IsDualShipActive !== 'undefined') player2IsDualShipActive = false;
+        // counters
+        if (typeof shieldStagesRemaining !== 'undefined') shieldStagesRemaining = 0;
+        if (typeof rapidStagesRemaining !== 'undefined') rapidStagesRemaining = 0;
+        if (typeof spreadStagesRemaining !== 'undefined') spreadStagesRemaining = 0;
+        if (typeof clearStagesRemaining !== 'undefined') clearStagesRemaining = 0;
+        if (typeof dualStagesRemaining !== 'undefined') dualStagesRemaining = 0;
+        if (typeof resetUpgradePersistenceCounters === 'function') resetUpgradePersistenceCounters();
+        console.log("[RESET] Alle upgrades gereset voor clean start vanuit menu/demo");
+    } catch(e){ console.error("resetAllUpgradesForCleanStartFromMenu error", e); }
+}
+window.resetAllUpgradesForCleanStartFromMenu = resetAllUpgradesForCleanStartFromMenu;
+
+function setUpgradeStages(type, stages){ try{ if(type==='SHIELD') shieldStagesRemaining=stages; else if(type==='RAPID') rapidStagesRemaining=stages; else if(type==='SPREAD') spreadStagesRemaining=stages; else if(type==='CLEAR') clearStagesRemaining=stages; else if(type==='DUAL') dualStagesRemaining=stages; }catch(e){} }
+window.setUpgradeStages = setUpgradeStages;
+function decrementUpgradeStagesOnNewStage(){ try{ let expired=[]; if(typeof shieldStagesRemaining!=='undefined' && shieldStagesRemaining>0){ shieldStagesRemaining--; if(shieldStagesRemaining<=0) expired.push('SHIELD'); } if(typeof rapidStagesRemaining!=='undefined' && rapidStagesRemaining>0){ rapidStagesRemaining--; if(rapidStagesRemaining<=0) expired.push('RAPID'); } if(typeof spreadStagesRemaining!=='undefined' && spreadStagesRemaining>0){ spreadStagesRemaining--; if(spreadStagesRemaining<=0) expired.push('SPREAD'); } if(typeof clearStagesRemaining!=='undefined' && clearStagesRemaining>0){ clearStagesRemaining--; if(clearStagesRemaining<=0) expired.push('CLEAR'); } if(typeof dualStagesRemaining!=='undefined' && dualStagesRemaining>0){ dualStagesRemaining--; if(dualStagesRemaining<=0) expired.push('DUAL'); } return expired; }catch(e){ return []; } }
+window.decrementUpgradeStagesOnNewStage = decrementUpgradeStagesOnNewStage;
 let upgradeMessageActive = false;
 let upgradeMessageText = "";
 let upgradeMessageStartTime = 0;

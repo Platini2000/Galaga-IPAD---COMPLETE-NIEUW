@@ -355,6 +355,9 @@ function showMenuState() {
        isCoopAIDemoActive = false;
        aiPlayerActivelySeekingCaptureById = null;
 
+       // NIEUW: bij terug naar menu ook upgrades resetten voor volgende demo/game keuze
+       try { if (typeof window.resetAllUpgradesForCleanStartFromMenu === 'function') window.resetAllUpgradesForCleanStartFromMenu(); else if (typeof resetAllUpgradesForCleanStartFromMenu === 'function') resetAllUpgradesForCleanStartFromMenu(); } catch(e){}
+
        initialGameStartSoundPlayedThisSession = false;
        coopStartSoundPlayedThisSession = false;
        gameJustStartedAndWaveLaunched = false;
@@ -430,6 +433,7 @@ function showMenuState() {
 
 /** Start de AI demo modus. */
 function startAIDemo() {
+    try { if (typeof window.resetAllUpgradesForCleanStartFromMenu === 'function') window.resetAllUpgradesForCleanStartFromMenu(); else if (typeof resetAllUpgradesForCleanStartFromMenu === 'function') resetAllUpgradesForCleanStartFromMenu(); } catch(e){}
     if (isInGameState) return;
     stopSound('menuMusicSound');
     isShowingScoreScreen = false;
@@ -457,6 +461,7 @@ function startAIDemo() {
 
 /** Start de CO-OP AI demo modus. */
 function startCoopAIDemo() {
+    try { if (typeof window.resetAllUpgradesForCleanStartFromMenu === 'function') window.resetAllUpgradesForCleanStartFromMenu(); else if (typeof resetAllUpgradesForCleanStartFromMenu === 'function') resetAllUpgradesForCleanStartFromMenu(); } catch(e){}
     if (isInGameState) return;
     stopSound('menuMusicSound');
     isShowingScoreScreen = false;
@@ -523,6 +528,8 @@ function startGame2P() {
 
 function baseStartGame(setManualControl) {
     try {
+        // NIEUW: Altijd zonder upgrades starten vanuit hoofdmenu keus of demo
+        try { if (typeof window.resetAllUpgradesForCleanStartFromMenu === 'function') window.resetAllUpgradesForCleanStartFromMenu(); else if (typeof resetAllUpgradesForCleanStartFromMenu === 'function') resetAllUpgradesForCleanStartFromMenu(); } catch(e){}
         if (!gameCanvas || !gameCtx) { console.error("Cannot start game - canvas not ready."); showMenuState(); return; }
         if (setManualControl) {
             stopSound('menuMusicSound');
@@ -978,10 +985,10 @@ function drawShieldBubble(ctx, shipX, shipY, shipW, shipH, time, isHitFlash) {
     
     // Gradient fill voor transparante blauwe halve cirkel
     const grad = ctx.createRadialGradient(centerX, centerY - radius*0.2, radius*0.2, centerX, centerY, radius);
-    grad.addColorStop(0, `rgba(100,200,255,${0.18 * alphaMult})`);
-    grad.addColorStop(0.5, `rgba(30,140,255,${0.22 * alphaMult})`);
-    grad.addColorStop(0.85, `rgba(20,100,255,${0.15 * alphaMult})`);
-    grad.addColorStop(1, `rgba(10,60,180,${0.05 * alphaMult})`);
+    grad.addColorStop(0, `rgba(100,200,255,${0.11 * alphaMult})`);
+    grad.addColorStop(0.5, `rgba(30,140,255,${0.14 * alphaMult})`);
+    grad.addColorStop(0.85, `rgba(20,100,255,${0.09 * alphaMult})`);
+    grad.addColorStop(1, `rgba(10,60,180,${0.03 * alphaMult})`);
     
     ctx.fillStyle = grad;
     ctx.globalAlpha = 1;
@@ -993,8 +1000,8 @@ function drawShieldBubble(ctx, shipX, shipY, shipW, shipH, time, isHitFlash) {
     ctx.fill();
     
     // Binnenste lichtere highlight
-    ctx.globalAlpha = 0.6 * alphaMult;
-    ctx.fillStyle = `rgba(150,220,255,0.12)`;
+    ctx.globalAlpha = 0.35 * alphaMult;
+    ctx.fillStyle = `rgba(150,220,255,0.08)`;
     ctx.beginPath();
     ctx.arc(centerX, centerY - radius*0.15, radius*0.7, Math.PI, 0, false);
     ctx.closePath();
@@ -1002,24 +1009,24 @@ function drawShieldBubble(ctx, shipX, shipY, shipW, shipH, time, isHitFlash) {
     
     // Buitenlijn - mooie blauwe rand
     ctx.globalAlpha = 1;
-    ctx.strokeStyle = `rgba(60,180,255,${0.75 * alphaMult})`;
-    ctx.lineWidth = 2.2;
-    ctx.shadowColor = 'rgba(40,150,255,0.6)';
-    ctx.shadowBlur = 10;
+    ctx.strokeStyle = `rgba(60,180,255,${0.48 * alphaMult})`;
+    ctx.lineWidth = 2.0;
+    ctx.shadowColor = 'rgba(40,150,255,0.35)';
+    ctx.shadowBlur = 8;
     ctx.beginPath();
     ctx.arc(centerX, centerY, radius, Math.PI, 0, false);
     ctx.stroke();
     ctx.shadowBlur = 0;
     
     // Tweede dunne binnenlijn voor diepte
-    ctx.strokeStyle = `rgba(120,210,255,${0.35 * alphaMult})`;
+    ctx.strokeStyle = `rgba(120,210,255,${0.22 * alphaMult})`;
     ctx.lineWidth = 1;
     ctx.beginPath();
     ctx.arc(centerX, centerY, radius - 3, Math.PI, 0, false);
     ctx.stroke();
     
     // Kleine stipjes / sparkles op de bubble voor extra mooi effect
-    ctx.globalAlpha = 0.5 * alphaMult;
+    ctx.globalAlpha = 0.35 * alphaMult;
     const sparkleTime = time * 0.002;
     for(let i=0;i<3;i++){
         const ang = Math.PI + (Math.PI * (i/3)) + sparkleTime + i;
@@ -1841,7 +1848,76 @@ function renderGame() {
             if (noGlobalGameOverOrResults || isAnyCoopPlayerGameOverForRender) { // Gameplay Actief (of PAUSED), of COOP game over voor 1 speler
                  gameCtx.save();
                  let showBullets = !showReadyMessage && !showCsHitsMessage && !showPerfectMessage && !showCsBonusScoreMessage && !showCSClearMessage && !isCsCompletionDelayActive && !isShowingIntro && !isShowingCaptureMessage && !isShowingCoopPlayersReady && !isAnyCoopPlayerGameOverForRender;
-                 if (showBullets) { bullets.forEach(b => { if (b) { if (typeof bulletImage !== 'undefined' && bulletImage.complete) { gameCtx.drawImage(bulletImage, Math.round(b.x), Math.round(b.y), b.width, b.height); } else { gameCtx.fillStyle = "yellow"; gameCtx.fillRect(Math.round(b.x), Math.round(b.y), b.width, b.height); } } }); enemyBullets.forEach(eb => { if (eb) { if (typeof enemyBulletImage !== 'undefined' && enemyBulletImage.complete && enemyBulletImage.naturalWidth > 0) { gameCtx.drawImage(enemyBulletImage, Math.round(eb.x), Math.round(eb.y), eb.width, eb.height); } else { gameCtx.fillStyle = "white"; gameCtx.fillRect(Math.round(eb.x), Math.round(eb.y), eb.width, eb.height); } } }); }
+                 if (showBullets) {
+                 // Gloed eigenaar only - ietsje meer zichtbaar (0.60 / blur 12)
+                 const _now = Date.now();
+                 const _rapidActive = (typeof rapidActive !== 'undefined' && rapidActive && _now < rapidActiveUntil);
+                 const _spreadActive = (typeof spreadActive !== 'undefined' && spreadActive && _now < spreadActiveUntil);
+                 bullets.forEach(b => {
+                     if (b) {
+                         let hasGlow = false;
+                         try {
+                             const pid = b.playerId ? b.playerId.toString() : '';
+                             if (_spreadActive && b.spread) {
+                                 if (typeof spreadActivePlayer === 'undefined' || spreadActivePlayer === null) {
+                                     hasGlow = true;
+                                 } else if (pid.includes(String(spreadActivePlayer)) || pid === 'player'+spreadActivePlayer) {
+                                     hasGlow = true;
+                                 } else if (!isTwoPlayerMode) {
+                                     hasGlow = true;
+                                 }
+                             }
+                             if (!hasGlow && _rapidActive) {
+                                 if (typeof rapidActivePlayer !== 'undefined' && rapidActivePlayer !== null) {
+                                     if (pid.includes(String(rapidActivePlayer)) || pid === 'player'+rapidActivePlayer || pid === String(rapidActivePlayer)) {
+                                         hasGlow = true;
+                                     }
+                                 } else {
+                                     if (!isTwoPlayerMode && !b.spread) hasGlow = true;
+                                 }
+                             }
+                             if (!hasGlow && !isTwoPlayerMode && (_rapidActive || _spreadActive)) {
+                                 if (!b.playerId) hasGlow = true;
+                                 if (b.spread && _spreadActive) hasGlow = true;
+                             }
+                         } catch(e){}
+                         if (hasGlow) {
+                            gameCtx.save();
+                            gameCtx.shadowColor = 'rgba(130, 200, 255, 0.60)';
+                            gameCtx.shadowBlur = 12;
+                            gameCtx.globalAlpha = 1;
+                        }
+                        if (typeof bulletImage !== 'undefined' && bulletImage.complete) {
+                            gameCtx.drawImage(bulletImage, Math.round(b.x), Math.round(b.y), b.width, b.height);
+                        } else {
+                            gameCtx.fillStyle = "yellow";
+                            gameCtx.fillRect(Math.round(b.x), Math.round(b.y), b.width, b.height);
+                        }
+                        if (hasGlow) {
+                            gameCtx.restore();
+                            gameCtx.save();
+                            gameCtx.globalAlpha = 0.28;
+                            gameCtx.fillStyle = 'rgba(150, 210, 255, 0.55)';
+                            gameCtx.beginPath();
+                            gameCtx.arc(b.x + b.width/2, b.y + b.height/2, Math.max(b.width,b.height)*0.85, 0, Math.PI*2);
+                            gameCtx.fill();
+                            gameCtx.restore();
+                        }
+                     }
+                 });
+                 
+                                  enemyBullets.forEach(eb => {
+                     if (eb) {
+                         if (typeof enemyBulletImage !== 'undefined' && enemyBulletImage.complete && enemyBulletImage.naturalWidth > 0) {
+                             gameCtx.drawImage(enemyBulletImage, Math.round(eb.x), Math.round(eb.y), eb.width, eb.height);
+                         } else {
+                             gameCtx.fillStyle = "white";
+                             gameCtx.fillRect(Math.round(eb.x), Math.round(eb.y), eb.width, eb.height);
+                         }
+                     }
+                 });
+                 }
+
 
                  if (!isShowingCoopPlayersReady) {
                     enemies.forEach(e => { if (e && e.y < gameCanvas.height + e.height * 2 && e.y > -e.height * 2) { gameCtx.save(); try { let currentEnemyImage = null; let fallbackColor = "grey"; const useSecondFrame = !isPaused && (now % (ENEMY_ANIMATION_INTERVAL_MS * 2)) >= ENEMY_ANIMATION_INTERVAL_MS; if (e.type === ENEMY3_TYPE) { currentEnemyImage = useSecondFrame ? bossGalagaImage2 : bossGalagaImage; fallbackColor = "purple"; } else if (e.type === ENEMY2_TYPE) { currentEnemyImage = useSecondFrame ? butterflyImage2 : butterflyImage; fallbackColor = "cyan"; } else { currentEnemyImage = useSecondFrame ? beeImage2 : beeImage; fallbackColor = "red"; } const drawX = Math.round(e.x); const drawY = Math.round(e.y); const drawW = e.width; const drawH = e.height; const needsTint = (e.type === ENEMY3_TYPE && e.isDamaged); const shouldRotateEnemy = !isPaused && (e.state === 'attacking' || e.state === 'following_bezier_path' || e.state === 'following_entrance_path') && e.y > -e.height * 0.5 && (Math.abs(e.velocityX) > 0.1 || Math.abs(e.velocityY) > 0.1); const shouldDrawCapturedShipAnim = e.state === 'showing_capture_message' && e.type === ENEMY3_TYPE && e.hasCapturedShip && e.capturedShipDimensions && typeof e.capturedShipX === 'number' && typeof e.capturedShipY === 'number' && typeof e.captureAnimationRotation === 'number'; const shouldDrawStaticCapturedShip = e.state !== 'showing_capture_message' && e.type === ENEMY3_TYPE && e.hasCapturedShip && e.capturedShipDimensions; const capturedW = (shouldDrawCapturedShipAnim || shouldDrawStaticCapturedShip) ? e.capturedShipDimensions.width : 0; const capturedH = (shouldDrawCapturedShipAnim || shouldDrawStaticCapturedShip) ? e.capturedShipDimensions.height : 0; let capturedX = 0; let capturedY = 0; if (shouldDrawCapturedShipAnim) { capturedX = Math.round(e.capturedShipX); capturedY = Math.round(e.capturedShipY); } else if (shouldDrawStaticCapturedShip) { capturedX = Math.round(e.x + CAPTURED_SHIP_OFFSET_X); capturedY = Math.round(e.y + CAPTURED_SHIP_OFFSET_Y); } const drawEnemyAndTint = (imgX, imgY, imgW, imgH) => { if (typeof currentEnemyImage !== 'undefined' && currentEnemyImage.complete && currentEnemyImage.naturalHeight !== 0) { gameCtx.drawImage(currentEnemyImage, imgX, imgY, imgW, imgH); } else { gameCtx.fillStyle = fallbackColor; gameCtx.fillRect(imgX, imgY, imgW, imgH); } if (needsTint) { gameCtx.globalCompositeOperation = 'source-atop'; gameCtx.fillStyle = 'rgba(0, 0, 139, 0.5)'; gameCtx.fillRect(imgX, imgY, imgW, imgH); gameCtx.globalCompositeOperation = 'source-over'; } }; if (shouldRotateEnemy) { const centerX = drawX + drawW / 2; const centerY = drawY + drawH / 2; gameCtx.translate(centerX, centerY); let angle = Math.atan2(e.velocityY, e.velocityX) + Math.PI / 2; if (e.type === ENEMY3_TYPE && e.state === 'attacking') angle += Math.PI; gameCtx.rotate(angle); drawEnemyAndTint(-drawW / 2, -drawH / 2, drawW, drawH); if (shouldDrawStaticCapturedShip && typeof shipImage !== 'undefined' && shipImage.complete) { gameCtx.globalAlpha = 0.8; const rotatedOffsetX = CAPTURED_SHIP_OFFSET_X; const rotatedOffsetY = CAPTURED_SHIP_OFFSET_Y; gameCtx.drawImage(shipImage, rotatedOffsetX - capturedW / 2, rotatedOffsetY - capturedH / 2, capturedW, capturedH); gameCtx.globalAlpha = 1.0; gameCtx.save(); gameCtx.fillStyle = CAPTURED_SHIP_TINT_COLOR; gameCtx.globalCompositeOperation = 'source-atop'; gameCtx.fillRect(rotatedOffsetX - capturedW / 2, rotatedOffsetY - capturedH / 2, capturedW, capturedH); gameCtx.restore(); } gameCtx.rotate(-angle); gameCtx.translate(-centerX, -centerY); } else { drawEnemyAndTint(drawX, drawY, drawW, drawH); if (shouldDrawStaticCapturedShip && typeof shipImage !== 'undefined' && shipImage.complete) { gameCtx.globalAlpha = 0.8; gameCtx.drawImage(shipImage, capturedX, capturedY, capturedW, capturedH); gameCtx.globalAlpha = 1.0; gameCtx.save(); gameCtx.fillStyle = CAPTURED_SHIP_TINT_COLOR; gameCtx.globalCompositeOperation = 'source-atop'; gameCtx.fillRect(capturedX, capturedY, capturedW, capturedH); gameCtx.restore(); } } if (shouldDrawCapturedShipAnim && typeof shipImage !== 'undefined' && shipImage.complete) { gameCtx.save(); const animCenterX = capturedX + capturedW / 2; const animCenterY = capturedY + capturedH / 2; gameCtx.translate(animCenterX, animCenterY); gameCtx.rotate(e.captureAnimationRotation); gameCtx.globalAlpha = 0.8; gameCtx.drawImage(shipImage, -capturedW / 2, -capturedH / 2, capturedW, capturedH); gameCtx.globalAlpha = 1.0; gameCtx.save(); gameCtx.fillStyle = CAPTURED_SHIP_TINT_COLOR; gameCtx.globalCompositeOperation = 'source-atop'; gameCtx.fillRect(-capturedW / 2, -capturedH / 2, capturedW, capturedH); gameCtx.restore(); gameCtx.restore(); } } catch (drawError) { console.error(`Error drawing enemy:`, drawError); gameCtx.fillStyle = "orange"; gameCtx.fillRect(Math.round(e.x), Math.round(e.y), e.width, e.height); } finally { gameCtx.restore(); } } });
