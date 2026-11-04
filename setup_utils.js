@@ -1061,6 +1061,8 @@ function drawStars() { /* ... ongewijzigd ... */ try { if (!starryCtx || !starry
 function drawRetroGrid() { /* ... ongewijzigd ... */ try { if (!retroGridCtx || !retroGridCanvas || retroGridCanvas.width === 0 || retroGridCanvas.height === 0) return; if (!isPaused || isShowingPortraitMessage) { gridOffsetY -= GRID_SPEED; } const width = retroGridCanvas.width; const height = retroGridCanvas.height; retroGridCtx.clearRect(0, 0, width, height); const horizonY = Math.round(height * GRID_HORIZON_Y_FACTOR);
   // SPIEGEL REFLECTIE 30% - alles boven horizon gespiegeld op vloer
   try{ drawMirrorReflection(); }catch(e){}
+  // ROOK PLUIMEN - subtiel grijs vanaf horizon, 6cm van zijkant
+  try{ drawSmokePlumes(); }catch(e){}
  const vanishingPointX = width / 2; const perspectiveHeight = height - horizonY; retroGridCtx.lineWidth = GRID_LINE_WIDTH; const fixedLineWidth = width * GRID_HORIZONTAL_LINE_WIDTH_FACTOR; const fixedLineStartX = vanishingPointX - fixedLineWidth / 2; const fixedLineEndX = vanishingPointX + fixedLineWidth / 2; const fadeStartY = horizonY + perspectiveHeight * 0.1; const fadeEndY = height; const fadeRange = Math.max(1, fadeEndY - fadeStartY); retroGridCtx.strokeStyle = GRID_LINE_COLOR_FIXED; retroGridCtx.beginPath(); retroGridCtx.moveTo(fixedLineStartX, horizonY); retroGridCtx.lineTo(fixedLineEndX, horizonY); retroGridCtx.stroke(); let normalizedOffset = gridOffsetY % GRID_BASE_SPACING; if (normalizedOffset > 0) { normalizedOffset -= GRID_BASE_SPACING; } let currentDrawY = horizonY - normalizedOffset; if (currentDrawY <= horizonY) currentDrawY += GRID_BASE_SPACING; while (currentDrawY < height + GRID_BASE_SPACING) { let progress = Math.max(0, Math.min(1, (currentDrawY - horizonY) / perspectiveHeight)); if (currentDrawY > horizonY && currentDrawY <= height + GRID_LINE_WIDTH*2) { let currentAlpha; if (currentDrawY <= fadeStartY) { currentAlpha = GRID_MIN_ALPHA; } else if (currentDrawY >= fadeEndY) { currentAlpha = GRID_BASE_ALPHA; } else { const fadeProgress = (currentDrawY - fadeStartY) / fadeRange; currentAlpha = GRID_MIN_ALPHA + (GRID_BASE_ALPHA - GRID_MIN_ALPHA) * fadeProgress; } currentAlpha = Math.max(0, Math.min(GRID_BASE_ALPHA, currentAlpha)); if (currentAlpha > 0.01) { retroGridCtx.strokeStyle = `rgba(${GRID_RGB_PART}, ${currentAlpha.toFixed(3)})`; retroGridCtx.beginPath(); retroGridCtx.moveTo(fixedLineStartX, Math.round(currentDrawY)); retroGridCtx.lineTo(fixedLineEndX, Math.round(currentDrawY)); retroGridCtx.stroke(); } } let nextSpacing = GRID_BASE_SPACING * Math.pow(1 + progress * 1.5, GRID_SPACING_POWER); currentDrawY += Math.max(1, nextSpacing); } retroGridCtx.strokeStyle = GRID_LINE_COLOR_FIXED; retroGridCtx.beginPath(); const numLinesHalf = Math.floor(GRID_NUM_PERSPECTIVE_LINES / 2); const horizonSpreadWidth = width * GRID_HORIZON_SPREAD_FACTOR; const maxSpreadAtBottom = width * GRID_BOTTOM_SPREAD_FACTOR; for (let i = 0; i <= numLinesHalf; i++) { let spreadProgress = Math.pow(i / numLinesHalf, GRID_PERSPECTIVE_POWER); let startX_R = vanishingPointX + spreadProgress * (horizonSpreadWidth / 2); let startX_L = vanishingPointX - spreadProgress * (horizonSpreadWidth / 2); let bottomX_R = vanishingPointX + spreadProgress * (maxSpreadAtBottom / 2); let bottomX_L = vanishingPointX - spreadProgress * (maxSpreadAtBottom / 2); retroGridCtx.moveTo(startX_R, horizonY); retroGridCtx.lineTo(bottomX_R, height); if (i > 0) { retroGridCtx.moveTo(startX_L, horizonY); retroGridCtx.lineTo(bottomX_L, height); } } retroGridCtx.stroke(); } catch (e) { console.error("Error in drawRetroGrid:", e); } }
 
 /** Berekent een punt op een kubische BÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©zier curve. */
@@ -1184,6 +1186,146 @@ function drawMirrorReflection(){
  }catch(e){ console.error('mirror reflection error',e); if(retroGridCtx) retroGridCtx.globalAlpha=1.0; }
 }
 // ===== EINDE NEBULA + SPIEGEL =====
+// ===== ROOK PLUIMEN ECHTE ROOK - LICHTBLAUW - EXTRA TRANSPARANT =====
+let smokeParticles = [];
+let lastSmokeSpawnTime = 0;
+let smokeTimeAccum = 0;
+
+function drawSmokePlumes(){
+  try{
+    if(!retroGridCtx || !retroGridCanvas) return;
+    const width = retroGridCanvas.width, height = retroGridCanvas.height;
+    const horizonY = Math.round(height * (typeof GRID_HORIZON_Y_FACTOR !== 'undefined' ? GRID_HORIZON_Y_FACTOR : 0.74));
+    const now = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+
+    const CM_PX = 37.795275591;
+    const OFFSET_PX = Math.round(6 * CM_PX);
+    const effectiveOffset = Math.min(OFFSET_PX, Math.round(width * 0.14));
+    const leftX = effectiveOffset;
+    const rightX = width - effectiveOffset;
+
+    if(!drawSmokePlumes._lastT) drawSmokePlumes._lastT = now;
+    const dt = Math.min(40, now - drawSmokePlumes._lastT);
+    drawSmokePlumes._lastT = now;
+
+    if((!isPaused || isShowingPortraitMessage) && typeof isShowingPortraitMessage !== 'undefined'){
+        smokeTimeAccum += dt;
+    } else if(typeof isPaused === 'undefined'){
+        smokeTimeAccum += dt;
+    }
+
+    const spawnInterval = 260;
+    if(now - lastSmokeSpawnTime > spawnInterval){
+        lastSmokeSpawnTime = now;
+        [leftX, rightX].forEach((baseX, sideIdx)=>{
+            const side = sideIdx===0 ? -1 : 1;
+            const puffId = now + Math.random()*1000;
+            const baseVy = 0.22 + Math.random()*0.32;
+            const baseVx = (Math.random()*0.18 - 0.09) + side*0.12;
+            const blobCount = 5 + Math.floor(Math.random()*3);
+            const mainMaxRadius = 38 + Math.random()*48 + (Math.random()<0.3? 28:0);
+            const mainLife = 9000 + Math.random()*6000;
+            // MEER TRANSPARANT: was 0.20+0.14, nu 0.12+0.08 = ~40% transparanter
+            const mainAlpha = 0.12 + Math.random()*0.08;
+
+            for(let b=0;b<blobCount;b++){
+                const angle = (b/blobCount)*Math.PI*2 + Math.random()*0.9;
+                const dist = Math.random()*12 + b*2.2;
+                const blobOffsetX = Math.cos(angle)*dist;
+                const blobOffsetY = Math.sin(angle)*dist*0.6 - Math.random()*6;
+                const blobSizeFactor = 0.55 + Math.random()*0.65;
+                smokeParticles.push({
+                    puffId: puffId,
+                    isBlob: true,
+                    x: baseX + blobOffsetX + (Math.random()-0.5)*6,
+                    y: horizonY + blobOffsetY + Math.random()*4,
+                    ox: blobOffsetX,
+                    oy: blobOffsetY,
+                    baseX: baseX,
+                    vx: baseVx + (Math.random()-0.5)*0.18,
+                    vy: baseVy + Math.random()*0.18,
+                    radius: (6 + Math.random()*7) * blobSizeFactor,
+                    maxRadius: mainMaxRadius * blobSizeFactor,
+                    alpha: mainAlpha * (0.7 + Math.random()*0.5),
+                    life: Math.random()*400,
+                    maxLife: mainLife + Math.random()*800,
+                    wobblePhase: Math.random()*Math.PI*6,
+                    wobbleSpeed: 0.0006 + Math.random()*0.001,
+                    turbPhase: Math.random()*10,
+                    side: sideIdx,
+                    blobIndex: b
+                });
+            }
+        });
+    }
+
+    retroGridCtx.save();
+    const alive = [];
+    for(let p of smokeParticles){
+        if(!isPaused || isShowingPortraitMessage){
+            p.life += dt;
+            const t = p.life / p.maxLife;
+            const turbX = Math.sin(smokeTimeAccum*0.0008 + p.turbPhase + p.y*0.008) * 0.6
+                        + Math.cos(smokeTimeAccum*0.0005 + p.turbPhase*1.3) * 0.35;
+            const turbY = Math.sin(smokeTimeAccum*0.0006 + p.wobblePhase) * 0.25;
+            p.y -= p.vy * (dt/16.66) * (1 - t*0.35) + turbY * (dt/16.66);
+            p.x += (p.vx + turbX*0.5) * (dt/16.66);
+            const expandFactor = 1 + t*2.8;
+            p.ox = p.ox * (1 + dt*0.00018*expandFactor);
+            p.oy = p.oy * (1 + dt*0.00015*expandFactor) - dt*0.01*t;
+            const growthT = 1 - Math.pow(1 - Math.min(1,t), 2.4);
+            p.radius = p.radius + (p.maxRadius - p.radius) * growthT * 0.08;
+        }
+        const t = p.life / p.maxLife;
+        if(t >= 1) continue;
+        if(p.y < -p.maxRadius*1.2) continue;
+
+        let a;
+        if(t < 0.07) a = (t/0.07) * p.alpha * 0.9;
+        else if(t < 0.72) a = p.alpha * (1 - (t-0.07)*0.18);
+        else {
+            const fadeT = (t-0.72)/0.28;
+            a = p.alpha * Math.pow(1-fadeT, 2.2) * 0.92;
+        }
+        if(a < 0.004) continue;
+
+        const drawX = p.x + p.ox * (0.5 + t*1.2);
+        const drawY = p.y + p.oy * (0.5 + t*1.0);
+
+        // EXTRA TRANSPARANT gradient - was 0.42/0.26/0.09, nu 0.28/0.16/0.05
+        let grad = retroGridCtx.createRadialGradient(drawX, drawY, 0, drawX, drawY, p.radius);
+        grad.addColorStop(0, `rgba(175,210,245,${(a*0.28).toFixed(3)})`);
+        grad.addColorStop(0.22, `rgba(155,195,235,${(a*0.16).toFixed(3)})`);
+        grad.addColorStop(0.52, `rgba(120,175,220,${(a*0.05).toFixed(3)})`);
+        grad.addColorStop(1, `rgba(90,150,200,0)`);
+
+        retroGridCtx.fillStyle = grad;
+        retroGridCtx.beginPath();
+        const wobble1 = Math.sin(p.wobblePhase + t*3.2)*0.18;
+        const wobble2 = Math.cos(p.wobblePhase*1.4 + t*2.1)*0.15;
+        const rX = p.radius * (1 + wobble1);
+        const rY = p.radius * (1 + wobble2) * (1 + t*0.35);
+        const rot = wobble1*0.5;
+        retroGridCtx.ellipse(drawX, drawY, rX, rY, rot, 0, Math.PI*2);
+        retroGridCtx.fill();
+
+        if(t < 0.65){
+            const innerR = p.radius * 0.38;
+            let grad2 = retroGridCtx.createRadialGradient(drawX + wobble1*4, drawY + wobble2*3, 0, drawX, drawY, innerR);
+            grad2.addColorStop(0, `rgba(195,225,250,${(a*0.16).toFixed(3)})`);
+            grad2.addColorStop(1, `rgba(150,195,235,0)`);
+            retroGridCtx.fillStyle = grad2;
+            retroGridCtx.beginPath();
+            retroGridCtx.ellipse(drawX, drawY, innerR*(1+wobble1*0.3), innerR*(1+wobble2*0.3), -rot, 0, Math.PI*2);
+            retroGridCtx.fill();
+        }
+
+        alive.push(p);
+    }
+    smokeParticles = alive;
+    retroGridCtx.restore();
+  }catch(e){ console.error('smoke error',e); if(retroGridCtx) { retroGridCtx.globalAlpha=1.0; try{retroGridCtx.restore();}catch(_){} } }
+}
 
 function resizeCanvases() {
     try {
