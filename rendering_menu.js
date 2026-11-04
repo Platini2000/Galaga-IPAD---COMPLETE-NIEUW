@@ -2344,7 +2344,7 @@ function mainLoop(timestamp) {
         // Corrigeer de lastFrameTime voor de volgende iteratie, met een kleine marge tegen opstapeling
         lastFrameTime = timestamp - (elapsed % frameInterval);
 
-        drawStars(); if (retroGridCtx && retroGridCanvas) { drawRetroGrid(); } pollControllerForMenu();
+        if (typeof drawNebulaBackground === 'function' && typeof nebulaCtx !== 'undefined' && nebulaCtx) { drawNebulaBackground(); } drawStars(); if (retroGridCtx && retroGridCanvas) { drawRetroGrid(); } pollControllerForMenu();
         if (isInGameState && !isPaused && !isShowingPortraitMessage) {
             if (!isManualControl && connectedGamepadIndex !== null) { const gamepads = navigator.getGamepads(); if (gamepads?.[connectedGamepadIndex]) { const gamepad = gamepads[connectedGamepadIndex]; const currentDemoButtonStates = gamepad.buttons.map(b => b.pressed); let anyButtonPressedNow = false; for (let i = 0; i < currentDemoButtonStates.length; i++) { if (i === PS5_BUTTON_R1 || i === PS5_BUTTON_TRIANGLE) continue; if (currentDemoButtonStates[i] && !(previousDemoButtonStates[i] ?? false)) { anyButtonPressedNow = true; break; } } if (anyButtonPressedNow) { isCoopAIDemoActive = false; isPlayerTwoAI = false; showMenuState(); requestAnimationFrame(mainLoop); return; } previousDemoButtonStates = currentDemoButtonStates.slice(); } else { if(previousDemoButtonStates.length > 0) previousDemoButtonStates = []; } } else { if(previousDemoButtonStates.length > 0) previousDemoButtonStates = []; }
 
