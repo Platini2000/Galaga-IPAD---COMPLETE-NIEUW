@@ -63,7 +63,7 @@ let nebulaBasePath='Afbeeldingen/nebula_horizon.jpg';
 let mirrorTempCanvas=null, mirrorTempCtx=null;
 
 // --- REFLECTIE STERKTES (voor schuifjes) ---
-let enemyReflectionStrength = 1.00;
+let enemyReflectionStrength = 0.45;
 let bulletReflectionStrength = 0.85;
 let textReflectionStrength = 0.01;   // alle text: READY, PERFECT, SCORE etc   // alle text: READY, PERFECT, SCORE etc
 let buttonReflectionStrength = 0.01; // START / 1 PLAYER / 2 PLAYER buttons // START / 1 PLAYER / 2 PLAYER buttons
