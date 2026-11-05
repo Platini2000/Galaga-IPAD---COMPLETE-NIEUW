@@ -59,7 +59,7 @@ const
 let nebulaCanvas, nebulaCtx;
 let nebulaBaseImage;
 let nebulaBaseLoaded=false;
-let nebulaBasePath='Afbeeldingen/nebula_background_clean.jpg';
+let nebulaBasePath='Afbeeldingen/nebula_horizon.jpg';
 let mirrorTempCanvas=null, mirrorTempCtx=null;
 
 // --- REFLECTIE STERKTES (voor schuifjes) ---
@@ -115,28 +115,9 @@ window.REFLECTION_GAME = REFLECTION_GAME;
 function loadNebulaBackground(){
  try{
   nebulaBaseImage=new Image();
-  const tryPaths = [
-    'Afbeeldingen/nebula_background_clean.jpg',
-    'afbeeldingen/nebula_background_clean.jpg',
-    'Afbeeldingen/nebula_background_clean.png',
-    'afbeeldingen/nebula_background_clean.png',
-    'Afbeeldingen/nebula_background_clean.webp',
-    'afbeeldingen/nebula_background_clean.webp',
-    'Afbeeldingen/nebula_horizon.jpg',
-    'afbeeldingen/nebula_horizon.jpg',
-    './Afbeeldingen/nebula_background_clean.jpg',
-    './afbeeldingen/nebula_background_clean.jpg'
-  ];
-  let idx=0;
-  function tryNext(){
-    if(idx>=tryPaths.length){ console.warn('[Nebula] geen achtergrond gevonden - check map Afbeeldingen/afbeeldingen'); return; }
-    nebulaBasePath=tryPaths[idx];
-    nebulaBaseImage.src=nebulaBasePath;
-    idx++;
-  }
-  nebulaBaseImage.onload=()=>{nebulaBaseLoaded=true; console.log('[Nebula] base gevonden: '+nebulaBasePath); if(nebulaCanvas) drawNebulaBackground();};
-  nebulaBaseImage.onerror=()=>{console.warn('[Nebula] niet gevonden: '+nebulaBasePath); tryNext();};
-  tryNext();
+  nebulaBaseImage.src=nebulaBasePath;
+  nebulaBaseImage.onload=()=>{nebulaBaseLoaded=true; console.log('[Nebula] base: '+nebulaBasePath); if(nebulaCanvas) drawNebulaBackground();};
+  nebulaBaseImage.onerror=()=>{console.warn('[Nebula] base niet gevonden: '+nebulaBasePath);};
  }catch(e){console.error(e);}
 }
 function drawNebulaBackground(){
@@ -160,59 +141,97 @@ function drawNebulaBackground(){
  }catch(e){console.error('nebula draw',e); if(nebulaCtx) nebulaCtx.globalAlpha=1.0;}
 }
 
+let _isIOSCached = null;
+let _reflectionFrameCounter = 0;
+function _getIsIOS(){
+  if(_isIOSCached !== null) return _isIOSCached;
+  try{
+    _isIOSCached = (typeof navigator !== 'undefined' && (/iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)));
+  }catch(e){ _isIOSCached = false; }
+  return _isIOSCached;
+}
 function drawMirrorReflection(){
  try{
   if(!retroGridCtx||!retroGridCanvas) return;
+  if(typeof FLOOR_REFLECTION_GLOBAL !== 'undefined' && FLOOR_REFLECTION_GLOBAL <= 0.01) return;
   const width = retroGridCanvas.width, height = retroGridCanvas.height;
   const horizonY = Math.round(height * (typeof GRID_HORIZON_Y_FACTOR !== 'undefined' ? GRID_HORIZON_Y_FACTOR : 0.74));
-  const isIOS = (typeof navigator !== 'undefined' && (/iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)));
-  const reflectionHeight = Math.round(height * (isIOS ? 0.20 : 0.30));
+  const isIOS = _getIsIOS();
+  // --- IPHONE PERFORMANCE TUNING ---
+  // Was: 0.20 height en 40 slices = 120 drawImage calls. Nu: 0.16 en 16 slices = 48 calls (2.5x sneller)
+  const reflectionHeight = Math.round(height * (isIOS ? 0.16 : 0.30));
   if(reflectionHeight <= 2) return;
+  const iOSScale = isIOS ? 0.5 : 1.0; // halve resolutie temp buffer op iOS
+  const tmpW = Math.round(width * iOSScale);
+  const tmpH = Math.round(horizonY * iOSScale);
   if(!mirrorTempCanvas){
     mirrorTempCanvas = document.createElement('canvas');
-    mirrorTempCtx = mirrorTempCanvas.getContext('2d');
+    mirrorTempCtx = mirrorTempCanvas.getContext('2d', { alpha: true, willReadFrequently: false });
+    mirrorTempCtx.imageSmoothingEnabled = false;
   }
-  if(mirrorTempCanvas.width !== width || mirrorTempCanvas.height !== horizonY){
-    mirrorTempCanvas.width = width;
-    mirrorTempCanvas.height = horizonY;
+  if(mirrorTempCanvas.width !== tmpW || mirrorTempCanvas.height !== tmpH){
+    mirrorTempCanvas.width = tmpW;
+    mirrorTempCanvas.height = tmpH;
+    mirrorTempCtx.imageSmoothingEnabled = false;
   }
   const minSpread = 1.0;
   const maxSpread = (typeof GRID_BOTTOM_SPREAD_FACTOR !== 'undefined' ? GRID_BOTTOM_SPREAD_FACTOR : 2.0) * 0.92;
-  const slices = isIOS ? 40 : 120;
+  const slices = isIOS ? 16 : 120; // <-- MAIN FIX: 40 -> 16 op iPhone
+  const sliceSrcW = tmpW;
+  const sliceSrcH_Scaled = 3;
+  _reflectionFrameCounter++;
+  // op iOS elke 2e frame de zware enemy boost overslaan (visueel nauwelijks zichtbaar)
+  const skipEnemyBoostThisFrame = isIOS && (_reflectionFrameCounter % 3 === 0);
+
   retroGridCtx.save();
+  retroGridCtx.imageSmoothingEnabled = false;
   const BACKGROUND_TOP_PULL = 0.22;
+
   function drawLayer(sourceCanvas, layerStrength, options){
     if(!sourceCanvas || layerStrength <= 0.001) return;
     const keepFullWidth = options && options.keepFullWidth;
     const fadeMin = options && typeof options.fadeMin !== 'undefined' ? options.fadeMin : 0.0;
     const isBackground = options && options.isBackground;
     const tCtx = mirrorTempCtx;
-    tCtx.clearRect(0,0,width,horizonY);
-    try{ tCtx.drawImage(sourceCanvas, 0,0,width,horizonY, 0,0,width,horizonY); }catch(e){ return; }
-    if (sourceCanvas === gameCanvas) {
+    // clear alleen de gebruikte hoogte
+    tCtx.clearRect(0,0,tmpW,tmpH);
+    try{
+      // 1 drawImage naar low-res buffer ipv full-res
+      tCtx.drawImage(sourceCanvas, 0,0,width,horizonY, 0,0,tmpW,tmpH);
+    }catch(e){ return; }
+    if (sourceCanvas === gameCanvas && !skipEnemyBoostThisFrame) {
       try {
         let eStrength = (typeof enemyReflectionStrength !== 'undefined') ? enemyReflectionStrength : (window.enemyReflectionStrength || 2);
         if (eStrength > 0.05 && typeof enemies !== 'undefined' && enemies.length > 0) {
           let addAlpha = (eStrength / 2.0) * 0.65;
           if (addAlpha > 1) addAlpha = 1;
+          // Op iOS max 14 vijanden tekenen in reflectie, gesorteerd op laagste Y (dichtst bij horizon = meest zichtbaar)
+          let enemiesToDraw = enemies;
+          if(isIOS && enemies.length > 14){
+            enemiesToDraw = enemies.slice().sort((a,b)=>(b.y||0)-(a.y||0)).slice(0,14);
+          }
           tCtx.save();
           tCtx.globalCompositeOperation = 'lighter';
           tCtx.globalAlpha = addAlpha;
           const now = Date.now();
           const useSecondFrame = (now % 400) >= 200;
-          for (let en of enemies) {
+          for (let en of enemiesToDraw) {
             if (!en || en.y < -en.height || en.y > horizonY) continue;
             let img = null;
             if (en.type === (typeof ENEMY3_TYPE !== 'undefined' ? ENEMY3_TYPE : 'enemy3')) img = useSecondFrame ? (typeof bossGalagaImage2 !== 'undefined' ? bossGalagaImage2 : null) : (typeof bossGalagaImage !== 'undefined' ? bossGalagaImage : null);
             else if (en.type === (typeof ENEMY2_TYPE !== 'undefined' ? ENEMY2_TYPE : 'enemy2')) img = useSecondFrame ? (typeof butterflyImage2 !== 'undefined' ? butterflyImage2 : null) : (typeof butterflyImage !== 'undefined' ? butterflyImage : null);
             else img = useSecondFrame ? (typeof beeImage2 !== 'undefined' ? beeImage2 : null) : (typeof beeImage !== 'undefined' ? beeImage : null);
             if (!img || !img.complete || img.naturalHeight === 0) continue;
-            try { tCtx.drawImage(img, Math.round(en.x), Math.round(en.y), en.width, en.height); } catch(e) {}
+            try {
+              // schaal mee met iOSScale
+              tCtx.drawImage(img, Math.round(en.x * iOSScale), Math.round(en.y * iOSScale), Math.round(en.width * iOSScale), Math.round(en.height * iOSScale));
+            } catch(e) {}
           }
           tCtx.restore();
         }
       } catch(e) {}
     }
+    const invTmpH = 1.0 / Math.max(1, tmpH - 1);
     for(let i=0;i<slices;i++){
       const progress = i / slices;
       const y = horizonY + i * (reflectionHeight / slices);
@@ -231,21 +250,22 @@ function drawMirrorReflection(){
         effectiveProgress = Math.pow(progress, 0.72);
         effectiveProgress = Math.min(1, effectiveProgress + BACKGROUND_TOP_PULL * (1 - progress*0.3));
       }
-      const srcY = Math.round((1 - effectiveProgress) * (horizonY - 1));
-      const srcH = 3;
-      if(srcY < 0 || srcY >= horizonY) continue;
+      // srcY nu in low-res coordinaten
+      const srcY = Math.round((1 - effectiveProgress) * (tmpH - 1));
+      if(srcY < 0 || srcY >= tmpH) continue;
       const normalized = layerStrength / 0.50;
       const fadeCurve = (1 - progress * (1 - fadeMin));
       const fadeAlpha = fadeCurve * FLOOR_REFLECTION_GLOBAL * normalized;
-      if(fadeAlpha < 0.005) continue;
+      if(fadeAlpha < 0.008) continue;
       retroGridCtx.globalAlpha = fadeAlpha;
-      try{ retroGridCtx.drawImage(mirrorTempCanvas, 0, srcY, width, srcH, curX, y, curW, sliceH); }catch(e){}
+      try{ retroGridCtx.drawImage(mirrorTempCanvas, 0, srcY, sliceSrcW, sliceSrcH_Scaled, curX, y, curW, sliceH); }catch(e){}
     }
   }
   drawLayer(nebulaCanvas, REFLECTION_BACKGROUND, {keepFullWidth:true, fadeMin:0.65, isBackground:true});
   drawLayer(starrySkyCanvas, REFLECTION_STARS, {keepFullWidth:false, fadeMin:0.15, isBackground:false});
   drawLayer(gameCanvas, REFLECTION_GAME, {keepFullWidth:false, fadeMin:0.20, isBackground:false});
   retroGridCtx.globalAlpha = 1.0;
+  retroGridCtx.imageSmoothingEnabled = true;
   retroGridCtx.restore();
  }catch(e){ console.error('mirror reflection error',e); if(retroGridCtx) retroGridCtx.globalAlpha=1.0; }
 }
@@ -409,10 +429,37 @@ function drawSmokePlumes(){
 }
 
 function createAllReflectionSliders() {
-    return;
+    const container = document.getElementById('settingsPanel') || document.getElementById('graphicsSettings') || document.getElementById('menuSettings') || document.body;
+    if (!container) return;
+    if (typeof loadAllReflectionSettings === 'function') loadAllReflectionSettings();
+    function addSlider(id, label, initial) {
+        if (document.getElementById(id)) return;
+        const row = document.createElement('div');
+        row.className = 'setting-row';
+        row.style.cssText = 'display:flex;justify-content:space-between;align-items:center;margin:6px 12px;color:white;font:14px Arial;';
+        const lab = document.createElement('label'); lab.textContent = label; lab.htmlFor = id;
+        const control = document.createElement('div'); control.style.display='flex'; control.style.alignItems='center'; control.style.gap='8px';
+        const input = document.createElement('input'); input.type='range'; input.id=id; input.min=0; input.max=(id==='enemyReflectionSlider'?5:1); input.step=0.05; input.value=initial; input.style.width='140px';
+        const span = document.createElement('span'); span.id=id+'Value'; span.textContent=Math.round(initial*100)+'%'; span.style.minWidth='40px';
+        input.addEventListener('input', (e)=>{
+            const v=parseFloat(e.target.value); span.textContent=Math.round(v*100)+'%';
+            if(id==='enemyReflectionSlider'){ enemyReflectionStrength=v; window.enemyReflectionStrength=v; }
+            if(id==='bulletReflectionSlider'){ bulletReflectionStrength=v; window.bulletReflectionStrength=v; }
+            if(id==='textReflectionSlider'){ textReflectionStrength=v; window.textReflectionStrength=v; }
+            if(id==='buttonReflectionSlider'){ buttonReflectionStrength=v; window.buttonReflectionStrength=v; }
+            if(id==='logoReflectionSlider'){ logoReflectionStrength=v; window.logoReflectionStrength=v; }
+            if(typeof saveAllReflectionSettings==='function') saveAllReflectionSettings();
+        });
+        control.appendChild(input); control.appendChild(span); row.appendChild(lab); row.appendChild(control); container.appendChild(row);
+    }
+    addSlider('enemyReflectionSlider', 'Vijand reflectie', typeof enemyReflectionStrength!=='undefined'?enemyReflectionStrength:0.65);
+    addSlider('bulletReflectionSlider', 'Kogel reflectie', typeof bulletReflectionStrength!=='undefined'?bulletReflectionStrength:0.75);
+    addSlider('textReflectionSlider', 'Text reflectie (READY/PERFECT/SCORE)', typeof textReflectionStrength!=='undefined'?textReflectionStrength:0.40);
+    addSlider('buttonReflectionSlider', 'Button reflectie (START etc)', typeof buttonReflectionStrength!=='undefined'?buttonReflectionStrength:0.50);
+    addSlider('logoReflectionSlider', 'Logo reflectie', typeof logoReflectionStrength!=='undefined'?logoReflectionStrength:0.60);
 }
 window.createAllReflectionSliders = createAllReflectionSliders;
-// sliders uit - geen info troep
+if (document.readyState !== 'loading') { setTimeout(()=>{ try{ createAllReflectionSliders(); }catch(e){} }, 500); } else { document.addEventListener('DOMContentLoaded', ()=>{ setTimeout(()=>{ try{ createAllReflectionSliders(); }catch(e){} }, 500); }); }
 
 // =============================================================================
 // ====================== EINDE REFLECTIE SYSTEEM ==============================
