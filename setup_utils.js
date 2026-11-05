@@ -48,6 +48,18 @@ const
 ;
 
 
+// ==== iPHONE SAFARI PERFORMANCE HEADER - START ====
+const IS_IOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (typeof navigator !== 'undefined' && navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+function getOptimalDPR() {
+  if (typeof IS_IOS !== 'undefined' && IS_IOS) return Math.min(window.devicePixelRatio || 1, 1.5);
+  return Math.min(window.devicePixelRatio || 1, 2);
+}
+let nebulaCachedCanvas = null, nebulaCachedCtx = null, nebulaDirty = true;
+let _frameCounterSetup = 0;
+// ==== iPHONE SAFARI PERFORMANCE HEADER - END ====
+
+
+
 
 // =============================================================================
 // ====================== REFLECTIE SYSTEEM - COMPLEET OVERZICHT ================
@@ -105,10 +117,10 @@ function loadAllReflectionSettings() {
 window.saveAllReflectionSettings = saveAllReflectionSettings;
 window.loadAllReflectionSettings = loadAllReflectionSettings;
 
-const FLOOR_REFLECTION_GLOBAL = 0.15; // master          // master 35% zoals nu
-const REFLECTION_BACKGROUND = 1.80; // achtergrond / nebula BLIJFT           // achtergrond / nebula -> 50%
+const FLOOR_REFLECTION_GLOBAL = (typeof IS_IOS !== 'undefined' && IS_IOS ? 0.12 : 0.15); // master          // master 35% zoals nu
+const REFLECTION_BACKGROUND = (typeof IS_IOS !== 'undefined' && IS_IOS ? 1.20 : 1.80); // achtergrond / nebula BLIJFT           // achtergrond / nebula -> 50%
 const REFLECTION_STARS = 0; // sterren UIT                // sterren -> 50%
-const REFLECTION_SMOKE = 1.80; // rookpluim BLIJFT                // rookpluim -> 40%
+const REFLECTION_SMOKE = (typeof IS_IOS !== 'undefined' && IS_IOS ? 1.0 : 1.80); // rookpluim BLIJFT                // rookpluim -> 40%
 const REFLECTION_GAME = 0; // game/schepen UIT                 // game laag (schepen) -> iets subtieler
 window.FLOOR_REFLECTION_GLOBAL = FLOOR_REFLECTION_GLOBAL;
 window.REFLECTION_BACKGROUND = REFLECTION_BACKGROUND;
@@ -151,36 +163,51 @@ function drawNebulaBackground(){
     const cw = nebulaCanvas.width;
     const ch = nebulaCanvas.height;
     const horizonY = Math.round(ch * (typeof GRID_HORIZON_Y_FACTOR !== 'undefined' ? GRID_HORIZON_Y_FACTOR : 0.74));
-    // BREDER en LANGER en LAGER
-    const widthFactor = 1.8;   // 80% breder
-    const heightFactor = 1.8;  // 80% langer
+    const widthFactor = 1.8;
+    const heightFactor = 1.8;
     const targetW = Math.round(cw * widthFactor);
     const targetH = Math.round(horizonY * heightFactor);
-    const targetX = Math.round((cw - targetW) / 2); // gecentreerd breder
-    const targetY = 0; // bovenkant op 0, onderkant zakt nu ONDER horizon = lager
-    nebulaCtx.clearRect(0,0,cw,ch);
-    nebulaCtx.fillStyle='#000000';
-    nebulaCtx.fillRect(0,0,cw,ch);
-    if(nebulaBaseLoaded && nebulaBaseImage && nebulaBaseImage.complete && nebulaBaseImage.naturalWidth>0){
-      nebulaCtx.globalAlpha=1.0;
-      // onderkant komt nu op horizonY * 1.8 = ver onder horizon = lager
-      nebulaCtx.drawImage(nebulaBaseImage, targetX, targetY, targetW, targetH);
+    const targetX = Math.round((cw - targetW) / 2);
+    const targetY = 0;
+    if (!nebulaCachedCanvas || nebulaCachedCanvas.width !== cw || nebulaCachedCanvas.height !== ch || nebulaDirty) {
+      if (!nebulaCachedCanvas) {
+        nebulaCachedCanvas = document.createElement('canvas');
+        nebulaCachedCanvas.width = cw;
+        nebulaCachedCanvas.height = ch;
+        nebulaCachedCtx = nebulaCachedCanvas.getContext('2d', { alpha: false });
+      } else if (nebulaCachedCanvas.width !== cw || nebulaCachedCanvas.height !== ch) {
+        nebulaCachedCanvas.width = cw;
+        nebulaCachedCanvas.height = ch;
+        nebulaCachedCtx = nebulaCachedCanvas.getContext('2d', { alpha: false });
+      }
+      nebulaCachedCtx.fillStyle='#000000';
+      nebulaCachedCtx.fillRect(0,0,cw,ch);
+      if(nebulaBaseLoaded && nebulaBaseImage && nebulaBaseImage.complete && nebulaBaseImage.naturalWidth>0){
+        nebulaCachedCtx.globalAlpha=1.0;
+        nebulaCachedCtx.drawImage(nebulaBaseImage, targetX, targetY, targetW, targetH);
+      }
+      nebulaDirty = false;
     }
+    nebulaCtx.clearRect(0,0,cw,ch);
+    nebulaCtx.drawImage(nebulaCachedCanvas, 0,0);
     nebulaCtx.globalAlpha=1.0;
   }catch(e){ console.error('nebula', e); if(nebulaCtx) nebulaCtx.globalAlpha=1.0; }
 }
 
+
+
 function drawMirrorReflection(){
   try{
   if(!retroGridCtx||!retroGridCanvas) return;
+  _frameCounterSetup++;
+  if (typeof IS_IOS !== 'undefined' && IS_IOS && (_frameCounterSetup % 2 === 0)) return;
   const width = retroGridCanvas.width, height = retroGridCanvas.height;
   const horizonY = Math.round(height * (typeof GRID_HORIZON_Y_FACTOR !== 'undefined' ? GRID_HORIZON_Y_FACTOR : 0.74));
-  const isIOS = (typeof navigator !== 'undefined' && (/iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)));
-  const reflectionHeight = Math.round(height * (isIOS ? 0.20 : 0.30));
+  const reflectionHeight = Math.round(height * (typeof IS_IOS !== 'undefined' && IS_IOS ? 0.18 : 0.30));
   if(reflectionHeight <= 2) return;
   if(!mirrorTempCanvas){
     mirrorTempCanvas = document.createElement('canvas');
-    mirrorTempCtx = mirrorTempCanvas.getContext('2d');
+    mirrorTempCtx = mirrorTempCanvas.getContext('2d', { alpha: true, willReadFrequently: false });
   }
   if(mirrorTempCanvas.width !== width || mirrorTempCanvas.height !== horizonY){
     mirrorTempCanvas.width = width;
@@ -188,7 +215,7 @@ function drawMirrorReflection(){
   }
   const minSpread = 1.0;
   const maxSpread = (typeof GRID_BOTTOM_SPREAD_FACTOR !== 'undefined' ? GRID_BOTTOM_SPREAD_FACTOR : 2.0) * 0.92;
-  const slices = isIOS ? 40 : 120;
+  const slices = (typeof IS_IOS !== 'undefined' && IS_IOS) ? 24 : 80;
   retroGridCtx.save();
   const BACKGROUND_TOP_PULL = 0.22;
   function drawLayer(sourceCanvas, layerStrength, options){
@@ -204,10 +231,8 @@ function drawMirrorReflection(){
       const y = horizonY + i * (reflectionHeight / slices);
       const sliceH = Math.ceil(reflectionHeight / slices) + 1;
       let curW, curX;
-      if(keepFullWidth){
-        curW = width;
-        curX = 0;
-      } else {
+      if(keepFullWidth){ curW = width; curX = 0; }
+      else {
         const spreadFactor = minSpread + progress * (maxSpread - minSpread);
         curW = width * spreadFactor;
         curX = (width - curW) / 2;
@@ -228,14 +253,15 @@ function drawMirrorReflection(){
       try{ retroGridCtx.drawImage(mirrorTempCanvas, 0, srcY, width, srcH, curX, y, curW, sliceH); }catch(e){}
     }
   }
-  // ALLEEN ACHTERGROND BLIJFT - rest is 0 en wordt dus niet getekend
   drawLayer(nebulaCanvas, REFLECTION_BACKGROUND, {keepFullWidth:true, fadeMin:0.65, isBackground:true});
-  drawLayer(starrySkyCanvas, REFLECTION_STARS, {keepFullWidth:false, fadeMin:0.15, isBackground:false});
-  drawLayer(gameCanvas, REFLECTION_GAME, {keepFullWidth:false, fadeMin:0.20, isBackground:false});
-  retroGridCtx.globalAlpha = 1.0;
+  drawLayer(starrySkyCanvas, REFLECTION_STARS, {keepFullWidth:true, fadeMin:0.2});
+  drawLayer(gameCanvas, REFLECTION_GAME, {keepFullWidth:false, fadeMin:0.0});
   retroGridCtx.restore();
- }catch(e){ console.error('mirror reflection error',e); if(retroGridCtx) retroGridCtx.globalAlpha=1.0; }
+  retroGridCtx.globalAlpha = 1.0;
+  }catch(e){ console.error('mirror', e); }
 }
+
+
 
 
 // ===== EINDE NEBULA + SPIEGEL PER ELEMENT =====
@@ -1407,7 +1433,52 @@ function createStar() { /* ... ongewijzigd ... */ if (!starrySkyCanvas || starry
 function createStars() { /* ... ongewijzigd ... */ stars = []; if (starrySkyCanvas?.width > 0 && starrySkyCanvas?.height > 0) { for (let i = 0; i < NUM_STARS; i++) { const star = createStar(); if (star) stars.push(star); } } }
 
 /** Draws the starry background, handling movement, twinkle, and fade near horizon. */
-function drawStars() { /* ... ongewijzigd ... */ try { if (!starryCtx || !starrySkyCanvas || starrySkyCanvas.width === 0 || starrySkyCanvas.height === 0) return; const currentCanvasWidth = starrySkyCanvas.width; const currentCanvasHeight = starrySkyCanvas.height; starryCtx.clearRect(0, 0, currentCanvasWidth, currentCanvasHeight); const horizonY = Math.round(currentCanvasHeight * GRID_HORIZON_Y_FACTOR); const perspectiveHeight = currentCanvasHeight - horizonY; const fadeStartY = Math.max(0, horizonY - perspectiveHeight * STAR_FADE_START_FACTOR_ABOVE_HORIZON); const fadeEndY = horizonY; const fadeRange = Math.max(1, fadeEndY - fadeStartY); stars.forEach(star => { const normalizedRadius = (star.radius - MIN_STAR_RADIUS) / (MAX_STAR_RADIUS - MIN_STAR_RADIUS); const speed = BASE_PARALLAX_SPEED + (normalizedRadius * PARALLAX_SPEED_FACTOR); if (!isPaused || isShowingPortraitMessage) { star.y += speed; } if (star.y > currentCanvasHeight + star.radius) { star.y = -star.radius * 2; star.x = Math.random() * currentCanvasWidth; } if (!isPaused || isShowingPortraitMessage) { star.alpha += star.alphaChange; if (star.alpha <= 0.1 || star.alpha >= 1.0) { star.alphaChange *= -1; star.alpha = Math.max(0.1, Math.min(1.0, star.alpha)); } } let finalAlpha = star.alpha; if (fadeStartY >= 0 && star.y > fadeStartY) { if (star.y >= horizonY) { finalAlpha = 0; } else { finalAlpha *= (1.0 - Math.min(1.0, Math.max(0, (star.y - fadeStartY) / fadeRange))); } } finalAlpha = Math.max(0, Math.min(1.0, finalAlpha)); if (finalAlpha > 0.01) { starryCtx.beginPath(); starryCtx.arc(Math.round(star.x), Math.round(star.y), star.radius, 0, Math.PI * 2); starryCtx.fillStyle = `rgba(255, 255, 255, ${finalAlpha.toFixed(3)})`; starryCtx.fill(); } }); } catch (e) { console.error("Error in drawStars:", e); if (mainLoopId) cancelAnimationFrame(mainLoopId); mainLoopId = null; } }
+function drawStars() {
+  try {
+    if (!starryCtx || !starrySkyCanvas || starrySkyCanvas.width === 0 || starrySkyCanvas.height === 0) return;
+    const cw = starrySkyCanvas.width;
+    const ch = starrySkyCanvas.height;
+    starryCtx.clearRect(0, 0, cw, ch);
+    const horizonY = Math.round(ch * GRID_HORIZON_Y_FACTOR);
+    const perspectiveHeight = ch - horizonY;
+    const fadeStartY = Math.max(0, horizonY - perspectiveHeight * STAR_FADE_START_FACTOR_ABOVE_HORIZON);
+    const fadeEndY = horizonY;
+    const fadeRange = Math.max(1, fadeEndY - fadeStartY);
+    starryCtx.save();
+    starryCtx.shadowBlur = 0;
+    const total = (typeof IS_IOS !== 'undefined' && IS_IOS) ? (stars.length * 0.65 | 0) : stars.length;
+    for (let i=0; i<total; i++) {
+      const star = stars[i];
+      const normalizedRadius = (star.radius - MIN_STAR_RADIUS) / (MAX_STAR_RADIUS - MIN_STAR_RADIUS);
+      const speed = BASE_PARALLAX_SPEED + (normalizedRadius * PARALLAX_SPEED_FACTOR);
+      if (!isPaused || isShowingPortraitMessage) { star.y += speed; }
+      if (star.y > ch + star.radius) { star.y = -star.radius * 2; star.x = Math.random() * cw; }
+      if (!isPaused || isShowingPortraitMessage) {
+        star.alpha += star.alphaChange;
+        if (star.alpha <= 0.1 || star.alpha >= 1.0) { star.alphaChange *= -1; star.alpha = Math.max(0.1, Math.min(1.0, star.alpha)); }
+      }
+      let finalAlpha = star.alpha;
+      if (fadeStartY >= 0 && star.y > fadeStartY) {
+        if (star.y >= horizonY) { finalAlpha = 0; }
+        else { finalAlpha *= (1.0 - Math.min(1.0, Math.max(0, (star.y - fadeStartY) / fadeRange))); }
+      }
+      if (finalAlpha <= 0.01) continue;
+      finalAlpha = Math.max(0, Math.min(1.0, finalAlpha));
+      if (star.radius <= 1.5) {
+        starryCtx.fillStyle = `rgba(255,255,255,${finalAlpha.toFixed(2)})`;
+        starryCtx.fillRect(star.x|0, star.y|0, 1, 1);
+      } else {
+        starryCtx.beginPath();
+        starryCtx.arc(Math.round(star.x), Math.round(star.y), star.radius, 0, Math.PI*2);
+        starryCtx.fillStyle = `rgba(255, 255, 255, ${finalAlpha.toFixed(3)})`;
+        starryCtx.fill();
+      }
+    }
+    starryCtx.restore();
+  } catch (e) { console.error("Error in drawStars:", e); }
+}
+
+
 
 /** Draws the retro perspective grid. */
 function drawRetroGrid() { /* ... ongewijzigd ... */ try { if (!retroGridCtx || !retroGridCanvas || retroGridCanvas.width === 0 || retroGridCanvas.height === 0) return; if (!isPaused || isShowingPortraitMessage) { gridOffsetY -= GRID_SPEED; } const width = retroGridCanvas.width; const height = retroGridCanvas.height; retroGridCtx.clearRect(0, 0, width, height); const horizonY = Math.round(height * GRID_HORIZON_Y_FACTOR);
@@ -1436,60 +1507,78 @@ function defineChallengingStagePaths() { /* ... ongewijzigd ... */ challengingSt
 
 function resizeCanvases() {
     try {
+        const dpr = (typeof getOptimalDPR === 'function' ? getOptimalDPR() : Math.min(window.devicePixelRatio||1, 2));
         const width = window.innerWidth;
         const height = window.innerHeight;
         if (width <= 0 || height <= 0) return;
-
         let isCurrentlyPortrait = height > width;
-
         if (isCurrentlyPortrait) {
-            if (!isShowingPortraitMessage) { // Alleen acties uitvoeren als de staat VERANDERT naar portrait
+            if (!isShowingPortraitMessage) {
                 isShowingPortraitMessage = true;
-                // console.log("[resizeCanvases] Switched to Portrait. isShowingPortraitMessage = true."); // Debug
                 if (isInGameState && !isPaused) {
                     gameWasAutoPausedForPortrait = true;
-                    togglePause(); // Dit roept pauseAllSounds() aan
+                    togglePause();
                 } else if (!isInGameState || isPaused) {
-                    // Als we in het menu zijn, of al gepauzeerd,
-                    // roep pauseAllSounds direct aan om zeker te zijn dat alles stopt.
-                    // console.log("[resizeCanvases] In menu or already paused, calling pauseAllSounds() for portrait."); // Debug
                     pauseAllSounds();
                 }
             }
-        } else { // Landscape
-            if (isShowingPortraitMessage) { // Alleen acties uitvoeren als de staat VERANDERT naar landscape
+        } else {
+            if (isShowingPortraitMessage) {
                 isShowingPortraitMessage = false;
-                // console.log("[resizeCanvases] Switched to Landscape. isShowingPortraitMessage = false."); // Debug
                 if (gameWasAutoPausedForPortrait && isPaused) {
-                    togglePause(); // Dit roept resumeAllSounds() aan
+                    togglePause();
                 } else if (!isInGameState && !isPaused) {
-                    // Als we in het menu zijn en niet gepauzeerd, hervat menu muziek
-                    // console.log("[resizeCanvases] In menu and not paused, calling resumeAllSounds() for landscape."); // Debug
                     resumeAllSounds();
                 }
                 gameWasAutoPausedForPortrait = false;
             }
         }
-
-
-        if (nebulaCanvas && (nebulaCanvas.width !== width || nebulaCanvas.height !== height)) {
-            nebulaCanvas.width = width; nebulaCanvas.height = height; drawNebulaBackground();
+        function setCanvasSize(canvas, w, h, isNebula) {
+            if (!canvas) return false;
+            const scaledW = Math.round(w * dpr);
+            const scaledH = Math.round(h * dpr);
+            const changed = (canvas.width !== scaledW || canvas.height !== scaledH);
+            if (changed) {
+                canvas.width = scaledW;
+                canvas.height = scaledH;
+                canvas.style.width = w + 'px';
+                canvas.style.height = h + 'px';
+                const ctx = canvas.getContext('2d');
+                if (ctx) {
+                    ctx.setTransform(dpr,0,0,dpr,0,0);
+                    ctx.imageSmoothingEnabled = false;
+                }
+                if (isNebula && typeof nebulaDirty !== 'undefined') nebulaDirty = true;
+                if (isNebula) {
+                    try { drawNebulaBackground(); } catch(e){}
+                }
+            }
+            return changed;
         }
-        if (starrySkyCanvas && (starrySkyCanvas.width !== width || starrySkyCanvas.height !== height)) {
-            starrySkyCanvas.width = width; starrySkyCanvas.height = height; createStars();
+        setCanvasSize(nebulaCanvas, width, height, true);
+        if (setCanvasSize(starrySkyCanvas, width, height, false)) {
+            try { createStars(); } catch(e){}
         }
-        if (retroGridCanvas && (retroGridCanvas.width !== width || retroGridCanvas.height !== height)) {
-            retroGridCanvas.width = width; retroGridCanvas.height = height;
-        }
-        if (gameCanvas && (gameCanvas.width !== width || gameCanvas.height !== height)) {
-            const oldWidth = gameCanvas.width; gameCanvas.width = width; gameCanvas.height = height;
-            defineNormalWaveEntrancePaths(); defineChallengingStagePaths();
-            if (isInGameState) { handleResizeGameElements(oldWidth, width, height); }
+        setCanvasSize(retroGridCanvas, width, height, false);
+        const oldWidth = gameCanvas ? gameCanvas.width : width;
+        if (setCanvasSize(gameCanvas, width, height, false)) {
+            try { defineNormalWaveEntrancePaths(); } catch(e){}
+            try { defineChallengingStagePaths(); } catch(e){}
+            if (isInGameState) {
+                try { handleResizeGameElements(oldWidth, width, height); } catch(e){}
+            }
         } else if (!gameCanvas?.width || !gameCanvas?.height) {
-            defineNormalWaveEntrancePaths(); defineChallengingStagePaths();
+            try { defineNormalWaveEntrancePaths(); } catch(e){}
+            try { defineChallengingStagePaths(); } catch(e){}
         }
-    } catch (e) { console.error("Error in resizeCanvases:", e); }
+        if (typeof IS_IOS !== 'undefined' && IS_IOS && gameCanvas) {
+            gameCanvas.style.willChange = 'transform';
+            gameCanvas.style.transform = 'translateZ(0)';
+        }
+    } catch(e) { console.error('resizeCanvases error', e); }
 }
+
+
 
 
 /** Repositions ship and enemy targets after a resize while the game is running. */

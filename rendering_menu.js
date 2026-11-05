@@ -387,7 +387,7 @@ function showMenuState() {
        isTransitioningToDemoViaScoreScreen = false;
 
 
-       stopAllGameSoundsInternal();
+       if (typeof stopAllGameSoundsInternal === 'function') { try { stopAllGameSoundsInternal(); } catch(e){} } else if (typeof window.stopAllGameSoundsInternal === 'function') { try { window.stopAllGameSoundsInternal(); } catch(e){} }
        isGridSoundPlaying = false;
 
        playerLives = 3; score = 0; level = 1;
@@ -2325,77 +2325,101 @@ let lastFrameTime = 0;
 const targetFPS = 60;
 const frameInterval = 1000 / targetFPS; // Ongeveer 16.66 ms per frame
 
+let _renderFrameCount = 0;
 function mainLoop(timestamp) {
     try {
-        // Bereken hoeveel tijd er is verstreken sinds het vorige frame
-        if (!lastFrameTime) {
-            lastFrameTime = timestamp;
-        }
+        if (!lastFrameTime) { lastFrameTime = timestamp; }
         const elapsed = timestamp - lastFrameTime;
-
-        // Als de tijd korter is dan het gewenste interval (bijv. op 144Hz of hoger),
-        // slaan we de zware game-update over voor deze specifieke cyclus, 
-        // maar vragen we wel direct om een nieuwe animatieframe.
         if (elapsed < frameInterval - 1) {
             mainLoopId = requestAnimationFrame(mainLoop);
             return;
         }
+        lastFrameTime = timestamp;
+        _renderFrameCount++;
 
-        // Corrigeer de lastFrameTime voor de volgende iteratie, met een kleine marge tegen opstapeling
-        lastFrameTime = timestamp - (elapsed % frameInterval);
+        if (typeof IS_IOS !== 'undefined' && IS_IOS) {
+            if (_renderFrameCount % 2 === 1) { try { drawStars(); } catch(e){} }
+            if (retroGridCtx && retroGridCanvas && _renderFrameCount % 2 === 0) { try { drawRetroGrid(); } catch(e){} }
+        } else {
+            try { drawStars(); } catch(e){}
+            if (retroGridCtx && retroGridCanvas) { try { drawRetroGrid(); } catch(e){} }
+        }
+        pollControllerForMenu();
 
-        drawStars(); if (retroGridCtx && retroGridCanvas) { drawRetroGrid(); } pollControllerForMenu();
         if (isInGameState && !isPaused && !isShowingPortraitMessage) {
-            if (!isManualControl && connectedGamepadIndex !== null) { const gamepads = navigator.getGamepads(); if (gamepads?.[connectedGamepadIndex]) { const gamepad = gamepads[connectedGamepadIndex]; const currentDemoButtonStates = gamepad.buttons.map(b => b.pressed); let anyButtonPressedNow = false; for (let i = 0; i < currentDemoButtonStates.length; i++) { if (i === PS5_BUTTON_R1 || i === PS5_BUTTON_TRIANGLE) continue; if (currentDemoButtonStates[i] && !(previousDemoButtonStates[i] ?? false)) { anyButtonPressedNow = true; break; } } if (anyButtonPressedNow) { isCoopAIDemoActive = false; isPlayerTwoAI = false; showMenuState(); requestAnimationFrame(mainLoop); return; } previousDemoButtonStates = currentDemoButtonStates.slice(); } else { if(previousDemoButtonStates.length > 0) previousDemoButtonStates = []; } } else { if(previousDemoButtonStates.length > 0) previousDemoButtonStates = []; }
+            if (!isManualControl && connectedGamepadIndex !== null) {
+                const gamepads = navigator.getGamepads();
+                if (gamepads?.[connectedGamepadIndex]) {
+                    const gamepad = gamepads[connectedGamepadIndex];
+                    const currentDemoButtonStates = gamepad.buttons.map(b => b.pressed);
+                    let anyButtonPressedNow = false;
+                    for (let i = 0; i < currentDemoButtonStates.length; i++) {
+                        if (i === PS5_BUTTON_R1 || i === PS5_BUTTON_TRIANGLE) continue;
+                        if (currentDemoButtonStates[i] && !(previousDemoButtonStates[i] ?? false)) { anyButtonPressedNow = true; break; }
+                    }
+                    if (anyButtonPressedNow) { isCoopAIDemoActive = false; isPlayerTwoAI = false; showMenuState(); requestAnimationFrame(mainLoop); return; }
+                    previousDemoButtonStates = currentDemoButtonStates.slice();
+                } else { if(previousDemoButtonStates.length > 0) previousDemoButtonStates = []; }
+            } else { if(previousDemoButtonStates.length > 0) previousDemoButtonStates = []; }
 
             if(typeof window.runSingleGameUpdate === 'function') {
-                window.runSingleGameUpdate(timestamp);
-            }
-            else { console.error("FATAL: window.runSingleGameUpdate is not defined!"); if (mainLoopId) cancelAnimationFrame(mainLoopId); mainLoopId = null; showMenuState(); requestAnimationFrame(mainLoop); return; }
+                window.runSingleGameUpdate(timestamp, elapsed);
+            } else { console.error("FATAL: window.runSingleGameUpdate is not defined!"); if (mainLoopId) cancelAnimationFrame(mainLoopId); mainLoopId = null; showMenuState(); requestAnimationFrame(mainLoop); return; }
 
-            if (gameOverSequenceStartTime > 0) { const now = Date.now(); const elapsedTime = now - gameOverSequenceStartTime; const totalSequenceDuration = GAME_OVER_DURATION + RESULTS_SCREEN_DURATION; if (elapsedTime >= totalSequenceDuration) { showMenuState(); requestAnimationFrame(mainLoop); return; } }
+            if (gameOverSequenceStartTime > 0) {
+                const now = (typeof performance !== 'undefined' ? performance.now() : Date.now());
+                const elapsedTime = now - gameOverSequenceStartTime;
+                const totalSequenceDuration = GAME_OVER_DURATION + RESULTS_SCREEN_DURATION;
+                if (elapsedTime >= totalSequenceDuration) { showMenuState(); requestAnimationFrame(mainLoop); return; }
+            }
         } else if (isShowingScoreScreen && !isShowingPortraitMessage) {
-            if(typeof renderGame === 'function') {
-                renderGame();
-            }
+            if(typeof renderGame === 'function') { renderGame(); }
         } else if (isInGameState && gameOverSequenceStartTime > 0 && !isShowingPortraitMessage) {
-            if(typeof renderGame === 'function') {
-                renderGame();
-            }
-            const now = Date.now(); const elapsedTime = now - gameOverSequenceStartTime; const totalSequenceDuration = GAME_OVER_DURATION + RESULTS_SCREEN_DURATION; if (elapsedTime >= totalSequenceDuration) { showMenuState(); requestAnimationFrame(mainLoop); return; }
+            if(typeof renderGame === 'function') { renderGame(); }
+            const now = (typeof performance !== 'undefined' ? performance.now() : Date.now());
+            const elapsedTime = now - gameOverSequenceStartTime;
+            const totalSequenceDuration = GAME_OVER_DURATION + RESULTS_SCREEN_DURATION;
+            if (elapsedTime >= totalSequenceDuration) { showMenuState(); requestAnimationFrame(mainLoop); return; }
         } else if (isInGameState && (isPaused || isShowingPortraitMessage)) {
-            if(typeof renderGame === 'function') {
-                renderGame();
-            }
+            if(typeof renderGame === 'function') { renderGame(); }
         } else if (isInGameState && isCsCompletionDelayActive && !isShowingPortraitMessage) {
-            if(typeof window.runSingleGameUpdate === 'function') window.runSingleGameUpdate(timestamp);
+            if(typeof window.runSingleGameUpdate === 'function') window.runSingleGameUpdate(timestamp, elapsed);
             else if (typeof renderGame === 'function') renderGame();
         } else if (isInGameState && (isShowingPlayerGameOverMessage || isPlayer1ShowingGameOverMessage || isPlayer2ShowingGameOverMessage) && !isShowingPortraitMessage ) {
-            if(typeof window.runSingleGameUpdate === 'function') window.runSingleGameUpdate(timestamp);
+            if(typeof window.runSingleGameUpdate === 'function') window.runSingleGameUpdate(timestamp, elapsed);
             else if (typeof renderGame === 'function') renderGame();
-        }
-        else { // Menu state (of portrait message)
-            if(typeof renderGame === 'function') {
-                renderGame(); // RenderGame zal de portrait message tekenen indien nodig
-            }
+        } else {
+            if(typeof renderGame === 'function') { renderGame(); }
         }
         mainLoopId = requestAnimationFrame(mainLoop);
     } catch (e) {
-        console.error("!!! CRITICAL ERROR IN mainLoop:", e, e.stack); if (mainLoopId) cancelAnimationFrame(mainLoopId); mainLoopId = null; isPaused = false;
-        stopAllGameSoundsInternal();
+        console.error("!!! CRITICAL ERROR IN mainLoop:", e, e.stack);
+        if (mainLoopId) cancelAnimationFrame(mainLoopId);
+        mainLoopId = null; isPaused = false;
+        try { if (typeof stopAllGameSoundsInternal === 'function') stopAllGameSoundsInternal(); } catch(e2){}
         isGridSoundPlaying = false;
-        try { showMenuState(); } catch(menuErr) { console.error("Failed to return to menu after loop error:", menuErr); document.body.innerHTML = '<p style="color:white;">CRITICAL LOOP ERROR. Please refresh.</p>';}
+        try { showMenuState(); } catch(menuErr) { console.error("Failed to return to menu after loop error:", menuErr); }
+        mainLoopId = requestAnimationFrame(mainLoop);
     }
 }
+
+
 
 function startMainLoop() {
     if (mainLoopId === null) {
         gridOffsetY = 0;
-        lastFrameTime = 0; // Reset de timer bij de start
+        lastFrameTime = 0;
+        _renderFrameCount = 0;
+        if (typeof IS_IOS !== 'undefined' && IS_IOS && gameCanvas) {
+            gameCanvas.style.willChange = 'transform';
+            gameCanvas.style.transform = 'translateZ(0)';
+            if (gameCtx) gameCtx.imageSmoothingEnabled = false;
+        }
         mainLoop();
-    } else {
     }
 }
+
+
 
 function initializeGame() {
     try {
