@@ -387,7 +387,7 @@ function showMenuState() {
        isTransitioningToDemoViaScoreScreen = false;
 
 
-       if (typeof stopAllGameSoundsInternal === 'function') { try { stopAllGameSoundsInternal(); } catch(e){} } else if (typeof window.stopAllGameSoundsInternal === 'function') { try { window.stopAllGameSoundsInternal(); } catch(e){} }
+       stopAllGameSoundsInternal();
        isGridSoundPlaying = false;
 
        playerLives = 3; score = 0; level = 1;
@@ -2325,7 +2325,6 @@ let lastFrameTime = 0;
 const targetFPS = 60;
 const frameInterval = 1000 / targetFPS; // Ongeveer 16.66 ms per frame
 
-let _renderFrameCount = 0;
 function mainLoop(timestamp) {
     try {
         if (!lastFrameTime) { lastFrameTime = timestamp; }
@@ -2410,15 +2409,10 @@ function startMainLoop() {
         gridOffsetY = 0;
         lastFrameTime = 0;
         _renderFrameCount = 0;
-        if (typeof IS_IOS !== 'undefined' && IS_IOS && gameCanvas) {
-            gameCanvas.style.willChange = 'transform';
-            if (gameCtx) gameCtx.imageSmoothingEnabled = false;
-        }
+        if (gameCtx) gameCtx.imageSmoothingEnabled = false;
         mainLoop();
     }
 }
-
-
 
 
 
