@@ -59,7 +59,7 @@ const
 let nebulaCanvas, nebulaCtx;
 let nebulaBaseImage;
 let nebulaBaseLoaded=false;
-let nebulaBasePath='Afbeeldingen/nebula_background_clean.jpg';
+let nebulaBasePath='Afbeeldingen/nebula_horizon.jpg';
 let mirrorTempCanvas=null, mirrorTempCtx=null;
 
 // --- REFLECTIE STERKTES (voor schuifjes) ---
@@ -114,50 +114,56 @@ window.REFLECTION_GAME = REFLECTION_GAME;
 
 function loadNebulaBackground(){
  try{
-  nebulaBaseImage=new Image();
-  const tryPaths = [
-    'Afbeeldingen/nebula_background_clean.jpg',
-    'afbeeldingen/nebula_background_clean.jpg',
-    'Afbeeldingen/nebula_background_clean.png',
-    'afbeeldingen/nebula_background_clean.png',
-    'Afbeeldingen/nebula_background_clean.webp',
-    'afbeeldingen/nebula_background_clean.webp',
-    'Afbeeldingen/nebula_horizon.jpg',
-    'afbeeldingen/nebula_horizon.jpg',
-    './Afbeeldingen/nebula_background_clean.jpg',
-    './afbeeldingen/nebula_background_clean.jpg'
-  ];
-  let idx=0;
-  function tryNext(){
-    if(idx>=tryPaths.length){ console.warn('[Nebula] geen achtergrond gevonden - check map Afbeeldingen/afbeeldingen'); return; }
-    nebulaBasePath=tryPaths[idx];
-    nebulaBaseImage.src=nebulaBasePath;
-    idx++;
-  }
-  nebulaBaseImage.onload=()=>{nebulaBaseLoaded=true; console.log('[Nebula] base gevonden: '+nebulaBasePath); if(nebulaCanvas) drawNebulaBackground();};
-  nebulaBaseImage.onerror=()=>{console.warn('[Nebula] niet gevonden: '+nebulaBasePath); tryNext();};
-  tryNext();
- }catch(e){console.error(e);}
+  if(!nebulaBaseImage) nebulaBaseImage=new Image();
+  nebulaBasePath='Afbeeldingen/nebula_horizon.jpg';
+  nebulaBaseImage.onload=()=>{
+    nebulaBaseLoaded=true; 
+    console.log('[Nebula] geladen: '+nebulaBasePath + ' ('+nebulaBaseImage.naturalWidth+'x'+nebulaBaseImage.naturalHeight+')'); 
+    if(typeof drawNebulaBackground==='function' && nebulaCanvas) {
+        drawNebulaBackground();
+        // force extra draw after resize to be sure
+        setTimeout(()=>{ if(typeof drawNebulaBackground==='function') drawNebulaBackground(); }, 100);
+    }
+  };
+  nebulaBaseImage.onerror=()=>{
+    console.error('[Nebula] niet gevonden: '+nebulaBasePath+' - probeer fallback naar afbeeldingen/ (kleine letter)');
+    if(nebulaBasePath.startsWith('Afbeeldingen/')){
+        nebulaBasePath='afbeeldingen/nebula_horizon.jpg';
+        console.log('[Nebula] retry met: '+nebulaBasePath);
+        nebulaBaseImage.src=nebulaBasePath + '?v=' + Date.now();
+    } else {
+        console.error('[Nebula] ook fallback faalt. Controleer of Afbeeldingen/nebula_horizon.jpg echt op de server staat en via HTTP bereikbaar is (niet file://).');
+    }
+  };
+  // Cache bust om zwart vlak door oude failed load te voorkomen
+  nebulaBaseImage.src=nebulaBasePath + '?v=' + Date.now();
+  console.log('[Nebula] start laden: ' + nebulaBaseImage.src);
+ }catch(e){console.error('[Nebula] error',e);}
 }
+
 function drawNebulaBackground(){
- try{
-  if(!nebulaCtx||!nebulaCanvas||nebulaCanvas.width===0)return;
-  const cw=nebulaCanvas.width, ch=nebulaCanvas.height;
-  const horizonY = Math.round(ch * (typeof GRID_HORIZON_Y_FACTOR !== 'undefined' ? GRID_HORIZON_Y_FACTOR : 0.74));
-  const extraHeightFactor = 1.08;
-  const targetW = cw;
-  const targetH = Math.round(horizonY * extraHeightFactor);
-  const targetX = 0;
-  const targetY = Math.round(horizonY - targetH);
-  nebulaCtx.clearRect(0,0,cw,ch);
-  nebulaCtx.fillStyle='#000000';
-  nebulaCtx.fillRect(0,0,cw,ch);
-  if(nebulaBaseLoaded&&nebulaBaseImage&&nebulaBaseImage.complete&&nebulaBaseImage.naturalWidth!==0){
-   nebulaCtx.globalAlpha=1.0;
-   nebulaCtx.drawImage(nebulaBaseImage, targetX, targetY, targetW, targetH);
-  }
-  nebulaCtx.globalAlpha=1.0;
- }catch(e){console.error('nebula draw',e); if(nebulaCtx) nebulaCtx.globalAlpha=1.0;}
+  if(!nebulaCtx || !nebulaCanvas || nebulaCanvas.width===0) return;
+  try{
+    const cw = nebulaCanvas.width;
+    const ch = nebulaCanvas.height;
+    const horizonY = Math.round(ch * (typeof GRID_HORIZON_Y_FACTOR !== 'undefined' ? GRID_HORIZON_Y_FACTOR : 0.74));
+    // BREDER en LANGER en LAGER
+    const widthFactor = 1.8;   // 80% breder
+    const heightFactor = 1.8;  // 80% langer
+    const targetW = Math.round(cw * widthFactor);
+    const targetH = Math.round(horizonY * heightFactor);
+    const targetX = Math.round((cw - targetW) / 2); // gecentreerd breder
+    const targetY = 0; // bovenkant op 0, onderkant zakt nu ONDER horizon = lager
+    nebulaCtx.clearRect(0,0,cw,ch);
+    nebulaCtx.fillStyle='#000000';
+    nebulaCtx.fillRect(0,0,cw,ch);
+    if(nebulaBaseLoaded && nebulaBaseImage && nebulaBaseImage.complete && nebulaBaseImage.naturalWidth>0){
+      nebulaCtx.globalAlpha=1.0;
+      // onderkant komt nu op horizonY * 1.8 = ver onder horizon = lager
+      nebulaCtx.drawImage(nebulaBaseImage, targetX, targetY, targetW, targetH);
+    }
+    nebulaCtx.globalAlpha=1.0;
+  }catch(e){ console.error('nebula', e); if(nebulaCtx) nebulaCtx.globalAlpha=1.0; }
 }
 
 function drawMirrorReflection(){
@@ -1140,7 +1146,7 @@ function initializeDOMElements() {
     retroGridCtx = retroGridCanvas?.getContext('2d');
     gameCanvas = document.getElementById("gameCanvas");
     gameCtx = gameCanvas?.getContext("2d");
-    if (nebulaCanvas && !nebulaBaseImage) { loadNebulaBackground(); }
+    if (nebulaCanvas) { if(!nebulaBaseImage) loadNebulaBackground(); } else { console.warn('[Nebula] canvas #nebulaCanvas niet gevonden in index.html!'); }
     if (!starryCtx || !retroGridCtx || !gameCtx) { console.error("FATAL: Could not initialize one or more canvas contexts!"); alert("Error loading critical canvas elements."); document.body.innerHTML = '<p style="color:white;">FATAL ERROR</p>'; return false; }
 
     if (gameCanvas.width === 0 || gameCanvas.height === 0) {
