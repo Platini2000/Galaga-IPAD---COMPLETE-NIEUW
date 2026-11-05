@@ -63,11 +63,11 @@ let nebulaBasePath='Afbeeldingen/nebula_horizon.jpg';
 let mirrorTempCanvas=null, mirrorTempCtx=null;
 
 // --- REFLECTIE STERKTES (voor schuifjes) ---
-let enemyReflectionStrength = 0.45;
+let enemyReflectionStrength = 1.00;
 let bulletReflectionStrength = 0.85;
-let textReflectionStrength = 0.10;   // alle text: READY, PERFECT, SCORE etc
-let buttonReflectionStrength = 0.02; // START / 1 PLAYER / 2 PLAYER buttons
-let logoReflectionStrength = 0.02;   // Galaga logo
+let textReflectionStrength = 0.01;   // alle text: READY, PERFECT, SCORE etc   // alle text: READY, PERFECT, SCORE etc
+let buttonReflectionStrength = 0.01; // START / 1 PLAYER / 2 PLAYER buttons // START / 1 PLAYER / 2 PLAYER buttons
+let logoReflectionStrength = 0.01;   // Galaga logo   // Galaga logo
 
 // window exports
 window.enemyReflectionStrength = enemyReflectionStrength;
@@ -101,10 +101,10 @@ function loadAllReflectionSettings() {
 window.saveAllReflectionSettings = saveAllReflectionSettings;
 window.loadAllReflectionSettings = loadAllReflectionSettings;
 
-const FLOOR_REFLECTION_GLOBAL = 0.35;          // master 35% zoals nu
-const REFLECTION_BACKGROUND = 0.90;           // achtergrond / nebula -> 50%
-const REFLECTION_STARS = 0.90;                // sterren -> 50%
-const REFLECTION_SMOKE = 0.90;                // rookpluim -> 40%
+const FLOOR_REFLECTION_GLOBAL = 0.15;          // master 35% zoals nu
+const REFLECTION_BACKGROUND = 1.80;           // achtergrond / nebula -> 50%
+const REFLECTION_STARS = 1.80;                // sterren -> 50%
+const REFLECTION_SMOKE = 1.80;                // rookpluim -> 40%
 const REFLECTION_GAME = 0.55;                 // game laag (schepen) -> iets subtieler
 window.FLOOR_REFLECTION_GLOBAL = FLOOR_REFLECTION_GLOBAL;
 window.REFLECTION_BACKGROUND = REFLECTION_BACKGROUND;
@@ -214,6 +214,41 @@ function drawMirrorReflection(){
   drawLayer(nebulaCanvas, REFLECTION_BACKGROUND, {keepFullWidth:true, fadeMin:0.65, isBackground:true});
   drawLayer(starrySkyCanvas, REFLECTION_STARS, {keepFullWidth:false, fadeMin:0.15, isBackground:false});
   drawLayer(gameCanvas, REFLECTION_GAME, {keepFullWidth:false, fadeMin:0.20, isBackground:false});
+
+  // --- ALLEEN VIJANDEN FELLER - text/button/logo blijven 0.01 zoals jij gaf ---
+  try {
+    let eStrength = (typeof enemyReflectionStrength !== 'undefined') ? enemyReflectionStrength : (window.enemyReflectionStrength || 0);
+    if (eStrength > 0.02 && typeof enemies !== 'undefined' && enemies.length > 0) {
+      if (!window._mirrorEnemyCanvas) {
+        window._mirrorEnemyCanvas = document.createElement('canvas');
+        window._mirrorEnemyCtx = window._mirrorEnemyCanvas.getContext('2d');
+      }
+      let mECanvas = window._mirrorEnemyCanvas;
+      let mECtx = window._mirrorEnemyCtx;
+      if (mECanvas.width !== width || mECanvas.height !== horizonY) {
+        mECanvas.width = width;
+        mECanvas.height = horizonY;
+      }
+      mECtx.clearRect(0,0,width,horizonY);
+      for (let en of enemies) {
+        if (!en || en.y < -en.height || en.y > horizonY) continue;
+        try {
+          let img = null;
+          let useSecondFrame = (Date.now() % 400) >= 200;
+          if (en.type === (typeof ENEMY3_TYPE !== 'undefined' ? ENEMY3_TYPE : 'enemy3')) img = useSecondFrame ? (typeof bossGalagaImage2 !== 'undefined' ? bossGalagaImage2 : null) : (typeof bossGalagaImage !== 'undefined' ? bossGalagaImage : null);
+          else if (en.type === (typeof ENEMY2_TYPE !== 'undefined' ? ENEMY2_TYPE : 'enemy2')) img = useSecondFrame ? (typeof butterflyImage2 !== 'undefined' ? butterflyImage2 : null) : (typeof butterflyImage !== 'undefined' ? butterflyImage : null);
+          else img = useSecondFrame ? (typeof beeImage2 !== 'undefined' ? beeImage2 : null) : (typeof beeImage !== 'undefined' ? beeImage : null);
+          if (img && img.complete && img.naturalHeight !== 0) {
+            mECtx.drawImage(img, Math.round(en.x), Math.round(en.y), en.width, en.height);
+          }
+        } catch(e2) {}
+      }
+      // eStrength 2.00 = basis, 4.00 = feller, 5.00 = max fel - alleen vijanden
+      let extra = eStrength;
+      if (extra > 5) extra = 5;
+      drawLayer(mECanvas, extra, {keepFullWidth:false, fadeMin:0.20, isBackground:false});
+    }
+  } catch(err) {}
 
   retroGridCtx.globalAlpha = 1.0;
   retroGridCtx.restore();
@@ -388,7 +423,7 @@ function createAllReflectionSliders() {
         row.style.cssText = 'display:flex;justify-content:space-between;align-items:center;margin:6px 12px;color:white;font:14px Arial;';
         const lab = document.createElement('label'); lab.textContent = label; lab.htmlFor = id;
         const control = document.createElement('div'); control.style.display='flex'; control.style.alignItems='center'; control.style.gap='8px';
-        const input = document.createElement('input'); input.type='range'; input.id=id; input.min=0; input.max=1; input.step=0.05; input.value=initial; input.style.width='140px';
+        const input = document.createElement('input'); input.type='range'; input.id=id; input.min=0; input.max=(id==='enemyReflectionSlider'?5:1); input.step=0.05; input.value=initial; input.style.width='140px';
         const span = document.createElement('span'); span.id=id+'Value'; span.textContent=Math.round(initial*100)+'%'; span.style.minWidth='40px';
         input.addEventListener('input', (e)=>{
             const v=parseFloat(e.target.value); span.textContent=Math.round(v*100)+'%';
