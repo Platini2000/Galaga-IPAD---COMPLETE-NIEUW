@@ -63,11 +63,11 @@ let nebulaBasePath='Afbeeldingen/nebula_horizon.jpg';
 let mirrorTempCanvas=null, mirrorTempCtx=null;
 
 // --- REFLECTIE STERKTES (voor schuifjes) ---
-let enemyReflectionStrength = 0.45;
-let bulletReflectionStrength = 2.00;
-let textReflectionStrength = 0.01;   // alle text: READY, PERFECT, SCORE etc   // alle text: READY, PERFECT, SCORE etc
-let buttonReflectionStrength = 0.01; // START / 1 PLAYER / 2 PLAYER buttons // START / 1 PLAYER / 2 PLAYER buttons
-let logoReflectionStrength = 0.01;   // Galaga logo   // Galaga logo
+let enemyReflectionStrength = 2.00;
+let bulletReflectionStrength = 0.85;
+let textReflectionStrength = 0.01;   // alle text: READY, PERFECT, SCORE etc
+let buttonReflectionStrength = 0.01; // START / 1 PLAYER / 2 PLAYER buttons
+let logoReflectionStrength = 0.01;   // Galaga logo
 
 // window exports
 window.enemyReflectionStrength = enemyReflectionStrength;
@@ -102,9 +102,9 @@ window.saveAllReflectionSettings = saveAllReflectionSettings;
 window.loadAllReflectionSettings = loadAllReflectionSettings;
 
 const FLOOR_REFLECTION_GLOBAL = 0.15;          // master 35% zoals nu
-const REFLECTION_BACKGROUND = 2.00;           // achtergrond / nebula -> 50%
-const REFLECTION_STARS = 2.00;                // sterren -> 50%
-const REFLECTION_SMOKE = 2.00;                // rookpluim -> 40%
+const REFLECTION_BACKGROUND = 1.80;           // achtergrond / nebula -> 50%
+const REFLECTION_STARS = 1.80;                // sterren -> 50%
+const REFLECTION_SMOKE = 1.80;                // rookpluim -> 40%
 const REFLECTION_GAME = 0.55;                 // game laag (schepen) -> iets subtieler
 window.FLOOR_REFLECTION_GLOBAL = FLOOR_REFLECTION_GLOBAL;
 window.REFLECTION_BACKGROUND = REFLECTION_BACKGROUND;
@@ -213,95 +213,11 @@ function drawMirrorReflection(){
 
   drawLayer(nebulaCanvas, REFLECTION_BACKGROUND, {keepFullWidth:true, fadeMin:0.65, isBackground:true});
   drawLayer(starrySkyCanvas, REFLECTION_STARS, {keepFullWidth:false, fadeMin:0.15, isBackground:false});
-  drawLayer(gameCanvas, REFLECTION_GAME, {keepFullWidth:false, fadeMin:0.20, isBackground:false});
-
-  // --- HIGH-PERF VIJANDEN FELLER - alleen vijanden, 60fps safe voor iPhone ---
-  try {
-    let eStrength = (typeof enemyReflectionStrength !== 'undefined') ? enemyReflectionStrength : (window.enemyReflectionStrength || 0);
-    if (eStrength > 0.02 && typeof enemies !== 'undefined' && enemies.length > 0) {
-      const now = Date.now();
-      const useSecondFrame = (now % 400) >= 200;
-      for (let en of enemies) {
-        if (!en || en.y < -en.height || en.y > horizonY) continue;
-        let img = null;
-        try {
-          if (en.type === (typeof ENEMY3_TYPE !== 'undefined' ? ENEMY3_TYPE : 'enemy3')) img = useSecondFrame ? (typeof bossGalagaImage2 !== 'undefined' ? bossGalagaImage2 : null) : (typeof bossGalagaImage !== 'undefined' ? bossGalagaImage : null);
-          else if (en.type === (typeof ENEMY2_TYPE !== 'undefined' ? ENEMY2_TYPE : 'enemy2')) img = useSecondFrame ? (typeof butterflyImage2 !== 'undefined' ? butterflyImage2 : null) : (typeof butterflyImage !== 'undefined' ? butterflyImage : null);
-          else img = useSecondFrame ? (typeof beeImage2 !== 'undefined' ? beeImage2 : null) : (typeof beeImage !== 'undefined' ? beeImage : null);
-        } catch(e) {}
-        if (!img || !img.complete || img.naturalHeight === 0) continue;
-        // mirror positie met zelfde spread als drawLayer
-        let progress = Math.max(0, Math.min(1, (horizonY - en.y) / horizonY));
-        let mirroredY = horizonY + (horizonY - en.y) * 0.55;
-        if (mirroredY < horizonY || mirroredY > horizonY + reflectionHeight) continue;
-        let p2 = (mirroredY - horizonY) / reflectionHeight;
-        let spreadFactor = minSpread + p2 * (maxSpread - minSpread);
-        let curW = width * spreadFactor;
-        let curX = (width - curW) / 2;
-        let drawX = curX + (en.x * spreadFactor);
-        let drawY = mirroredY;
-        let fade = (1 - p2 * 0.8);
-        let normalized = eStrength / 0.50;
-        let alpha = fade * FLOOR_REFLECTION_GLOBAL * normalized * 0.55;
-        if (alpha < 0.005) continue;
-        if (alpha > 0.95) alpha = 0.95;
-        retroGridCtx.save();
-        retroGridCtx.globalAlpha = alpha;
-        // verticale flip voor spiegel
-        retroGridCtx.translate(0, drawY);
-        retroGridCtx.scale(1, -0.55);
-        retroGridCtx.translate(0, -drawY);
-        try { retroGridCtx.drawImage(img, drawX, drawY, en.width * spreadFactor, en.height * 0.55); } catch(e) {}
-        retroGridCtx.restore();
-      }
-    }
-  } catch(err) {}
-
-  drawLayer(nebulaCanvas, REFLECTION_BACKGROUND, {keepFullWidth:true, fadeMin:0.65, isBackground:true});
-  drawLayer(starrySkyCanvas, REFLECTION_STARS, {keepFullWidth:false, fadeMin:0.15, isBackground:false});
-  drawLayer(gameCanvas, REFLECTION_GAME, {keepFullWidth:false, fadeMin:0.20, isBackground:false});
-
-  // --- HIGH-PERF VIJANDEN FELLER - alleen vijanden, 60fps safe voor iPhone ---
-  try {
-    let eStrength = (typeof enemyReflectionStrength !== 'undefined') ? enemyReflectionStrength : (window.enemyReflectionStrength || 0);
-    if (eStrength > 0.02 && typeof enemies !== 'undefined' && enemies.length > 0) {
-      const now = Date.now();
-      const useSecondFrame = (now % 400) >= 200;
-      for (let en of enemies) {
-        if (!en || en.y < -en.height || en.y > horizonY) continue;
-        let img = null;
-        try {
-          if (en.type === (typeof ENEMY3_TYPE !== 'undefined' ? ENEMY3_TYPE : 'enemy3')) img = useSecondFrame ? (typeof bossGalagaImage2 !== 'undefined' ? bossGalagaImage2 : null) : (typeof bossGalagaImage !== 'undefined' ? bossGalagaImage : null);
-          else if (en.type === (typeof ENEMY2_TYPE !== 'undefined' ? ENEMY2_TYPE : 'enemy2')) img = useSecondFrame ? (typeof butterflyImage2 !== 'undefined' ? butterflyImage2 : null) : (typeof butterflyImage !== 'undefined' ? butterflyImage : null);
-          else img = useSecondFrame ? (typeof beeImage2 !== 'undefined' ? beeImage2 : null) : (typeof beeImage !== 'undefined' ? beeImage : null);
-        } catch(e) {}
-        if (!img || !img.complete || img.naturalHeight === 0) continue;
-        // mirror positie met zelfde spread als drawLayer
-        let progress = Math.max(0, Math.min(1, (horizonY - en.y) / horizonY));
-        let mirroredY = horizonY + (horizonY - en.y) * 0.55;
-        if (mirroredY < horizonY || mirroredY > horizonY + reflectionHeight) continue;
-        let p2 = (mirroredY - horizonY) / reflectionHeight;
-        let spreadFactor = minSpread + p2 * (maxSpread - minSpread);
-        let curW = width * spreadFactor;
-        let curX = (width - curW) / 2;
-        let drawX = curX + (en.x * spreadFactor);
-        let drawY = mirroredY;
-        let fade = (1 - p2 * 0.8);
-        let normalized = eStrength / 0.50;
-        let alpha = fade * FLOOR_REFLECTION_GLOBAL * normalized * 0.55;
-        if (alpha < 0.005) continue;
-        if (alpha > 0.95) alpha = 0.95;
-        retroGridCtx.save();
-        retroGridCtx.globalAlpha = alpha;
-        // verticale flip voor spiegel
-        retroGridCtx.translate(0, drawY);
-        retroGridCtx.scale(1, -0.55);
-        retroGridCtx.translate(0, -drawY);
-        try { retroGridCtx.drawImage(img, drawX, drawY, en.width * spreadFactor, en.height * 0.55); } catch(e) {}
-        retroGridCtx.restore();
-      }
-    }
-  } catch(err) {}
+  // --- snelheid hersteld: geen extra canvas, alleen game laag iets feller voor vijanden ---
+  let _enemyFactor = 1;
+  try { _enemyFactor = ((typeof enemyReflectionStrength !== 'undefined' ? enemyReflectionStrength : 2) / 2.0); if (_enemyFactor < 0.1) _enemyFactor = 0.1; if (_enemyFactor > 3) _enemyFactor = 3; window._enemyMirrorFactor = _enemyFactor; } catch(e) { window._enemyMirrorFactor = 1; }
+  let effectiveGameReflection = REFLECTION_GAME * _enemyFactor;
+  drawLayer(gameCanvas, effectiveGameReflection, {keepFullWidth:false, fadeMin:0.20, isBackground:false});
 
   retroGridCtx.globalAlpha = 1.0;
   retroGridCtx.restore();

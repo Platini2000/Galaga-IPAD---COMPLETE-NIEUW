@@ -946,7 +946,9 @@ function drawTextReflection(text, x, y, font, color, align, baseline, strength) 
     const floorY = getFloorY();
     if (y > floorY) return;
     gameCtx.save();
-    gameCtx.globalAlpha = strength * 0.35;
+    let _ef = (typeof window._enemyMirrorFactor !== 'undefined' ? window._enemyMirrorFactor : 1);
+    if (_ef < 0.1) _ef = 0.1;
+    gameCtx.globalAlpha = (strength * 0.35) / _ef;
     const mirroredY = floorY + (floorY - y);
     gameCtx.translate(0, mirroredY);
     gameCtx.scale(1, -0.55);
@@ -979,7 +981,9 @@ function drawLogoReflection(strength) {
     if (logoY > floorY) return;
     const mirroredY = floorY + (floorY - logoY);
     gameCtx.save();
-    gameCtx.globalAlpha = strength * 0.30;
+    let _ef2 = (typeof window._enemyMirrorFactor !== 'undefined' ? window._enemyMirrorFactor : 1);
+    if (_ef2 < 0.1) _ef2 = 0.1;
+    gameCtx.globalAlpha = (strength * 0.30) / _ef2;
     gameCtx.translate(0, mirroredY);
     gameCtx.scale(1, -0.50);
     gameCtx.translate(0, -mirroredY);
