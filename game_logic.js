@@ -619,6 +619,14 @@ function resetGameInternal() {
     smoothedShipX = undefined;
     aiCanShootTime = 0;
     aiLastShotTime = 0;
+    // RESET ANTI-CAMPING trackers
+    try {
+        aiCoopP1_LastSignificantX = null; aiCoopP1_StationarySince = 0; aiCoopP1_ForceHuntUntil = 0;
+        aiCoopP2_LastSignificantX = null; aiCoopP2_StationarySince = 0; aiCoopP2_ForceHuntUntil = 0;
+        aiSingle_LastSignificantX = null; aiSingle_StationarySince = 0; aiSingle_ForceHuntUntil = 0;
+        if (typeof smoothedShip1X !== 'undefined') { /* keep */ }
+        if (typeof smoothedShip2X !== 'undefined') { /* keep */ }
+    } catch(e) {}
     if (!(selectedGameMode === 'coop' && (isCoopAIDemoActive || (isPlayerTwoAI && selectedOnePlayerGameVariant === '1P_VS_AI_COOP')))) {
         aiPlayerActivelySeekingCaptureById = null;
         coopAICaptureDiveAnticipationActive = false;
@@ -3680,11 +3688,51 @@ function aiControl() {
             }
         }
 
+        // --- ANTI-CAMPING: max 5 sec stil, daarna verplicht jagen (ook single AI) ---
+        try {
+            if (activeShipForAI && typeof updateAIAntiCampingTracker === 'function') {
+                updateAIAntiCampingTracker(aiIdentifierForAI, activeShipForAI.x, now);
+            }
+            if (typeof isAIInForcedHunt === 'function' && isAIInForcedHunt(aiIdentifierForAI, now)) {
+                // Zoek beste vijand om te jagen
+                let huntTarget = null;
+                let bestScore = -Infinity;
+                for (const enemy of enemies) {
+                    if (!enemy) continue;
+                    let score = 0;
+                    const eCX = enemy.x + enemy.width/2;
+                    const dist = Math.abs(eCX - shipCenterX);
+                    score = 2000 - dist;
+                    if (enemy.state === 'attacking' || enemy.state === 'diving') score += 4000;
+                    if (enemy.y > 0 && enemy.y < canvasHeight * 0.7) score += 1500;
+                    if (enemy.type === ENEMY3_TYPE && enemy.hasCapturedShip) score += 5000;
+                    if (score > bestScore) { bestScore = score; huntTarget = enemy; }
+                }
+                if (huntTarget) {
+                    const middleX = canvasWidth/2 - effectiveShipWidth/2;
+                    const targetX = huntTarget.x + huntTarget.width/2 - effectiveShipWidth/2;
+                    desiredTargetX = targetX * 0.7 + middleX * 0.3;
+                    targetEnemyForAI = huntTarget;
+                    shouldTryShoot_AI = true;
+                    isDodgingThreat = false;
+                    aiPreviousDodgeDirection = 0;
+                } else {
+                    desiredTargetX = canvasWidth/2 - effectiveShipWidth/2;
+                    isDodgingThreat = false;
+                }
+            }
+        } catch(e) { console.warn("single AI anti-camp error", e); }
+
         let currentAiSmoothingFactor;
         if (isChallengingStage) {
             currentAiSmoothingFactor = CS_SHOOTING_MOVE_FRACTION; // Snellere, directere beweging in CS
         } else {
-            currentAiSmoothingFactor = isDodgingThreat ? AI_DODGE_MOVEMENT_SMOOTHING_FACTOR : AI_NORMAL_MOVEMENT_SMOOTHING_FACTOR;
+            const inForced = (typeof isAIInForcedHunt === 'function' && isAIInForcedHunt(aiIdentifierForAI, now));
+            if (inForced) {
+                currentAiSmoothingFactor = 0.14; // sneller naar midden/vijand
+            } else {
+                currentAiSmoothingFactor = isDodgingThreat ? AI_DODGE_MOVEMENT_SMOOTHING_FACTOR : AI_NORMAL_MOVEMENT_SMOOTHING_FACTOR;
+            }
         }
 
 
@@ -3755,6 +3803,91 @@ let aiCoopP2_PreviousDodgeDirection = 0;
 let aiCoopP2_DodgeCommitEndTime = 0;
 const AI_COOP_DODGE_MOVEMENT_SMOOTHING_FACTOR = 0.022;
 
+// --- ANTI-CAMPING: max 5 sec op 1 plek in angstfase, daarna verplicht jagen ---
+let aiCoopP1_LastSignificantX = null;
+let aiCoopP1_StationarySince = 0;
+let aiCoopP1_ForceHuntUntil = 0;
+let aiCoopP2_LastSignificantX = null;
+let aiCoopP2_StationarySince = 0;
+let aiCoopP2_ForceHuntUntil = 0;
+let aiSingle_LastSignificantX = null;
+let aiSingle_StationarySince = 0;
+let aiSingle_ForceHuntUntil = 0;
+const AI_MAX_STATIONARY_MS = 5000; // eis van user: max 5 sec
+const AI_STATIONARY_THRESHOLD_PX = 8; // minder dan 8px = stilstand
+const AI_FORCE_HUNT_DURATION_MS = 3500;
+const AI_EDGE_ZONE_RATIO = 0.18; // buitenste 18% = buitenkant scherm
+
+function updateAIAntiCampingTracker(shipIdentifier, currentX, currentTime) {
+    try {
+        const isP1 = (shipIdentifier === 'p1');
+        const isP2 = (shipIdentifier === 'player2' || shipIdentifier === 'ai_p2' || shipIdentifier === 'p2');
+        const isSingle = (!isP1 && !isP2);
+        let lastX, since, forceUntil;
+        if (isP1) { lastX = aiCoopP1_LastSignificantX; since = aiCoopP1_StationarySince; forceUntil = aiCoopP1_ForceHuntUntil; }
+        else if (isP2) { lastX = aiCoopP2_LastSignificantX; since = aiCoopP2_StationarySince; forceUntil = aiCoopP2_ForceHuntUntil; }
+        else { lastX = aiSingle_LastSignificantX; since = aiSingle_StationarySince; forceUntil = aiSingle_ForceHuntUntil; }
+
+        if (lastX === null) {
+            if (isP1) { aiCoopP1_LastSignificantX = currentX; aiCoopP1_StationarySince = currentTime; }
+            else if (isP2) { aiCoopP2_LastSignificantX = currentX; aiCoopP2_StationarySince = currentTime; }
+            else { aiSingle_LastSignificantX = currentX; aiSingle_StationarySince = currentTime; }
+            return false;
+        }
+
+        const moved = Math.abs(currentX - lastX);
+        let shipWidthRef = 40;
+        try {
+            if (isP1 && typeof ship1 !== 'undefined' && ship1) shipWidthRef = ship1.width;
+            else if (isP2 && typeof ship2 !== 'undefined' && ship2) shipWidthRef = ship2.width;
+            else if (typeof ship !== 'undefined' && ship) shipWidthRef = ship.width;
+        } catch(e){}
+        const inEdgeZone = (currentX < gameCanvas.width * AI_EDGE_ZONE_RATIO) || (currentX > gameCanvas.width * (1 - AI_EDGE_ZONE_RATIO) - shipWidthRef);
+
+        if (moved > AI_STATIONARY_THRESHOLD_PX) {
+            if (isP1) { aiCoopP1_LastSignificantX = currentX; aiCoopP1_StationarySince = currentTime; }
+            else if (isP2) { aiCoopP2_LastSignificantX = currentX; aiCoopP2_StationarySince = currentTime; }
+            else { aiSingle_LastSignificantX = currentX; aiSingle_StationarySince = currentTime; }
+            return false;
+        } else {
+            if (since === 0) {
+                if (isP1) aiCoopP1_StationarySince = currentTime;
+                else if (isP2) aiCoopP2_StationarySince = currentTime;
+                else aiSingle_StationarySince = currentTime;
+                since = currentTime;
+            }
+            const stationaryTime = currentTime - since;
+            if (stationaryTime >= AI_MAX_STATIONARY_MS && currentTime >= forceUntil) {
+                if (isP1) {
+                    aiCoopP1_ForceHuntUntil = currentTime + AI_FORCE_HUNT_DURATION_MS;
+                    console.log(`[ANTI-CAMP P1] ${Math.round(stationaryTime)}ms stil op x=${Math.round(currentX)} edge=${inEdgeZone} -> FORCE HUNT`);
+                } else if (isP2) {
+                    aiCoopP2_ForceHuntUntil = currentTime + AI_FORCE_HUNT_DURATION_MS;
+                    console.log(`[ANTI-CAMP P2] ${Math.round(stationaryTime)}ms stil op x=${Math.round(currentX)} edge=${inEdgeZone} -> FORCE HUNT`);
+                } else {
+                    aiSingle_ForceHuntUntil = currentTime + AI_FORCE_HUNT_DURATION_MS;
+                    console.log(`[ANTI-CAMP SINGLE] ${Math.round(stationaryTime)}ms stil op x=${Math.round(currentX)} edge=${inEdgeZone} -> FORCE HUNT`);
+                }
+                if (isP1) { aiCoopP1_StationarySince = currentTime + AI_FORCE_HUNT_DURATION_MS; aiCoopP1_LastSignificantX = currentX; }
+                else if (isP2) { aiCoopP2_StationarySince = currentTime + AI_FORCE_HUNT_DURATION_MS; aiCoopP2_LastSignificantX = currentX; }
+                else { aiSingle_StationarySince = currentTime + AI_FORCE_HUNT_DURATION_MS; aiSingle_LastSignificantX = currentX; }
+                return true;
+            }
+        }
+        return currentTime < forceUntil;
+    } catch(e){ console.warn("antiCamping error", e); return false; }
+}
+function isAIInForcedHunt(shipIdentifier, currentTime) {
+    try {
+        if (shipIdentifier === 'p1') return currentTime < aiCoopP1_ForceHuntUntil;
+        else if (shipIdentifier === 'player2' || shipIdentifier === 'ai_p2' || shipIdentifier === 'p2') return currentTime < aiCoopP2_ForceHuntUntil;
+        else return currentTime < aiSingle_ForceHuntUntil;
+    } catch(e){ return false; }
+}
+window.updateAIAntiCampingTracker = updateAIAntiCampingTracker;
+window.isAIInForcedHunt = isAIInForcedHunt;
+
+
 function aiControlCoop() {
     if ( !(isCoopAIDemoActive || (isPlayerTwoAI && selectedOnePlayerGameVariant === '1P_VS_AI_COOP')) || isPaused || !gameCanvas || !isInGameState || gameOverSequenceStartTime > 0 ) { if (ship1) ship1.targetX = ship1.x; if (ship2) ship2.targetX = ship2.x; return; }
     const now = Date.now(); const canvasWidth = gameCanvas.width;
@@ -3762,9 +3895,11 @@ function aiControlCoop() {
     const p2CanAct = ship2 && player2Lives > 0 && !isPlayer2ShipCaptured && !isPlayer2WaitingForRespawn && !isPlayer2ShowingGameOverMessage && !player2NeedsRespawnAfterCapture;
     const getShipBlockingState = (shipIdForBlockCheck) => { const isGameOverForThisShip = (shipIdForBlockCheck === 'p1' && isPlayer1ShowingGameOverMessage) || (shipIdForBlockCheck === 'p2' && isPlayer2ShowingGameOverMessage); return isGameOverForThisShip || showReadyMessage || isCsCompletionDelayActive || (isShowingIntro && !(level <= 1 && coopPlayersReadyStartTime > 0 && (isCoopAIDemoActive || (isPlayerTwoAI && selectedOnePlayerGameVariant === '1P_VS_AI_COOP')) )); };
 
-    if (p1CanAct && ship1 && isCoopAIDemoActive) { // Alleen voor P1 in COOP AI Demo voor nu, P1 Human in 1PvsAICoop doet zelf
+    if (p1CanAct && ship1 && isCoopAIDemoActive) {
         if (smoothedShip1X === undefined) smoothedShip1X = ship1.x;
         if (now > aiCoopP1_DodgeCommitEndTime) aiCoopP1_PreviousDodgeDirection = 0;
+        // ANTI-CAMPING tracker update - meet echte positie
+        try { if (typeof updateAIAntiCampingTracker === 'function') updateAIAntiCampingTracker('p1', ship1.x, now); } catch(e){}
 
         const p1CompletelyBlocked = getShipBlockingState('p1'); let p1Result;
         let ignoreBossIdForP1 = null;
@@ -3773,6 +3908,8 @@ function aiControlCoop() {
         aiShip1TargetEnemy = p1Result.targetEnemyForAI;
 
         let currentAiSmoothingFactorP1 = p1Result.isDodging ? AI_COOP_DODGE_MOVEMENT_SMOOTHING_FACTOR : AI_SMOOTHING_FACTOR_MOVE;
+        // Tijdens forced hunt: sneller bewegen naar midden/vijand
+        try { if (typeof isAIInForcedHunt === 'function' && isAIInForcedHunt('p1', now)) { currentAiSmoothingFactorP1 = Math.max(currentAiSmoothingFactorP1, 0.12); } } catch(e){}
         smoothedShip1X += (p1Result.desiredTargetX - smoothedShip1X) * currentAiSmoothingFactorP1;
         ship1.targetX = smoothedShip1X;
 
@@ -3794,29 +3931,28 @@ function aiControlCoop() {
     if (p2CanAct && ship2 && (isCoopAIDemoActive || (isPlayerTwoAI && selectedOnePlayerGameVariant === '1P_VS_AI_COOP'))) {
         if (smoothedShip2X === undefined) smoothedShip2X = ship2.x;
         if (now > aiCoopP2_DodgeCommitEndTime) aiCoopP2_PreviousDodgeDirection = 0;
+        // ANTI-CAMPING tracker update
+        try { if (typeof updateAIAntiCampingTracker === 'function') updateAIAntiCampingTracker(ship2.identifier || ((isCoopAIDemoActive)?'player2':'ai_p2'), ship2.x, now); } catch(e){ try { updateAIAntiCampingTracker('player2', ship2.x, now); } catch(e2){} }
 
         const p2CompletelyBlocked = getShipBlockingState('p2');
         const p2Identifier = (isCoopAIDemoActive) ? 'player2' : 'ai_p2';
         let p2Result;
         let ignoreBossIdForP2 = null;
         if (isCoopAIDemoActive) {
-             // AI P2 in COOP Demo mag NOOIT proberen P1 te redden
              if (isPlayer1ShipCaptured && capturedBossIdWithMessage) {
                  ignoreBossIdForP2 = capturedBossIdWithMessage;
              }
         } else if (isPlayerTwoAI && selectedOnePlayerGameVariant === '1P_VS_AI_COOP') {
-            // AI P2 in 1P vs AI COOP mag NOOIT proberen P1 te redden
             if (isPlayer1ShipCaptured && capturedBossIdWithMessage) {
                 ignoreBossIdForP2 = capturedBossIdWithMessage;
             }
         }
-        // aiPlayerActivelySeekingCaptureById wordt hier niet overschreven, de AI P2 zal zichzelf laten vangen als de boss haar kiest.
-        // De 'ignoreBossIdForP2' zorgt ervoor dat ze niet schiet op de boss die P1 gevangen heeft.
 
         p2Result = calculateAIDesiredState(ship2, smoothedShip2X, player2IsDualShipActive, enemies, enemyBullets, fallingShips, isPlayer2Invincible, isPlayer2ShipCaptured, isPlayer2WaitingForRespawn, now, canvasWidth, p2CompletelyBlocked, p2Identifier, ignoreBossIdForP2, aiCoopP2_PreviousDodgeDirection);
         aiShip2TargetEnemy = p2Result.targetEnemyForAI;
 
         let currentAiSmoothingFactorP2 = p2Result.isDodging ? AI_COOP_DODGE_MOVEMENT_SMOOTHING_FACTOR : AI_SMOOTHING_FACTOR_MOVE;
+        try { if (typeof isAIInForcedHunt === 'function' && (isAIInForcedHunt(p2Identifier, now) || isAIInForcedHunt('player2', now) || isAIInForcedHunt('ai_p2', now))) { currentAiSmoothingFactorP2 = Math.max(currentAiSmoothingFactorP2, 0.12); } } catch(e){}
         smoothedShip2X += (p2Result.desiredTargetX - smoothedShip2X) * currentAiSmoothingFactorP2;
         ship2.targetX = smoothedShip2X;
 
@@ -3830,7 +3966,6 @@ function aiControlCoop() {
         } else if (p2Result.predictedCollisions > 0) {
             aiCoopP2_PreviousDodgeDirection = 0;
         }
-
 
         if (p2Result.shouldTryShoot && !(isShowingCaptureMessage && isPlayer2ShipCaptured)) {
             fireCoopAIBullet(ship2, player2IsDualShipActive, p2Identifier);
@@ -3870,6 +4005,17 @@ function calculateAIDesiredState(currentShip, currentSmoothedX, isShipDual, game
             _isBossCapturingForShieldCheck = true;
         }
     } catch(e){}
+
+    // --- ANTI-CAMPING: check of AI in forced hunt zit (max 5 sec regel) ---
+    let _forceHuntActive = false;
+    try {
+        if (typeof isAIInForcedHunt === 'function') {
+            _forceHuntActive = isAIInForcedHunt(shipIdentifier, currentTime) || isAIInForcedHunt('p1', currentTime) && shipIdentifier==='p1' || isAIInForcedHunt('player2', currentTime) || isAIInForcedHunt('ai_p2', currentTime);
+            // specifieker:
+            if (shipIdentifier === 'p1' && typeof aiCoopP1_ForceHuntUntil !== 'undefined') _forceHuntActive = currentTime < aiCoopP1_ForceHuntUntil;
+            if ((shipIdentifier === 'player2' || shipIdentifier === 'ai_p2') && typeof aiCoopP2_ForceHuntUntil !== 'undefined') _forceHuntActive = currentTime < aiCoopP2_ForceHuntUntil;
+        }
+    } catch(e){ _forceHuntActive = false; }
 
     let desiredTargetX = currentSmoothedX;
     let shouldTryShoot_AI_Calc = false;
@@ -4353,8 +4499,62 @@ function calculateAIDesiredState(currentShip, currentSmoothedX, isShipDual, game
 
     if (typeof isSimultaneousAssaultWave !== "undefined" && isSimultaneousAssaultWave) { if (typeof isEntrancePhaseActive !== "undefined" && isEntrancePhaseActive && !isAllEnemiesInGridForSimultaneous()) { shouldTryShoot_AI_Calc = false; } }
     if (typeof gameEnemies !== "undefined") { const bossWithShipAttacking = gameEnemies.find(e => e && e.type === ENEMY3_TYPE && e.hasCapturedShip && (e.state === "attacking" || e.state === "diving")); if (bossWithShipAttacking) { shouldTryShoot_AI_Calc = true; targetEnemyForAI = bossWithShipAttacking; } }
+
+    // --- ANTI-CAMPING FINAL OVERRIDE: max 5 sec op 1 plek, daarna VERPLICHT vijand opzoeken ---
+    try {
+        if (typeof _forceHuntActive !== 'undefined' && _forceHuntActive) {
+            // Zoek dichtstbijzijnde levende vijand, liefst aanvallend, anders in grid
+            let huntTarget = null;
+            let bestHuntScore = -Infinity;
+            for (const enemy of gameEnemies) {
+                if (!enemy) continue;
+                if (ignoreBossId_passed && enemy.id === ignoreBossId_passed) continue;
+                // negeer capturing boss tijdens voorbereiding tenzij force hunt actief is (dan juist wel jagen)
+                let score = 0;
+                const eCX = enemy.x + enemy.width/2;
+                const dist = Math.abs(eCX - shipCenterX);
+                score = 2000 - dist; // dichterbij = beter
+                if (enemy.state === 'attacking' || enemy.state === 'diving' || enemy.state === 'diving_to_capture_position') score += 4000;
+                if (enemy.y > 0 && enemy.y < canvasHeight * 0.7) score += 1500;
+                if (enemy.type === ENEMY3_TYPE && enemy.hasCapturedShip) score += 5000;
+                if (enemy.state === 'in_grid') score += 500;
+                if (score > bestHuntScore) { bestHuntScore = score; huntTarget = enemy; }
+            }
+
+            if (huntTarget) {
+                const enemyMidX = huntTarget.x + huntTarget.width/2;
+                const targetXForHunt = enemyMidX - effectiveShipWidth/2;
+                // FORCEER beweging richting midden/vijand: mix 70% vijand + 30% midden om weg te gaan van rand
+                const middleX = gameCanvas.width/2 - effectiveShipWidth/2;
+                const forcedX = targetXForHunt * 0.7 + middleX * 0.3;
+                desiredTargetX = forcedX;
+                targetEnemyForAI = huntTarget;
+                shouldTryShoot_AI_Calc = true;
+                isDodgingThreatCurrentFrame = false; // niet meer ontwijken, nu jagen
+                chosenDodgeDirThisFrame = 0;
+                predictedCollisionsForReturn = 0;
+                // console.log(`[FORCE HUNT ${shipIdentifier}] naar vijand x=${Math.round(targetXForHunt)} midden blend -> ${Math.round(forcedX)}`);
+            } else {
+                // Geen vijand? Dan verplicht naar midden
+                const middleX = gameCanvas.width/2 - effectiveShipWidth/2;
+                desiredTargetX = middleX + Math.sin(currentTime/300)*20;
+                shouldTryShoot_AI_Calc = false;
+                isDodgingThreatCurrentFrame = false;
+                chosenDodgeDirThisFrame = 0;
+            }
+        }
+    } catch(e) { console.warn("force hunt override error", e); }
+
     // BOSS FIGHT FINAL OVERRIDE: altijd terugvuren op eindbaas, zelfs als andere logic het uitzet (behalve als volledig geblokkeerd)
     if (typeof isBossStage !== 'undefined' && isBossStage && typeof bossStageBoss !== 'undefined' && bossStageBoss && bossStagePhase === 'fighting' && bossStageBoss.isVisible !== false) {
+        // Zelfs in boss fight respecteren we anti-camping niet volledig, maar force hunt mag niet boss negeren
+        if (typeof _forceHuntActive !== 'undefined' && _forceHuntActive) {
+            // tijdens force hunt in boss fight: blijf naar boss, maar niet aan rand plakken
+            const bossCenterX = bossStageBoss.x + bossStageBoss.width/2;
+            const middleX = gameCanvas.width/2 - effectiveShipWidth/2;
+            const bossTargetX = bossCenterX - effectiveShipWidth/2;
+            desiredTargetX = bossTargetX * 0.8 + middleX * 0.2;
+        }
         targetEnemyForAI = bossStageBoss;
         shouldTryShoot_AI_Calc = true;
     }
