@@ -1130,82 +1130,30 @@ function initializeDOMElements() {
     retroGridCtx = retroGridCanvas?.getContext('2d');
     gameCanvas = document.getElementById("gameCanvas");
     gameCtx = gameCanvas?.getContext("2d");
-
-    // HARD CENTER CSS INJECTION - iPhone fix, voert 1x uit
-    try {
-        if (!document.getElementById('iphone-center-fix-style')) {
-            const style = document.createElement('style');
-            style.id = 'iphone-center-fix-style';
-            style.textContent = `
-                html, body {
-                    margin: 0 !important;
-                    padding: 0 !important;
-                    width: 100% !important;
-                    height: 100% !important;
-                    overflow: hidden !important;
-                    position: fixed !important;
-                    left: 0 !important;
-                    top: 0 !important;
-                    background: black !important;
-                }
-                #nebulaCanvas, #starrySkyCanvas, #retroGridCanvas, #gameCanvas {
-                    position: fixed !important;
-                    left: 0 !important;
-                    top: 0 !important;
-                    right: 0 !important;
-                    bottom: 0 !important;
-                    margin: 0 !important;
-                    padding: 0 !important;
-                    width: 100vw !important;
-                    height: 100vh !important;
-                    height: 100dvh !important;
-                    max-width: 100% !important;
-                    max-height: 100% !important;
-                    transform: none !important;
-                    display: block !important;
-                }
-                @supports (padding: env(safe-area-inset-left)) {
-                    body {
-                        padding-left: env(safe-area-inset-left) !important;
-                        padding-right: env(safe-area-inset-right) !important;
-                        padding-top: env(safe-area-inset-top) !important;
-                        padding-bottom: env(safe-area-inset-bottom) !important;
-                    }
-                }
-            `;
-            document.head.appendChild(style);
-        }
-    } catch(e) { console.warn('center style inject failed', e); }
-
     if (nebulaCanvas) { if(!nebulaBaseImage) loadNebulaBackground(); } else { console.warn('[Nebula] canvas #nebulaCanvas niet gevonden in index.html!'); }
     if (!starryCtx || !retroGridCtx || !gameCtx) { console.error("FATAL: Could not initialize one or more canvas contexts!"); alert("Error loading critical canvas elements."); document.body.innerHTML = '<p style="color:white;">FATAL ERROR</p>'; return false; }
 
     if (gameCanvas.width === 0 || gameCanvas.height === 0) {
         const initialWidth = window.innerWidth || 800;
         const initialHeight = window.innerHeight || 600;
-        const dpr = (typeof getOptimalDPR === 'function' ? getOptimalDPR() : Math.min(window.devicePixelRatio||1, 1.5));
-        if (nebulaCanvas) { nebulaCanvas.width = Math.round(initialWidth * dpr); nebulaCanvas.height = Math.round(initialHeight * dpr); }
-        if (starrySkyCanvas) { starrySkyCanvas.width = Math.round(initialWidth * dpr); starrySkyCanvas.height = Math.round(initialHeight * dpr); }
-        if (retroGridCanvas) { retroGridCanvas.width = Math.round(initialWidth * dpr); retroGridCanvas.height = Math.round(initialHeight * dpr); }
-        gameCanvas.width = Math.round(initialWidth * dpr);
-        gameCanvas.height = Math.round(initialHeight * dpr);
-        [nebulaCanvas, starrySkyCanvas, retroGridCanvas, gameCanvas].forEach(c => {
-            if (!c) return;
-            const ctx = c.getContext('2d');
-            if (ctx) {
-                ctx.setTransform(dpr,0,0,dpr,0,0);
-                ctx.imageSmoothingEnabled = false;
-            }
-        });
+        if (nebulaCanvas) { nebulaCanvas.width = initialWidth; nebulaCanvas.height = initialHeight; }
+        if (starrySkyCanvas) { starrySkyCanvas.width = initialWidth; starrySkyCanvas.height = initialHeight; }
+        if (retroGridCanvas) { retroGridCanvas.width = initialWidth; retroGridCanvas.height = initialHeight; }
+        gameCanvas.width = initialWidth;
+        gameCanvas.height = initialHeight;
     }
 
     floatingScores = [];
     csCurrentChainHits = 0; csCurrentChainScore = 0; csLastHitTime = 0; csLastChainHitPosition = null;
     normalWaveCurrentChainHits = 0; normalWaveCurrentChainScore = 0; normalWaveLastHitTime = 0; normalWaveLastHitPosition = null;
 
-    initializeAudioContext();
+    initializeAudioContext(); // Initialize AudioContext
     if (audioContext) {
-        loadAllSounds();
+        loadAllSounds(); // Load all sounds
+
+        // Set initial volumes after sounds are expected to be loaded (or at least paths are known)
+        // Actual buffer might not be ready yet, but GainNodes can be created.
+        // A more robust solution would set volume after each sound buffer is decoded.
         setTimeout(() => {
             if (!audioContextInitialized && audioContext.state === 'suspended') {
                 console.warn("AudioContext still suspended. User interaction needed to play sounds.");
@@ -1220,7 +1168,7 @@ function initializeDOMElements() {
             setVolume('enemyShootSound', 0.4);
             setVolume('butterflyDiveSound', 0.2);
             setVolume('startSound', 0.4);
-            setVolume('coinSound', 0.4);
+            setVolume('coinSound', 0.4); // or dualShipSound
             setVolume('beeHitSound', 0.3);
             setVolume('butterflyHitSound', 0.3);
             setVolume('bossHit1Sound', 0.6);
@@ -1238,22 +1186,22 @@ function initializeDOMElements() {
             setVolume('dualShipSound', 0.4);
             setVolume('resultsMusicSound', 0.2);
             setVolume('hiScoreSound', 0.2);
-        }, 100);
+        }, 100); // Short delay to allow GainNode creation
     }
 
+    // Voeg touch event listeners toe aan gameCanvas
     if (gameCanvas) {
         gameCanvas.addEventListener('touchstart', handleTouchStartGlobal, { passive: false });
         gameCanvas.addEventListener('touchmove', handleTouchMoveGlobal, { passive: false });
         gameCanvas.addEventListener('touchend', handleTouchEndGlobal, { passive: false });
-        gameCanvas.addEventListener('touchcancel', handleTouchEndGlobal, { passive: false });
+        gameCanvas.addEventListener('touchcancel', handleTouchEndGlobal, { passive: false }); // Behandel cancel als een end
     }
+
 
     const imagesToLoad = [ shipImage, beeImage, bulletImage, bossGalagaImage, butterflyImage, logoImage, level1Image, level5Image, level10Image, level20Image, level30Image, level50Image, beeImage2, butterflyImage2, bossGalagaImage2, shieldIconImage, clearIconImage, dualIconImage, oneUpIconImage, spreadIconImage, rapidIconImage ];
     imagesToLoad.forEach(img => { if (img) img.onerror = () => console.error(`Error loading image: ${img.src}`); });
     return true;
 }
-
-
 
 
 function scaleValue(currentLevel, baseValue, maxValue) { const levelForCalc = Math.max(1, Math.min(currentLevel, LEVEL_CAP_FOR_SCALING)); if (levelForCalc === 1) { return baseValue; } const progress = (levelForCalc - 1) / (LEVEL_CAP_FOR_SCALING - 1); return baseValue + (maxValue - baseValue) * progress; }
@@ -1488,129 +1436,60 @@ function defineChallengingStagePaths() { /* ... ongewijzigd ... */ challengingSt
 
 function resizeCanvases() {
     try {
-        const dpr = (typeof getOptimalDPR === 'function' ? getOptimalDPR() : Math.min(window.devicePixelRatio||1, 1.5));
-        // iPhone fix: gebruik visualViewport en documentElement, niet alleen innerWidth (toolbar bug)
-        let width = window.innerWidth;
-        let height = window.innerHeight;
-        if (window.visualViewport) {
-            width = window.visualViewport.width;
-            height = window.visualViewport.height;
-        } else {
-            width = document.documentElement.clientWidth || width;
-            height = document.documentElement.clientHeight || height;
-        }
-        // Clamp
+        const width = window.innerWidth;
+        const height = window.innerHeight;
         if (width <= 0 || height <= 0) return;
-        // Safe area insets compensatie - forceer full viewport
-        width = Math.max(width, document.documentElement.clientWidth);
-        height = Math.max(height, document.documentElement.clientHeight);
 
         let isCurrentlyPortrait = height > width;
+
         if (isCurrentlyPortrait) {
-            if (!isShowingPortraitMessage) {
+            if (!isShowingPortraitMessage) { // Alleen acties uitvoeren als de staat VERANDERT naar portrait
                 isShowingPortraitMessage = true;
+                // console.log("[resizeCanvases] Switched to Portrait. isShowingPortraitMessage = true."); // Debug
                 if (isInGameState && !isPaused) {
                     gameWasAutoPausedForPortrait = true;
-                    togglePause();
+                    togglePause(); // Dit roept pauseAllSounds() aan
                 } else if (!isInGameState || isPaused) {
+                    // Als we in het menu zijn, of al gepauzeerd,
+                    // roep pauseAllSounds direct aan om zeker te zijn dat alles stopt.
+                    // console.log("[resizeCanvases] In menu or already paused, calling pauseAllSounds() for portrait."); // Debug
                     pauseAllSounds();
                 }
             }
-        } else {
-            if (isShowingPortraitMessage) {
+        } else { // Landscape
+            if (isShowingPortraitMessage) { // Alleen acties uitvoeren als de staat VERANDERT naar landscape
                 isShowingPortraitMessage = false;
+                // console.log("[resizeCanvases] Switched to Landscape. isShowingPortraitMessage = false."); // Debug
                 if (gameWasAutoPausedForPortrait && isPaused) {
-                    togglePause();
+                    togglePause(); // Dit roept resumeAllSounds() aan
                 } else if (!isInGameState && !isPaused) {
+                    // Als we in het menu zijn en niet gepauzeerd, hervat menu muziek
+                    // console.log("[resizeCanvases] In menu and not paused, calling resumeAllSounds() for landscape."); // Debug
                     resumeAllSounds();
                 }
                 gameWasAutoPausedForPortrait = false;
             }
         }
 
-        function setCanvasSizeHardCenter(canvas, w, h, isNebula) {
-            if (!canvas) return false;
-            const scaledW = Math.round(w * dpr);
-            const scaledH = Math.round(h * dpr);
-            const changed = (canvas.width !== scaledW || canvas.height !== scaledH);
-            // ALWAYS force style to be centered full screen, regardless of previous CSS
-            // Dit is de harde fix voor iPhone
-            canvas.style.position = 'fixed';
-            canvas.style.left = '0';
-            canvas.style.top = '0';
-            canvas.style.right = '0';
-            canvas.style.bottom = '0';
-            canvas.style.margin = '0';
-            canvas.style.padding = '0';
-            canvas.style.width = w + 'px';
-            canvas.style.height = h + 'px';
-            canvas.style.maxWidth = '100vw';
-            canvas.style.maxHeight = '100dvh';
-            canvas.style.transform = 'none';
-            canvas.style.willChange = 'auto';
-            canvas.style.display = 'block';
-            canvas.style.objectFit = 'cover';
 
-            if (changed) {
-                canvas.width = scaledW;
-                canvas.height = scaledH;
-                const ctx = canvas.getContext('2d');
-                if (ctx) {
-                    ctx.setTransform(dpr,0,0,dpr,0,0);
-                    ctx.imageSmoothingEnabled = false;
-                }
-                if (isNebula && typeof nebulaDirty !== 'undefined') nebulaDirty = true;
-                if (isNebula) {
-                    try { drawNebulaBackground(); } catch(e){}
-                }
-            }
-            return changed;
+        if (nebulaCanvas && (nebulaCanvas.width !== width || nebulaCanvas.height !== height)) {
+            nebulaCanvas.width = width; nebulaCanvas.height = height; drawNebulaBackground();
         }
-
-        setCanvasSizeHardCenter(nebulaCanvas, width, height, true);
-        if (setCanvasSizeHardCenter(starrySkyCanvas, width, height, false)) {
-            try { createStars(); } catch(e){}
+        if (starrySkyCanvas && (starrySkyCanvas.width !== width || starrySkyCanvas.height !== height)) {
+            starrySkyCanvas.width = width; starrySkyCanvas.height = height; createStars();
         }
-        setCanvasSizeHardCenter(retroGridCanvas, width, height, false);
-        const oldWidth = gameCanvas ? gameCanvas.width : width;
-        if (setCanvasSizeHardCenter(gameCanvas, width, height, false)) {
-            try { defineNormalWaveEntrancePaths(); } catch(e){}
-            try { defineChallengingStagePaths(); } catch(e){}
-            if (isInGameState) {
-                try { handleResizeGameElements(oldWidth, width, height); } catch(e){}
-            }
+        if (retroGridCanvas && (retroGridCanvas.width !== width || retroGridCanvas.height !== height)) {
+            retroGridCanvas.width = width; retroGridCanvas.height = height;
+        }
+        if (gameCanvas && (gameCanvas.width !== width || gameCanvas.height !== height)) {
+            const oldWidth = gameCanvas.width; gameCanvas.width = width; gameCanvas.height = height;
+            defineNormalWaveEntrancePaths(); defineChallengingStagePaths();
+            if (isInGameState) { handleResizeGameElements(oldWidth, width, height); }
         } else if (!gameCanvas?.width || !gameCanvas?.height) {
-            try { defineNormalWaveEntrancePaths(); } catch(e){}
-            try { defineChallengingStagePaths(); } catch(e){}
+            defineNormalWaveEntrancePaths(); defineChallengingStagePaths();
         }
-
-        // Body hard center fix - alleen op iPhone
-        if (typeof IS_IOS !== 'undefined' && IS_IOS) {
-            try {
-                document.documentElement.style.margin = '0';
-                document.documentElement.style.padding = '0';
-                document.documentElement.style.width = '100%';
-                document.documentElement.style.height = '100%';
-                document.documentElement.style.overflow = 'hidden';
-                document.body.style.margin = '0';
-                document.body.style.padding = '0';
-                document.body.style.width = '100%';
-                document.body.style.height = '100%';
-                document.body.style.overflow = 'hidden';
-                document.body.style.position = 'fixed';
-                document.body.style.left = '0';
-                document.body.style.top = '0';
-                // Safe area support
-                document.body.style.paddingLeft = 'env(safe-area-inset-left)';
-                document.body.style.paddingRight = 'env(safe-area-inset-right)';
-                document.body.style.paddingTop = 'env(safe-area-inset-top)';
-                document.body.style.paddingBottom = 'env(safe-area-inset-bottom)';
-            } catch(e){}
-        }
-    } catch(e) { console.error('resizeCanvases error', e); }
+    } catch (e) { console.error("Error in resizeCanvases:", e); }
 }
-
-
 
 
 /** Repositions ship and enemy targets after a resize while the game is running. */

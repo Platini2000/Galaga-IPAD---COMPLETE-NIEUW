@@ -1,25 +1,27 @@
-// --- START OF FILE game_logic.js - iOS OPTIMIZED FIX ---
-// --- DEEL 1 van 8 ---
+// --- START OF FILE game_logic.js ---
+// --- DEEL 1      van 8 dit code blok    ---
 
-// iOS detection
-const IS_IOS_LOGIC = /iPad|iPhone|iPod/.test(navigator.userAgent) || (typeof navigator !== 'undefined' && navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-
-// Hulpvariabele om bij te houden hoeveel Challenging Stages er al zijn geweest
+// --- Hulpvariabele om bij te houden hoeveel Challenging Stages er al zijn geweest ---
 let completedChallengingStagesCount = 0;
-let isSimultaneousAssaultWave = false;
-let justFinishedChallengingStage = false;
+let isSimultaneousAssaultWave = false; // NIEUW: na CS level
+let justFinishedChallengingStage = false; // helper
 
+// --- NIEUW V10: Helper voor Simultaneous Assault level ---
+
+// --- NIEUW V10: Veilig invliegen voor Simultaneous Assault - schip wordt niet geraakt tijdens entering ---
+
+// --- NIEUW V10: Limiter voor Simultaneous Assault - max 2-3 vijanden tegelijk laten vuren ---
 let simultaneousAssaultActiveShooters = 0;
-let simultaneousAssaultLastShooterReset = (typeof performance !== 'undefined' ? performance.now() : Date.now());
-
+let simultaneousAssaultLastShooterReset = 0;
 function canSimultaneousAssaultEnemyShoot() {
+
     if (typeof isSimultaneousAssaultWave === 'undefined' || !isSimultaneousAssaultWave) return true;
-    const now = (typeof performance !== 'undefined' ? performance.now() : Date.now());
-    if (now - simultaneousAssaultLastShooterReset > 800) {
+    const now = Date.now();
+    if (now - simultaneousAssaultLastShooterReset > 800) { // elke 800ms reset
         simultaneousAssaultActiveShooters = 0;
         simultaneousAssaultLastShooterReset = now;
     }
-    if (simultaneousAssaultActiveShooters >= 3) return false;
+    if (simultaneousAssaultActiveShooters >= 3) return false; // max 3 tegelijk
     simultaneousAssaultActiveShooters++;
     return true;
 }
@@ -28,14 +30,16 @@ window.canSimultaneousAssaultEnemyShoot = canSimultaneousAssaultEnemyShoot;
 function shouldSkipShipCollisionForSimultaneous(enemy) {
     if (typeof isSimultaneousAssaultWave === 'undefined' || !isSimultaneousAssaultWave) return false;
     if (!enemy) return false;
+    // Tijdens invliegen geen collision met schip, net als Level 2 maar dan voor alle squadrons tegelijk
     if (enemy.isEntering || enemy.state === 'following_entrance_path' || enemy.state === 'moving_to_grid') {
         return true;
     }
     return false;
 }
+
 window.shouldSkipShipCollisionForSimultaneous = shouldSkipShipCollisionForSimultaneous;
 
-
+// FIX: Centrale check - als alle levens op zijn, forceer direct game over ongeacht aanvallende vijanden
 function forceGameOverIfAllDead() {
     try {
         if (isTwoPlayerMode && selectedGameMode === 'coop') {
@@ -4600,9 +4604,7 @@ function resetJustReturnedFlags(excludedIds) {
 function updateFloatingScores() { if (isPaused) return; try { const now = Date.now(); floatingScores = floatingScores.filter(fs => (now - fs.creationTime < FLOATING_SCORE_DURATION + FLOATING_SCORE_APPEAR_DELAY)); } catch (e) { console.error("Error updating floating scores:", e); floatingScores = []; } }
 
 /** Update de positie en alpha van alle actieve explosie deeltjes. */
-function updateExplosions() {
-  if (typeof IS_IOS_LOGIC !== 'undefined' && IS_IOS_LOGIC && typeof explosions !== 'undefined' && explosions.length > 25) { explosions.splice(0, explosions.length - 25); }
- if (isPaused) return; try { const now = Date.now(); for (let i = explosions.length - 1; i >= 0; i--) { const explosion = explosions[i]; const elapsedTime = now - explosion.creationTime; if (elapsedTime > explosion.duration) { explosions.splice(i, 1); continue; } explosion.particles.forEach(p => { p.x += p.vx; p.y += p.vy; p.alpha = Math.max(0, 1.0 - (elapsedTime / explosion.duration) * EXPLOSION_FADE_SPEED); }); } } catch (e) { console.error("Error updating explosions:", e); explosions = []; } }
+function updateExplosions() { if (isPaused) return; try { const now = Date.now(); for (let i = explosions.length - 1; i >= 0; i--) { const explosion = explosions[i]; const elapsedTime = now - explosion.creationTime; if (elapsedTime > explosion.duration) { explosions.splice(i, 1); continue; } explosion.particles.forEach(p => { p.x += p.vx; p.y += p.vy; p.alpha = Math.max(0, 1.0 - (elapsedTime / explosion.duration) * EXPLOSION_FADE_SPEED); }); } } catch (e) { console.error("Error updating explosions:", e); explosions = []; } }
 
 
 // --- Functie moveEntities: Update posities en states van alle entiteiten ---
@@ -5799,7 +5801,7 @@ function triggerGridFiring() {
 // --- START OF FILE game_logic.js ---
 // --- DEEL 8      van 8 dit code blok    --- (Focus: High score sound logica voor CS Perfect Bonus & correcte afhandeling van introStep 2 geluid voor Human 2P CO-OP L1)
 
-function runSingleGameUpdate(timestamp, elapsedFromLoop) {
+function runSingleGameUpdate(timestamp) {
     try {
         const now = Date.now();
         let activePlayersForLogic = false;
