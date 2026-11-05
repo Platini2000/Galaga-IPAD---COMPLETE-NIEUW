@@ -215,38 +215,91 @@ function drawMirrorReflection(){
   drawLayer(starrySkyCanvas, REFLECTION_STARS, {keepFullWidth:false, fadeMin:0.15, isBackground:false});
   drawLayer(gameCanvas, REFLECTION_GAME, {keepFullWidth:false, fadeMin:0.20, isBackground:false});
 
-  // --- ALLEEN VIJANDEN FELLER - text/button/logo blijven 0.01 zoals jij gaf ---
+  // --- HIGH-PERF VIJANDEN FELLER - alleen vijanden, 60fps safe voor iPhone ---
   try {
     let eStrength = (typeof enemyReflectionStrength !== 'undefined') ? enemyReflectionStrength : (window.enemyReflectionStrength || 0);
     if (eStrength > 0.02 && typeof enemies !== 'undefined' && enemies.length > 0) {
-      if (!window._mirrorEnemyCanvas) {
-        window._mirrorEnemyCanvas = document.createElement('canvas');
-        window._mirrorEnemyCtx = window._mirrorEnemyCanvas.getContext('2d');
-      }
-      let mECanvas = window._mirrorEnemyCanvas;
-      let mECtx = window._mirrorEnemyCtx;
-      if (mECanvas.width !== width || mECanvas.height !== horizonY) {
-        mECanvas.width = width;
-        mECanvas.height = horizonY;
-      }
-      mECtx.clearRect(0,0,width,horizonY);
+      const now = Date.now();
+      const useSecondFrame = (now % 400) >= 200;
       for (let en of enemies) {
         if (!en || en.y < -en.height || en.y > horizonY) continue;
+        let img = null;
         try {
-          let img = null;
-          let useSecondFrame = (Date.now() % 400) >= 200;
           if (en.type === (typeof ENEMY3_TYPE !== 'undefined' ? ENEMY3_TYPE : 'enemy3')) img = useSecondFrame ? (typeof bossGalagaImage2 !== 'undefined' ? bossGalagaImage2 : null) : (typeof bossGalagaImage !== 'undefined' ? bossGalagaImage : null);
           else if (en.type === (typeof ENEMY2_TYPE !== 'undefined' ? ENEMY2_TYPE : 'enemy2')) img = useSecondFrame ? (typeof butterflyImage2 !== 'undefined' ? butterflyImage2 : null) : (typeof butterflyImage !== 'undefined' ? butterflyImage : null);
           else img = useSecondFrame ? (typeof beeImage2 !== 'undefined' ? beeImage2 : null) : (typeof beeImage !== 'undefined' ? beeImage : null);
-          if (img && img.complete && img.naturalHeight !== 0) {
-            mECtx.drawImage(img, Math.round(en.x), Math.round(en.y), en.width, en.height);
-          }
-        } catch(e2) {}
+        } catch(e) {}
+        if (!img || !img.complete || img.naturalHeight === 0) continue;
+        // mirror positie met zelfde spread als drawLayer
+        let progress = Math.max(0, Math.min(1, (horizonY - en.y) / horizonY));
+        let mirroredY = horizonY + (horizonY - en.y) * 0.55;
+        if (mirroredY < horizonY || mirroredY > horizonY + reflectionHeight) continue;
+        let p2 = (mirroredY - horizonY) / reflectionHeight;
+        let spreadFactor = minSpread + p2 * (maxSpread - minSpread);
+        let curW = width * spreadFactor;
+        let curX = (width - curW) / 2;
+        let drawX = curX + (en.x * spreadFactor);
+        let drawY = mirroredY;
+        let fade = (1 - p2 * 0.8);
+        let normalized = eStrength / 0.50;
+        let alpha = fade * FLOOR_REFLECTION_GLOBAL * normalized * 0.55;
+        if (alpha < 0.005) continue;
+        if (alpha > 0.95) alpha = 0.95;
+        retroGridCtx.save();
+        retroGridCtx.globalAlpha = alpha;
+        // verticale flip voor spiegel
+        retroGridCtx.translate(0, drawY);
+        retroGridCtx.scale(1, -0.55);
+        retroGridCtx.translate(0, -drawY);
+        try { retroGridCtx.drawImage(img, drawX, drawY, en.width * spreadFactor, en.height * 0.55); } catch(e) {}
+        retroGridCtx.restore();
       }
-      // eStrength 2.00 = basis, 4.00 = feller, 5.00 = max fel - alleen vijanden
-      let extra = eStrength;
-      if (extra > 5) extra = 5;
-      drawLayer(mECanvas, extra, {keepFullWidth:false, fadeMin:0.20, isBackground:false});
+    }
+  } catch(err) {}
+
+  drawLayer(nebulaCanvas, REFLECTION_BACKGROUND, {keepFullWidth:true, fadeMin:0.65, isBackground:true});
+  drawLayer(starrySkyCanvas, REFLECTION_STARS, {keepFullWidth:false, fadeMin:0.15, isBackground:false});
+  drawLayer(gameCanvas, REFLECTION_GAME, {keepFullWidth:false, fadeMin:0.20, isBackground:false});
+
+  // --- HIGH-PERF VIJANDEN FELLER - alleen vijanden, 60fps safe voor iPhone ---
+  try {
+    let eStrength = (typeof enemyReflectionStrength !== 'undefined') ? enemyReflectionStrength : (window.enemyReflectionStrength || 0);
+    if (eStrength > 0.02 && typeof enemies !== 'undefined' && enemies.length > 0) {
+      const now = Date.now();
+      const useSecondFrame = (now % 400) >= 200;
+      for (let en of enemies) {
+        if (!en || en.y < -en.height || en.y > horizonY) continue;
+        let img = null;
+        try {
+          if (en.type === (typeof ENEMY3_TYPE !== 'undefined' ? ENEMY3_TYPE : 'enemy3')) img = useSecondFrame ? (typeof bossGalagaImage2 !== 'undefined' ? bossGalagaImage2 : null) : (typeof bossGalagaImage !== 'undefined' ? bossGalagaImage : null);
+          else if (en.type === (typeof ENEMY2_TYPE !== 'undefined' ? ENEMY2_TYPE : 'enemy2')) img = useSecondFrame ? (typeof butterflyImage2 !== 'undefined' ? butterflyImage2 : null) : (typeof butterflyImage !== 'undefined' ? butterflyImage : null);
+          else img = useSecondFrame ? (typeof beeImage2 !== 'undefined' ? beeImage2 : null) : (typeof beeImage !== 'undefined' ? beeImage : null);
+        } catch(e) {}
+        if (!img || !img.complete || img.naturalHeight === 0) continue;
+        // mirror positie met zelfde spread als drawLayer
+        let progress = Math.max(0, Math.min(1, (horizonY - en.y) / horizonY));
+        let mirroredY = horizonY + (horizonY - en.y) * 0.55;
+        if (mirroredY < horizonY || mirroredY > horizonY + reflectionHeight) continue;
+        let p2 = (mirroredY - horizonY) / reflectionHeight;
+        let spreadFactor = minSpread + p2 * (maxSpread - minSpread);
+        let curW = width * spreadFactor;
+        let curX = (width - curW) / 2;
+        let drawX = curX + (en.x * spreadFactor);
+        let drawY = mirroredY;
+        let fade = (1 - p2 * 0.8);
+        let normalized = eStrength / 0.50;
+        let alpha = fade * FLOOR_REFLECTION_GLOBAL * normalized * 0.55;
+        if (alpha < 0.005) continue;
+        if (alpha > 0.95) alpha = 0.95;
+        retroGridCtx.save();
+        retroGridCtx.globalAlpha = alpha;
+        // verticale flip voor spiegel
+        retroGridCtx.translate(0, drawY);
+        retroGridCtx.scale(1, -0.55);
+        retroGridCtx.translate(0, -drawY);
+        try { retroGridCtx.drawImage(img, drawX, drawY, en.width * spreadFactor, en.height * 0.55); } catch(e) {}
+        retroGridCtx.restore();
+      }
     }
   } catch(err) {}
 
