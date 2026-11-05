@@ -2412,12 +2412,13 @@ function startMainLoop() {
         _renderFrameCount = 0;
         if (typeof IS_IOS !== 'undefined' && IS_IOS && gameCanvas) {
             gameCanvas.style.willChange = 'transform';
-            gameCanvas.style.transform = 'translateZ(0)';
             if (gameCtx) gameCtx.imageSmoothingEnabled = false;
         }
         mainLoop();
     }
 }
+
+
 
 
 

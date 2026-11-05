@@ -1539,12 +1539,12 @@ function resizeCanvases() {
             const scaledH = Math.round(h * dpr);
             const changed = (canvas.width !== scaledW || canvas.height !== scaledH);
             if (changed) {
+                // Alleen backing store schalen, NIET style.width/height overschrijven - dat breekt centrering op iPhone!
                 canvas.width = scaledW;
                 canvas.height = scaledH;
-                canvas.style.width = w + 'px';
-                canvas.style.height = h + 'px';
                 const ctx = canvas.getContext('2d');
                 if (ctx) {
+                    // Reset transform en schaal naar CSS pixels
                     ctx.setTransform(dpr,0,0,dpr,0,0);
                     ctx.imageSmoothingEnabled = false;
                 }
@@ -1571,12 +1571,16 @@ function resizeCanvases() {
             try { defineNormalWaveEntrancePaths(); } catch(e){}
             try { defineChallengingStagePaths(); } catch(e){}
         }
+        // FIX iPhone centering: NIET transform overschrijven! Alleen willChange voor performance, zonder centrering te breken
         if (typeof IS_IOS !== 'undefined' && IS_IOS && gameCanvas) {
+            // Behoud bestaande transform (voor centrering) en voeg alleen translateZ toe via aparte property als nodig
             gameCanvas.style.willChange = 'transform';
-            gameCanvas.style.transform = 'translateZ(0)';
+            // Gebruik geen translateZ(0) die translate(-50%,-50%) overschrijft - dat was de bug!
         }
     } catch(e) { console.error('resizeCanvases error', e); }
 }
+
+
 
 
 
