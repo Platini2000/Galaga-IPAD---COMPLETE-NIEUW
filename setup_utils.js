@@ -63,8 +63,8 @@ let nebulaBasePath='Afbeeldingen/nebula_horizon.jpg';
 let mirrorTempCanvas=null, mirrorTempCtx=null;
 
 // --- REFLECTIE STERKTES (voor schuifjes) ---
-let enemyReflectionStrength = 2.00;
-let bulletReflectionStrength = 0.85;
+let enemyReflectionStrength = 0;
+let bulletReflectionStrength = 0;
 let textReflectionStrength = 0.01;   // alle text: READY, PERFECT, SCORE etc
 let buttonReflectionStrength = 0.01; // START / 1 PLAYER / 2 PLAYER buttons
 let logoReflectionStrength = 0.01;   // Galaga logo
@@ -88,24 +88,28 @@ function saveAllReflectionSettings() {
     } catch(e){}
 }
 function loadAllReflectionSettings() {
+    // Alleen achtergrond en rook mogen blijven, rest geforceerd 0
     try {
-        let v;
-        v = localStorage.getItem('enemyReflection'); if (v!==null) { enemyReflectionStrength = parseFloat(v); window.enemyReflectionStrength = enemyReflectionStrength; }
-        v = localStorage.getItem('bulletReflection'); if (v!==null) { bulletReflectionStrength = parseFloat(v); window.bulletReflectionStrength = bulletReflectionStrength; }
-        v = localStorage.getItem('textReflection'); if (v!==null) { textReflectionStrength = parseFloat(v); window.textReflectionStrength = textReflectionStrength; }
-        v = localStorage.getItem('buttonReflection'); if (v!==null) { buttonReflectionStrength = parseFloat(v); window.buttonReflectionStrength = buttonReflectionStrength; }
-        v = localStorage.getItem('logoReflection'); if (v!==null) { logoReflectionStrength = parseFloat(v); window.logoReflectionStrength = logoReflectionStrength; }
-        if (typeof loadReflectionSettings === 'function') loadReflectionSettings();
+        enemyReflectionStrength = 0; window.enemyReflectionStrength = 0;
+        bulletReflectionStrength = 0; window.bulletReflectionStrength = 0;
+        textReflectionStrength = 0; window.textReflectionStrength = 0;
+        buttonReflectionStrength = 0; window.buttonReflectionStrength = 0;
+        logoReflectionStrength = 0; window.logoReflectionStrength = 0;
+        localStorage.removeItem('enemyReflection');
+        localStorage.removeItem('bulletReflection');
+        localStorage.removeItem('textReflection');
+        localStorage.removeItem('buttonReflection');
+        localStorage.removeItem('logoReflection');
     } catch(e){}
 }
 window.saveAllReflectionSettings = saveAllReflectionSettings;
 window.loadAllReflectionSettings = loadAllReflectionSettings;
 
-const FLOOR_REFLECTION_GLOBAL = 0.15;          // master 35% zoals nu
-const REFLECTION_BACKGROUND = 1.80;           // achtergrond / nebula -> 50%
-const REFLECTION_STARS = 1.80;                // sterren -> 50%
-const REFLECTION_SMOKE = 1.80;                // rookpluim -> 40%
-const REFLECTION_GAME = 0.55;                 // game laag (schepen) -> iets subtieler
+const FLOOR_REFLECTION_GLOBAL = 0.15; // master          // master 35% zoals nu
+const REFLECTION_BACKGROUND = 1.80; // achtergrond / nebula BLIJFT           // achtergrond / nebula -> 50%
+const REFLECTION_STARS = 0; // sterren UIT                // sterren -> 50%
+const REFLECTION_SMOKE = 1.80; // rookpluim BLIJFT                // rookpluim -> 40%
+const REFLECTION_GAME = 0; // game/schepen UIT                 // game laag (schepen) -> iets subtieler
 window.FLOOR_REFLECTION_GLOBAL = FLOOR_REFLECTION_GLOBAL;
 window.REFLECTION_BACKGROUND = REFLECTION_BACKGROUND;
 window.REFLECTION_STARS = REFLECTION_STARS;
@@ -167,7 +171,7 @@ function drawNebulaBackground(){
 }
 
 function drawMirrorReflection(){
- try{
+  try{
   if(!retroGridCtx||!retroGridCanvas) return;
   const width = retroGridCanvas.width, height = retroGridCanvas.height;
   const horizonY = Math.round(height * (typeof GRID_HORIZON_Y_FACTOR !== 'undefined' ? GRID_HORIZON_Y_FACTOR : 0.74));
@@ -195,30 +199,6 @@ function drawMirrorReflection(){
     const tCtx = mirrorTempCtx;
     tCtx.clearRect(0,0,width,horizonY);
     try{ tCtx.drawImage(sourceCanvas, 0,0,width,horizonY, 0,0,width,horizonY); }catch(e){ return; }
-    if (sourceCanvas === gameCanvas) {
-      try {
-        let eStrength = (typeof enemyReflectionStrength !== 'undefined') ? enemyReflectionStrength : (window.enemyReflectionStrength || 2);
-        if (eStrength > 0.05 && typeof enemies !== 'undefined' && enemies.length > 0) {
-          let addAlpha = (eStrength / 2.0) * 0.65;
-          if (addAlpha > 1) addAlpha = 1;
-          tCtx.save();
-          tCtx.globalCompositeOperation = 'lighter';
-          tCtx.globalAlpha = addAlpha;
-          const now = Date.now();
-          const useSecondFrame = (now % 400) >= 200;
-          for (let en of enemies) {
-            if (!en || en.y < -en.height || en.y > horizonY) continue;
-            let img = null;
-            if (en.type === (typeof ENEMY3_TYPE !== 'undefined' ? ENEMY3_TYPE : 'enemy3')) img = useSecondFrame ? (typeof bossGalagaImage2 !== 'undefined' ? bossGalagaImage2 : null) : (typeof bossGalagaImage !== 'undefined' ? bossGalagaImage : null);
-            else if (en.type === (typeof ENEMY2_TYPE !== 'undefined' ? ENEMY2_TYPE : 'enemy2')) img = useSecondFrame ? (typeof butterflyImage2 !== 'undefined' ? butterflyImage2 : null) : (typeof butterflyImage !== 'undefined' ? butterflyImage : null);
-            else img = useSecondFrame ? (typeof beeImage2 !== 'undefined' ? beeImage2 : null) : (typeof beeImage !== 'undefined' ? beeImage : null);
-            if (!img || !img.complete || img.naturalHeight === 0) continue;
-            try { tCtx.drawImage(img, Math.round(en.x), Math.round(en.y), en.width, en.height); } catch(e) {}
-          }
-          tCtx.restore();
-        }
-      } catch(e) {}
-    }
     for(let i=0;i<slices;i++){
       const progress = i / slices;
       const y = horizonY + i * (reflectionHeight / slices);
@@ -248,6 +228,7 @@ function drawMirrorReflection(){
       try{ retroGridCtx.drawImage(mirrorTempCanvas, 0, srcY, width, srcH, curX, y, curW, sliceH); }catch(e){}
     }
   }
+  // ALLEEN ACHTERGROND BLIJFT - rest is 0 en wordt dus niet getekend
   drawLayer(nebulaCanvas, REFLECTION_BACKGROUND, {keepFullWidth:true, fadeMin:0.65, isBackground:true});
   drawLayer(starrySkyCanvas, REFLECTION_STARS, {keepFullWidth:false, fadeMin:0.15, isBackground:false});
   drawLayer(gameCanvas, REFLECTION_GAME, {keepFullWidth:false, fadeMin:0.20, isBackground:false});
@@ -255,6 +236,7 @@ function drawMirrorReflection(){
   retroGridCtx.restore();
  }catch(e){ console.error('mirror reflection error',e); if(retroGridCtx) retroGridCtx.globalAlpha=1.0; }
 }
+
 
 // ===== EINDE NEBULA + SPIEGEL PER ELEMENT =====
 
@@ -377,7 +359,7 @@ function drawSmokePlumes(){
             retroGridCtx.fill();
         }
 
-        // --- EIGEN REFLECTIE SCHUIFJE: rookpluim 40% (onzichtbaar in visual) ---
+        // --- EIGEN REFLECTIE: alleen rookpluim mag blijven ---
         try{
           if(drawY < horizonY){
             const distAbove = horizonY - drawY;
@@ -389,8 +371,8 @@ function drawSmokePlumes(){
                 const progFloor = (mirrorY - horizonY) / reflectionHeight;
                 const spreadFactor = minSpread + progFloor * (maxSpread - minSpread);
                 const perspectiveX = width/2 + (drawX - width/2) * spreadFactor;
-                const reflectStrength = (typeof REFLECTION_SMOKE !== 'undefined' ? REFLECTION_SMOKE : 0.40);
-                const fade = (1 - progress) * (typeof FLOOR_REFLECTION_GLOBAL !== 'undefined' ? FLOOR_REFLECTION_GLOBAL : 0.50) * (reflectStrength / 0.50);
+                const reflectStrength = (typeof REFLECTION_SMOKE !== 'undefined' ? REFLECTION_SMOKE : 1.80);
+                const fade = (1 - progress) * (typeof FLOOR_REFLECTION_GLOBAL !== 'undefined' ? FLOOR_REFLECTION_GLOBAL : 0.15) * (reflectStrength / 0.50);
                 const aReflect = a * fade * 1.8;
                 if(aReflect > 0.002){
                     let gradR = retroGridCtx.createRadialGradient(perspectiveX, mirrorY, 0, perspectiveX, mirrorY, p.radius);
@@ -421,6 +403,8 @@ window.createAllReflectionSliders = createAllReflectionSliders;
 // sliders uit - geen info troep
 
 // =============================================================================
+// FORCEER GEEN REFLECTIE
+try{ window.FLOOR_REFLECTION_GLOBAL=FLOOR_REFLECTION_GLOBAL; window.REFLECTION_BACKGROUND=REFLECTION_BACKGROUND; window.REFLECTION_STARS=REFLECTION_STARS; window.REFLECTION_SMOKE=REFLECTION_SMOKE; window.REFLECTION_GAME=REFLECTION_GAME; window.enemyReflectionStrength=0; window.bulletReflectionStrength=0; }catch(e){}
 // ====================== EINDE REFLECTIE SYSTEEM ==============================
 // =============================================================================
 
