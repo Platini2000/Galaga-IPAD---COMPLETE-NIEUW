@@ -64,7 +64,7 @@ let mirrorTempCanvas=null, mirrorTempCtx=null;
 
 // --- REFLECTIE STERKTES (voor schuifjes) ---
 let enemyReflectionStrength = 0.45;
-let bulletReflectionStrength = 0.85;
+let bulletReflectionStrength = 2.00;
 let textReflectionStrength = 0.01;   // alle text: READY, PERFECT, SCORE etc   // alle text: READY, PERFECT, SCORE etc
 let buttonReflectionStrength = 0.01; // START / 1 PLAYER / 2 PLAYER buttons // START / 1 PLAYER / 2 PLAYER buttons
 let logoReflectionStrength = 0.01;   // Galaga logo   // Galaga logo
@@ -102,9 +102,9 @@ window.saveAllReflectionSettings = saveAllReflectionSettings;
 window.loadAllReflectionSettings = loadAllReflectionSettings;
 
 const FLOOR_REFLECTION_GLOBAL = 0.15;          // master 35% zoals nu
-const REFLECTION_BACKGROUND = 1.80;           // achtergrond / nebula -> 50%
-const REFLECTION_STARS = 1.80;                // sterren -> 50%
-const REFLECTION_SMOKE = 1.80;                // rookpluim -> 40%
+const REFLECTION_BACKGROUND = 2.00;           // achtergrond / nebula -> 50%
+const REFLECTION_STARS = 2.00;                // sterren -> 50%
+const REFLECTION_SMOKE = 2.00;                // rookpluim -> 40%
 const REFLECTION_GAME = 0.55;                 // game laag (schepen) -> iets subtieler
 window.FLOOR_REFLECTION_GLOBAL = FLOOR_REFLECTION_GLOBAL;
 window.REFLECTION_BACKGROUND = REFLECTION_BACKGROUND;
