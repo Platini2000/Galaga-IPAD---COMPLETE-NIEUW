@@ -50,10 +50,9 @@ const
 
 // --- Globale State Variabelen ---
 let nebulaCanvas, nebulaCtx;
-let nebulaBaseImage, nebulaOverlayImage;
-let nebulaBaseLoaded=false, nebulaOverlayLoaded=false;
+let nebulaBaseImage;
+let nebulaBaseLoaded=false;
 let nebulaBasePath='Afbeeldingen/nebula_horizon.jpg';
-let nebulaOverlayPath='Afbeeldingen/nebula_horizon_1920.jpg';
 let mirrorTempCanvas=null, mirrorTempCtx=null;
 let starrySkyCanvas, starryCtx, retroGridCanvas, retroGridCtx, gameCanvas, gameCtx;
 let stars = [];
@@ -1083,10 +1082,6 @@ function loadNebulaBackground(){
   nebulaBaseImage.src=nebulaBasePath;
   nebulaBaseImage.onload=()=>{nebulaBaseLoaded=true; console.log('[Nebula] base: '+nebulaBasePath); if(nebulaCanvas) drawNebulaBackground();};
   nebulaBaseImage.onerror=()=>{console.warn('[Nebula] base niet gevonden: '+nebulaBasePath);};
-  nebulaOverlayImage=new Image();
-  nebulaOverlayImage.src=nebulaOverlayPath;
-  nebulaOverlayImage.onload=()=>{nebulaOverlayLoaded=true; console.log('[Nebula] overlay: '+nebulaOverlayPath);};
-  nebulaOverlayImage.onerror=()=>{console.warn('[Nebula] overlay niet gevonden: '+nebulaOverlayPath);};
  }catch(e){console.error(e);}
 }
 function drawNebulaBackground(){
@@ -1094,7 +1089,6 @@ function drawNebulaBackground(){
   if(!nebulaCtx||!nebulaCanvas||nebulaCanvas.width===0)return;
   const cw=nebulaCanvas.width, ch=nebulaCanvas.height;
   const horizonY = Math.round(ch * (typeof GRID_HORIZON_Y_FACTOR !== 'undefined' ? GRID_HORIZON_Y_FACTOR : 0.74));
-  const now = Date.now();
   const extraHeightFactor = 1.08;
   const targetW = cw;
   const targetH = Math.round(horizonY * extraHeightFactor);
@@ -1106,16 +1100,6 @@ function drawNebulaBackground(){
   if(nebulaBaseLoaded&&nebulaBaseImage&&nebulaBaseImage.complete&&nebulaBaseImage.naturalWidth!==0){
    nebulaCtx.globalAlpha=1.0;
    nebulaCtx.drawImage(nebulaBaseImage, targetX, targetY, targetW, targetH);
-  }
-  if(nebulaOverlayLoaded&&nebulaOverlayImage&&nebulaOverlayImage.complete&&nebulaOverlayImage.naturalWidth!==0){
-   const speed = 0.00038;
-   const fadeCycle = (Math.sin(now * speed) + 1) / 2;
-   const smoothFade = fadeCycle * fadeCycle * (3 - 2 * fadeCycle);
-   const minAlpha = 0.38;
-   const maxAlpha = 0.92;
-   const overlayAlpha = minAlpha + smoothFade * (maxAlpha - minAlpha);
-   nebulaCtx.globalAlpha = overlayAlpha;
-   nebulaCtx.drawImage(nebulaOverlayImage, targetX, targetY, targetW, targetH);
   }
   nebulaCtx.globalAlpha=1.0;
  }catch(e){console.error('nebula draw',e); if(nebulaCtx) nebulaCtx.globalAlpha=1.0;}
@@ -1186,7 +1170,7 @@ function drawMirrorReflection(){
  }catch(e){ console.error('mirror reflection error',e); if(retroGridCtx) retroGridCtx.globalAlpha=1.0; }
 }
 // ===== EINDE NEBULA + SPIEGEL =====
-// ===== ROOK PLUIMEN ECHTE ROOK - LICHTBLAUW - EXTRA TRANSPARANT =====
+// ===== ROOK PLUIMEN ECHTE ROOK - PAARSE TINT - EXTRA TRANSPARANT =====
 let smokeParticles = [];
 let lastSmokeSpawnTime = 0;
 let smokeTimeAccum = 0;
@@ -1225,8 +1209,8 @@ function drawSmokePlumes(){
             const blobCount = 5 + Math.floor(Math.random()*3);
             const mainMaxRadius = 38 + Math.random()*48 + (Math.random()<0.3? 28:0);
             const mainLife = 9000 + Math.random()*6000;
-            // MEER TRANSPARANT: was 0.20+0.14, nu 0.12+0.08 = ~40% transparanter
-            const mainAlpha = 0.12 + Math.random()*0.08;
+            // NOG IETS TRANSPARANTER: was 0.12+0.08, nu 0.09+0.06
+            const mainAlpha = 0.09 + Math.random()*0.06;
 
             for(let b=0;b<blobCount;b++){
                 const angle = (b/blobCount)*Math.PI*2 + Math.random()*0.9;
@@ -1292,12 +1276,12 @@ function drawSmokePlumes(){
         const drawX = p.x + p.ox * (0.5 + t*1.2);
         const drawY = p.y + p.oy * (0.5 + t*1.0);
 
-        // EXTRA TRANSPARANT gradient - was 0.42/0.26/0.09, nu 0.28/0.16/0.05
+        // PAARSE TINT - was lichtblauw, nu paars
         let grad = retroGridCtx.createRadialGradient(drawX, drawY, 0, drawX, drawY, p.radius);
-        grad.addColorStop(0, `rgba(175,210,245,${(a*0.28).toFixed(3)})`);
-        grad.addColorStop(0.22, `rgba(155,195,235,${(a*0.16).toFixed(3)})`);
-        grad.addColorStop(0.52, `rgba(120,175,220,${(a*0.05).toFixed(3)})`);
-        grad.addColorStop(1, `rgba(90,150,200,0)`);
+        grad.addColorStop(0, `rgba(200,160,255,${(a*0.22).toFixed(3)})`);
+        grad.addColorStop(0.22, `rgba(180,130,245,${(a*0.12).toFixed(3)})`);
+        grad.addColorStop(0.52, `rgba(140,90,220,${(a*0.038).toFixed(3)})`);
+        grad.addColorStop(1, `rgba(90,50,180,0)`);
 
         retroGridCtx.fillStyle = grad;
         retroGridCtx.beginPath();
@@ -1312,8 +1296,8 @@ function drawSmokePlumes(){
         if(t < 0.65){
             const innerR = p.radius * 0.38;
             let grad2 = retroGridCtx.createRadialGradient(drawX + wobble1*4, drawY + wobble2*3, 0, drawX, drawY, innerR);
-            grad2.addColorStop(0, `rgba(195,225,250,${(a*0.16).toFixed(3)})`);
-            grad2.addColorStop(1, `rgba(150,195,235,0)`);
+            grad2.addColorStop(0, `rgba(220,185,255,${(a*0.12).toFixed(3)})`);
+            grad2.addColorStop(1, `rgba(180,130,245,0)`);
             retroGridCtx.fillStyle = grad2;
             retroGridCtx.beginPath();
             retroGridCtx.ellipse(drawX, drawY, innerR*(1+wobble1*0.3), innerR*(1+wobble2*0.3), -rot, 0, Math.PI*2);
