@@ -48,367 +48,7 @@ const
 ;
 
 
-
-// =============================================================================
-// ====================== REFLECTIE SYSTEEM - COMPLEET OVERZICHT ================
-// =============================================================================
-// Alles wat met reflectie te maken heeft bij elkaar, netjes geordend.
-// Originele code 1-op-1, alleen verplaatst naar 1 plek.
-// =============================================================================
-
-let nebulaCanvas, nebulaCtx;
-let nebulaBaseImage;
-let nebulaBaseLoaded=false;
-let nebulaBasePath='Afbeeldingen/nebula_horizon.jpg';
-let mirrorTempCanvas=null, mirrorTempCtx=null;
-
-// --- REFLECTIE STERKTES (voor schuifjes) ---
-let enemyReflectionStrength = 0;
-let bulletReflectionStrength = 0;
-let textReflectionStrength = 0.01;   // alle text: READY, PERFECT, SCORE etc
-let buttonReflectionStrength = 0.01; // START / 1 PLAYER / 2 PLAYER buttons
-let logoReflectionStrength = 0.01;   // Galaga logo
-
-// window exports
-window.enemyReflectionStrength = enemyReflectionStrength;
-window.bulletReflectionStrength = bulletReflectionStrength;
-window.textReflectionStrength = textReflectionStrength;
-window.buttonReflectionStrength = buttonReflectionStrength;
-window.logoReflectionStrength = logoReflectionStrength;
-
-function saveAllReflectionSettings() {
-    try {
-        localStorage.setItem('enemyReflection', enemyReflectionStrength);
-        localStorage.setItem('bulletReflection', bulletReflectionStrength);
-        localStorage.setItem('textReflection', textReflectionStrength);
-        localStorage.setItem('buttonReflection', buttonReflectionStrength);
-        localStorage.setItem('logoReflection', logoReflectionStrength);
-        // behoud oude saves voor compatibiliteit
-        if (typeof saveReflectionSettings === 'function') saveReflectionSettings();
-    } catch(e){}
-}
-function loadAllReflectionSettings() {
-    // Alleen achtergrond en rook mogen blijven, rest geforceerd 0
-    try {
-        enemyReflectionStrength = 0; window.enemyReflectionStrength = 0;
-        bulletReflectionStrength = 0; window.bulletReflectionStrength = 0;
-        textReflectionStrength = 0; window.textReflectionStrength = 0;
-        buttonReflectionStrength = 0; window.buttonReflectionStrength = 0;
-        logoReflectionStrength = 0; window.logoReflectionStrength = 0;
-        localStorage.removeItem('enemyReflection');
-        localStorage.removeItem('bulletReflection');
-        localStorage.removeItem('textReflection');
-        localStorage.removeItem('buttonReflection');
-        localStorage.removeItem('logoReflection');
-    } catch(e){}
-}
-window.saveAllReflectionSettings = saveAllReflectionSettings;
-window.loadAllReflectionSettings = loadAllReflectionSettings;
-
-const FLOOR_REFLECTION_GLOBAL = 0.15; // master          // master 35% zoals nu
-const REFLECTION_BACKGROUND = 1.80; // achtergrond / nebula BLIJFT           // achtergrond / nebula -> 50%
-const REFLECTION_STARS = 0; // sterren UIT                // sterren -> 50%
-const REFLECTION_SMOKE = 1.80; // rookpluim BLIJFT                // rookpluim -> 40%
-const REFLECTION_GAME = 0; // game/schepen UIT                 // game laag (schepen) -> iets subtieler
-window.FLOOR_REFLECTION_GLOBAL = FLOOR_REFLECTION_GLOBAL;
-window.REFLECTION_BACKGROUND = REFLECTION_BACKGROUND;
-window.REFLECTION_STARS = REFLECTION_STARS;
-window.REFLECTION_SMOKE = REFLECTION_SMOKE;
-window.REFLECTION_GAME = REFLECTION_GAME;
-
-function loadNebulaBackground(){
- try{
-  if(!nebulaBaseImage) nebulaBaseImage=new Image();
-  nebulaBasePath='Afbeeldingen/nebula_horizon.jpg';
-  nebulaBaseImage.onload=()=>{
-    nebulaBaseLoaded=true; 
-    console.log('[Nebula] geladen: '+nebulaBasePath + ' ('+nebulaBaseImage.naturalWidth+'x'+nebulaBaseImage.naturalHeight+')'); 
-    if(typeof drawNebulaBackground==='function' && nebulaCanvas) {
-        drawNebulaBackground();
-        // force extra draw after resize to be sure
-        setTimeout(()=>{ if(typeof drawNebulaBackground==='function') drawNebulaBackground(); }, 100);
-    }
-  };
-  nebulaBaseImage.onerror=()=>{
-    console.error('[Nebula] niet gevonden: '+nebulaBasePath+' - probeer fallback naar afbeeldingen/ (kleine letter)');
-    if(nebulaBasePath.startsWith('Afbeeldingen/')){
-        nebulaBasePath='afbeeldingen/nebula_horizon.jpg';
-        console.log('[Nebula] retry met: '+nebulaBasePath);
-        nebulaBaseImage.src=nebulaBasePath + '?v=' + Date.now();
-    } else {
-        console.error('[Nebula] ook fallback faalt. Controleer of Afbeeldingen/nebula_horizon.jpg echt op de server staat en via HTTP bereikbaar is (niet file://).');
-    }
-  };
-  // Cache bust om zwart vlak door oude failed load te voorkomen
-  nebulaBaseImage.src=nebulaBasePath + '?v=' + Date.now();
-  console.log('[Nebula] start laden: ' + nebulaBaseImage.src);
- }catch(e){console.error('[Nebula] error',e);}
-}
-
-function drawNebulaBackground(){
-  if(!nebulaCtx || !nebulaCanvas || nebulaCanvas.width===0) return;
-  try{
-    const cw = nebulaCanvas.width;
-    const ch = nebulaCanvas.height;
-    const horizonY = Math.round(ch * (typeof GRID_HORIZON_Y_FACTOR !== 'undefined' ? GRID_HORIZON_Y_FACTOR : 0.74));
-    // BREDER en LANGER en LAGER
-    const widthFactor = 1.8;   // 80% breder
-    const heightFactor = 1.8;  // 80% langer
-    const targetW = Math.round(cw * widthFactor);
-    const targetH = Math.round(horizonY * heightFactor);
-    const targetX = Math.round((cw - targetW) / 2); // gecentreerd breder
-    const targetY = 0; // bovenkant op 0, onderkant zakt nu ONDER horizon = lager
-    nebulaCtx.clearRect(0,0,cw,ch);
-    nebulaCtx.fillStyle='#000000';
-    nebulaCtx.fillRect(0,0,cw,ch);
-    if(nebulaBaseLoaded && nebulaBaseImage && nebulaBaseImage.complete && nebulaBaseImage.naturalWidth>0){
-      nebulaCtx.globalAlpha=1.0;
-      // onderkant komt nu op horizonY * 1.8 = ver onder horizon = lager
-      nebulaCtx.drawImage(nebulaBaseImage, targetX, targetY, targetW, targetH);
-    }
-    nebulaCtx.globalAlpha=1.0;
-  }catch(e){ console.error('nebula', e); if(nebulaCtx) nebulaCtx.globalAlpha=1.0; }
-}
-
-function drawMirrorReflection(){
-  try{
-  if(!retroGridCtx||!retroGridCanvas) return;
-  const width = retroGridCanvas.width, height = retroGridCanvas.height;
-  const horizonY = Math.round(height * (typeof GRID_HORIZON_Y_FACTOR !== 'undefined' ? GRID_HORIZON_Y_FACTOR : 0.74));
-  const isIOS = (typeof navigator !== 'undefined' && (/iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)));
-  const reflectionHeight = Math.round(height * (isIOS ? 0.20 : 0.30));
-  if(reflectionHeight <= 2) return;
-  if(!mirrorTempCanvas){
-    mirrorTempCanvas = document.createElement('canvas');
-    mirrorTempCtx = mirrorTempCanvas.getContext('2d');
-  }
-  if(mirrorTempCanvas.width !== width || mirrorTempCanvas.height !== horizonY){
-    mirrorTempCanvas.width = width;
-    mirrorTempCanvas.height = horizonY;
-  }
-  const minSpread = 1.0;
-  const maxSpread = (typeof GRID_BOTTOM_SPREAD_FACTOR !== 'undefined' ? GRID_BOTTOM_SPREAD_FACTOR : 2.0) * 0.92;
-  const slices = isIOS ? 40 : 120;
-  retroGridCtx.save();
-  const BACKGROUND_TOP_PULL = 0.22;
-  function drawLayer(sourceCanvas, layerStrength, options){
-    if(!sourceCanvas || layerStrength <= 0.001) return;
-    const keepFullWidth = options && options.keepFullWidth;
-    const fadeMin = options && typeof options.fadeMin !== 'undefined' ? options.fadeMin : 0.0;
-    const isBackground = options && options.isBackground;
-    const tCtx = mirrorTempCtx;
-    tCtx.clearRect(0,0,width,horizonY);
-    try{ tCtx.drawImage(sourceCanvas, 0,0,width,horizonY, 0,0,width,horizonY); }catch(e){ return; }
-    for(let i=0;i<slices;i++){
-      const progress = i / slices;
-      const y = horizonY + i * (reflectionHeight / slices);
-      const sliceH = Math.ceil(reflectionHeight / slices) + 1;
-      let curW, curX;
-      if(keepFullWidth){
-        curW = width;
-        curX = 0;
-      } else {
-        const spreadFactor = minSpread + progress * (maxSpread - minSpread);
-        curW = width * spreadFactor;
-        curX = (width - curW) / 2;
-      }
-      let effectiveProgress = progress;
-      if(isBackground){
-        effectiveProgress = Math.pow(progress, 0.72);
-        effectiveProgress = Math.min(1, effectiveProgress + BACKGROUND_TOP_PULL * (1 - progress*0.3));
-      }
-      const srcY = Math.round((1 - effectiveProgress) * (horizonY - 1));
-      const srcH = 3;
-      if(srcY < 0 || srcY >= horizonY) continue;
-      const normalized = layerStrength / 0.50;
-      const fadeCurve = (1 - progress * (1 - fadeMin));
-      const fadeAlpha = fadeCurve * FLOOR_REFLECTION_GLOBAL * normalized;
-      if(fadeAlpha < 0.005) continue;
-      retroGridCtx.globalAlpha = fadeAlpha;
-      try{ retroGridCtx.drawImage(mirrorTempCanvas, 0, srcY, width, srcH, curX, y, curW, sliceH); }catch(e){}
-    }
-  }
-  // ALLEEN ACHTERGROND BLIJFT - rest is 0 en wordt dus niet getekend
-  drawLayer(nebulaCanvas, REFLECTION_BACKGROUND, {keepFullWidth:true, fadeMin:0.65, isBackground:true});
-  drawLayer(starrySkyCanvas, REFLECTION_STARS, {keepFullWidth:false, fadeMin:0.15, isBackground:false});
-  drawLayer(gameCanvas, REFLECTION_GAME, {keepFullWidth:false, fadeMin:0.20, isBackground:false});
-  retroGridCtx.globalAlpha = 1.0;
-  retroGridCtx.restore();
- }catch(e){ console.error('mirror reflection error',e); if(retroGridCtx) retroGridCtx.globalAlpha=1.0; }
-}
-
-
-// ===== EINDE NEBULA + SPIEGEL PER ELEMENT =====
-
-
-// ===== ROOK PLUIMEN ECHTE ROOK - PAARSE TINT - EXTRA TRANSPARANT + EIGEN REFLECTIE SCHUIFJE =====
-let smokeParticles = [];
-let lastSmokeSpawnTime = 0;
-let smokeTimeAccum = 0;
-
-function drawSmokePlumes(){
-  try{
-    if(!retroGridCtx || !retroGridCanvas) return;
-    const width = retroGridCanvas.width, height = retroGridCanvas.height;
-    const horizonY = Math.round(height * (typeof GRID_HORIZON_Y_FACTOR !== 'undefined' ? GRID_HORIZON_Y_FACTOR : 0.74));
-    const reflectionHeight = Math.round(height * 0.30);
-    const now = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
-
-    const CM_PX = 37.795275591;
-    const OFFSET_PX = Math.round(6 * CM_PX);
-    const effectiveOffset = Math.min(OFFSET_PX, Math.round(width * 0.14));
-    const leftX = effectiveOffset;
-    const rightX = width - effectiveOffset;
-
-    if(!drawSmokePlumes._lastT) drawSmokePlumes._lastT = now;
-    const dt = Math.min(40, now - drawSmokePlumes._lastT);
-    drawSmokePlumes._lastT = now;
-
-    if((!isPaused || isShowingPortraitMessage) && typeof isShowingPortraitMessage !== 'undefined'){
-        smokeTimeAccum += dt;
-    } else if(typeof isPaused === 'undefined'){
-        smokeTimeAccum += dt;
-    }
-
-    const spawnInterval = 260;
-    if(now - lastSmokeSpawnTime > spawnInterval){
-        lastSmokeSpawnTime = now;
-        [leftX, rightX].forEach((baseX, sideIdx)=>{
-            const side = sideIdx===0 ? -1 : 1;
-            const puffId = now + Math.random()*1000;
-            const baseVy = 0.22 + Math.random()*0.32;
-            const baseVx = (Math.random()*0.18 - 0.09) + side*0.12;
-            const blobCount = 5 + Math.floor(Math.random()*3);
-            const mainMaxRadius = 38 + Math.random()*48 + (Math.random()<0.3? 28:0);
-            const mainLife = 9000 + Math.random()*6000;
-            const mainAlpha = 0.09 + Math.random()*0.06;
-            for(let b=0;b<blobCount;b++){
-                const angle = (b/blobCount)*Math.PI*2 + Math.random()*0.9;
-                const dist = Math.random()*12 + b*2.2;
-                const blobOffsetX = Math.cos(angle)*dist;
-                const blobOffsetY = Math.sin(angle)*dist*0.6 - Math.random()*6;
-                const blobSizeFactor = 0.55 + Math.random()*0.65;
-                smokeParticles.push({
-                    puffId: puffId, isBlob: true,
-                    x: baseX + blobOffsetX + (Math.random()-0.5)*6,
-                    y: horizonY + blobOffsetY + Math.random()*4,
-                    ox: blobOffsetX, oy: blobOffsetY, baseX: baseX,
-                    vx: baseVx + (Math.random()-0.5)*0.18,
-                    vy: baseVy + Math.random()*0.18,
-                    radius: (6 + Math.random()*7) * blobSizeFactor,
-                    maxRadius: mainMaxRadius * blobSizeFactor,
-                    alpha: mainAlpha * (0.7 + Math.random()*0.5),
-                    life: Math.random()*400, maxLife: mainLife + Math.random()*800,
-                    wobblePhase: Math.random()*Math.PI*6, wobbleSpeed: 0.0006 + Math.random()*0.001,
-                    turbPhase: Math.random()*10, side: sideIdx, blobIndex: b
-                });
-            }
-        });
-    }
-
-    retroGridCtx.save();
-    const alive = [];
-    for(let p of smokeParticles){
-        if(!isPaused || isShowingPortraitMessage){
-            p.life += dt;
-            const t = p.life / p.maxLife;
-            const turbX = Math.sin(smokeTimeAccum*0.0008 + p.turbPhase + p.y*0.008) * 0.6 + Math.cos(smokeTimeAccum*0.0005 + p.turbPhase*1.3) * 0.35;
-            const turbY = Math.sin(smokeTimeAccum*0.0006 + p.wobblePhase) * 0.25;
-            p.y -= p.vy * (dt/16.66) * (1 - t*0.35) + turbY * (dt/16.66);
-            p.x += (p.vx + turbX*0.5) * (dt/16.66);
-            const expandFactor = 1 + t*2.8;
-            p.ox = p.ox * (1 + dt*0.00018*expandFactor);
-            p.oy = p.oy * (1 + dt*0.00015*expandFactor) - dt*0.01*t;
-            const growthT = 1 - Math.pow(1 - Math.min(1,t), 2.4);
-            p.radius = p.radius + (p.maxRadius - p.radius) * growthT * 0.08;
-        }
-        const t = p.life / p.maxLife;
-        if(t >= 1) continue;
-        if(p.y < -p.maxRadius*1.2) continue;
-        let a;
-        if(t < 0.07) a = (t/0.07) * p.alpha * 0.9;
-        else if(t < 0.72) a = p.alpha * (1 - (t-0.07)*0.18);
-        else { const fadeT = (t-0.72)/0.28; a = p.alpha * Math.pow(1-fadeT, 2.2) * 0.92; }
-        if(a < 0.004) continue;
-        const drawX = p.x + p.ox * (0.5 + t*1.2);
-        const drawY = p.y + p.oy * (0.5 + t*1.0);
-        const wobble1 = Math.sin(p.wobblePhase + t*3.2)*0.18;
-        const wobble2 = Math.cos(p.wobblePhase*1.4 + t*2.1)*0.15;
-        const rX = p.radius * (1 + wobble1);
-        const rY = p.radius * (1 + wobble2) * (1 + t*0.35);
-        const rot = wobble1*0.5;
-
-        // originele rook boven horizon
-        let grad = retroGridCtx.createRadialGradient(drawX, drawY, 0, drawX, drawY, p.radius);
-        grad.addColorStop(0, `rgba(200,160,255,${(a*0.22).toFixed(3)})`);
-        grad.addColorStop(0.22, `rgba(180,130,245,${(a*0.12).toFixed(3)})`);
-        grad.addColorStop(0.52, `rgba(140,90,220,${(a*0.038).toFixed(3)})`);
-        grad.addColorStop(1, `rgba(90,50,180,0)`);
-        retroGridCtx.fillStyle = grad;
-        retroGridCtx.beginPath();
-        retroGridCtx.ellipse(drawX, drawY, rX, rY, rot, 0, Math.PI*2);
-        retroGridCtx.fill();
-        if(t < 0.65){
-            const innerR = p.radius * 0.38;
-            let grad2 = retroGridCtx.createRadialGradient(drawX + wobble1*4, drawY + wobble2*3, 0, drawX, drawY, innerR);
-            grad2.addColorStop(0, `rgba(220,185,255,${(a*0.12).toFixed(3)})`);
-            grad2.addColorStop(1, `rgba(180,130,245,0)`);
-            retroGridCtx.fillStyle = grad2;
-            retroGridCtx.beginPath();
-            retroGridCtx.ellipse(drawX, drawY, innerR*(1+wobble1*0.3), innerR*(1+wobble2*0.3), -rot, 0, Math.PI*2);
-            retroGridCtx.fill();
-        }
-
-        // --- EIGEN REFLECTIE: alleen rookpluim mag blijven ---
-        try{
-          if(drawY < horizonY){
-            const distAbove = horizonY - drawY;
-            const progress = Math.min(1, distAbove / (horizonY * 0.85));
-            const mirrorY = horizonY + progress * reflectionHeight * 0.55;
-            if(mirrorY < horizonY + reflectionHeight - 2){
-                const minSpread = 1.0;
-                const maxSpread = (typeof GRID_BOTTOM_SPREAD_FACTOR !== 'undefined' ? GRID_BOTTOM_SPREAD_FACTOR : 2.0) * 0.92;
-                const progFloor = (mirrorY - horizonY) / reflectionHeight;
-                const spreadFactor = minSpread + progFloor * (maxSpread - minSpread);
-                const perspectiveX = width/2 + (drawX - width/2) * spreadFactor;
-                const reflectStrength = (typeof REFLECTION_SMOKE !== 'undefined' ? REFLECTION_SMOKE : 1.80);
-                const fade = (1 - progress) * (typeof FLOOR_REFLECTION_GLOBAL !== 'undefined' ? FLOOR_REFLECTION_GLOBAL : 0.15) * (reflectStrength / 0.50);
-                const aReflect = a * fade * 1.8;
-                if(aReflect > 0.002){
-                    let gradR = retroGridCtx.createRadialGradient(perspectiveX, mirrorY, 0, perspectiveX, mirrorY, p.radius);
-                    gradR.addColorStop(0, `rgba(200,160,255,${(aReflect*0.22).toFixed(4)})`);
-                    gradR.addColorStop(0.22, `rgba(180,130,245,${(aReflect*0.12).toFixed(4)})`);
-                    gradR.addColorStop(0.52, `rgba(140,90,220,${(aReflect*0.038).toFixed(4)})`);
-                    gradR.addColorStop(1, `rgba(90,50,180,0)`);
-                    retroGridCtx.fillStyle = gradR;
-                    retroGridCtx.beginPath();
-                    retroGridCtx.ellipse(perspectiveX, mirrorY, rX*spreadFactor*0.9, rY*0.55, rot, 0, Math.PI*2);
-                    retroGridCtx.fill();
-                }
-            }
-          }
-        }catch(e){}
-
-        alive.push(p);
-    }
-    smokeParticles = alive;
-    retroGridCtx.restore();
-  }catch(e){ console.error('smoke error',e); if(retroGridCtx) { retroGridCtx.globalAlpha=1.0; try{retroGridCtx.restore();}catch(_){} } }
-}
-
-function createAllReflectionSliders() {
-    return;
-}
-window.createAllReflectionSliders = createAllReflectionSliders;
-// sliders uit - geen info troep
-
-// =============================================================================
-// FORCEER GEEN REFLECTIE
-try{ window.FLOOR_REFLECTION_GLOBAL=FLOOR_REFLECTION_GLOBAL; window.REFLECTION_BACKGROUND=REFLECTION_BACKGROUND; window.REFLECTION_STARS=REFLECTION_STARS; window.REFLECTION_SMOKE=REFLECTION_SMOKE; window.REFLECTION_GAME=REFLECTION_GAME; window.enemyReflectionStrength=0; window.bulletReflectionStrength=0; }catch(e){}
-// ====================== EINDE REFLECTIE SYSTEEM ==============================
-// =============================================================================
-
-
+// --- Globale State Variabelen ---
 let starrySkyCanvas, starryCtx, retroGridCanvas, retroGridCtx, gameCanvas, gameCtx;
 let stars = [];
 let gridOffsetY = 0;
@@ -907,6 +547,7 @@ function initializeAudioContext() {
 
 
 
+// --- START OF FILE setup_utils.js ---
 // --- DEEL 2      van 3 dit code blok    ---
 
 const
@@ -1122,21 +763,17 @@ function loadAllSounds() {
 
 
 function initializeDOMElements() {
-    nebulaCanvas = document.getElementById('nebulaCanvas');
-    nebulaCtx = nebulaCanvas?.getContext('2d');
     starrySkyCanvas = document.getElementById('starrySkyCanvas');
     starryCtx = starrySkyCanvas?.getContext('2d');
     retroGridCanvas = document.getElementById('retroGridCanvas');
     retroGridCtx = retroGridCanvas?.getContext('2d');
     gameCanvas = document.getElementById("gameCanvas");
     gameCtx = gameCanvas?.getContext("2d");
-    if (nebulaCanvas) { if(!nebulaBaseImage) loadNebulaBackground(); } else { console.warn('[Nebula] canvas #nebulaCanvas niet gevonden in index.html!'); }
     if (!starryCtx || !retroGridCtx || !gameCtx) { console.error("FATAL: Could not initialize one or more canvas contexts!"); alert("Error loading critical canvas elements."); document.body.innerHTML = '<p style="color:white;">FATAL ERROR</p>'; return false; }
 
     if (gameCanvas.width === 0 || gameCanvas.height === 0) {
         const initialWidth = window.innerWidth || 800;
         const initialHeight = window.innerHeight || 600;
-        if (nebulaCanvas) { nebulaCanvas.width = initialWidth; nebulaCanvas.height = initialHeight; }
         if (starrySkyCanvas) { starrySkyCanvas.width = initialWidth; starrySkyCanvas.height = initialHeight; }
         if (retroGridCanvas) { retroGridCanvas.width = initialWidth; retroGridCanvas.height = initialHeight; }
         gameCanvas.width = initialWidth;
@@ -1219,6 +856,7 @@ function scaleValue(currentLevel, baseValue, maxValue) { const levelForCalc = Ma
 
 
 
+// --- START OF FILE setup_utils.js ---
 // --- DEEL 3      van 3 dit code blok    ---
 
 
@@ -1410,12 +1048,7 @@ function createStars() { /* ... ongewijzigd ... */ stars = []; if (starrySkyCanv
 function drawStars() { /* ... ongewijzigd ... */ try { if (!starryCtx || !starrySkyCanvas || starrySkyCanvas.width === 0 || starrySkyCanvas.height === 0) return; const currentCanvasWidth = starrySkyCanvas.width; const currentCanvasHeight = starrySkyCanvas.height; starryCtx.clearRect(0, 0, currentCanvasWidth, currentCanvasHeight); const horizonY = Math.round(currentCanvasHeight * GRID_HORIZON_Y_FACTOR); const perspectiveHeight = currentCanvasHeight - horizonY; const fadeStartY = Math.max(0, horizonY - perspectiveHeight * STAR_FADE_START_FACTOR_ABOVE_HORIZON); const fadeEndY = horizonY; const fadeRange = Math.max(1, fadeEndY - fadeStartY); stars.forEach(star => { const normalizedRadius = (star.radius - MIN_STAR_RADIUS) / (MAX_STAR_RADIUS - MIN_STAR_RADIUS); const speed = BASE_PARALLAX_SPEED + (normalizedRadius * PARALLAX_SPEED_FACTOR); if (!isPaused || isShowingPortraitMessage) { star.y += speed; } if (star.y > currentCanvasHeight + star.radius) { star.y = -star.radius * 2; star.x = Math.random() * currentCanvasWidth; } if (!isPaused || isShowingPortraitMessage) { star.alpha += star.alphaChange; if (star.alpha <= 0.1 || star.alpha >= 1.0) { star.alphaChange *= -1; star.alpha = Math.max(0.1, Math.min(1.0, star.alpha)); } } let finalAlpha = star.alpha; if (fadeStartY >= 0 && star.y > fadeStartY) { if (star.y >= horizonY) { finalAlpha = 0; } else { finalAlpha *= (1.0 - Math.min(1.0, Math.max(0, (star.y - fadeStartY) / fadeRange))); } } finalAlpha = Math.max(0, Math.min(1.0, finalAlpha)); if (finalAlpha > 0.01) { starryCtx.beginPath(); starryCtx.arc(Math.round(star.x), Math.round(star.y), star.radius, 0, Math.PI * 2); starryCtx.fillStyle = `rgba(255, 255, 255, ${finalAlpha.toFixed(3)})`; starryCtx.fill(); } }); } catch (e) { console.error("Error in drawStars:", e); if (mainLoopId) cancelAnimationFrame(mainLoopId); mainLoopId = null; } }
 
 /** Draws the retro perspective grid. */
-function drawRetroGrid() { /* ... ongewijzigd ... */ try { if (!retroGridCtx || !retroGridCanvas || retroGridCanvas.width === 0 || retroGridCanvas.height === 0) return; if (!isPaused || isShowingPortraitMessage) { gridOffsetY -= GRID_SPEED; } const width = retroGridCanvas.width; const height = retroGridCanvas.height; retroGridCtx.clearRect(0, 0, width, height); const horizonY = Math.round(height * GRID_HORIZON_Y_FACTOR);
-  // SPIEGEL REFLECTIE 30% - alles boven horizon gespiegeld op vloer
-  try{ drawMirrorReflection(); }catch(e){}
-  // ROOK PLUIMEN - subtiel grijs vanaf horizon, 6cm van zijkant
-  try{ drawSmokePlumes(); }catch(e){}
- const vanishingPointX = width / 2; const perspectiveHeight = height - horizonY; retroGridCtx.lineWidth = GRID_LINE_WIDTH; const fixedLineWidth = width * GRID_HORIZONTAL_LINE_WIDTH_FACTOR; const fixedLineStartX = vanishingPointX - fixedLineWidth / 2; const fixedLineEndX = vanishingPointX + fixedLineWidth / 2; const fadeStartY = horizonY + perspectiveHeight * 0.1; const fadeEndY = height; const fadeRange = Math.max(1, fadeEndY - fadeStartY); retroGridCtx.strokeStyle = GRID_LINE_COLOR_FIXED; retroGridCtx.beginPath(); retroGridCtx.moveTo(fixedLineStartX, horizonY); retroGridCtx.lineTo(fixedLineEndX, horizonY); retroGridCtx.stroke(); let normalizedOffset = gridOffsetY % GRID_BASE_SPACING; if (normalizedOffset > 0) { normalizedOffset -= GRID_BASE_SPACING; } let currentDrawY = horizonY - normalizedOffset; if (currentDrawY <= horizonY) currentDrawY += GRID_BASE_SPACING; while (currentDrawY < height + GRID_BASE_SPACING) { let progress = Math.max(0, Math.min(1, (currentDrawY - horizonY) / perspectiveHeight)); if (currentDrawY > horizonY && currentDrawY <= height + GRID_LINE_WIDTH*2) { let currentAlpha; if (currentDrawY <= fadeStartY) { currentAlpha = GRID_MIN_ALPHA; } else if (currentDrawY >= fadeEndY) { currentAlpha = GRID_BASE_ALPHA; } else { const fadeProgress = (currentDrawY - fadeStartY) / fadeRange; currentAlpha = GRID_MIN_ALPHA + (GRID_BASE_ALPHA - GRID_MIN_ALPHA) * fadeProgress; } currentAlpha = Math.max(0, Math.min(GRID_BASE_ALPHA, currentAlpha)); if (currentAlpha > 0.01) { retroGridCtx.strokeStyle = `rgba(${GRID_RGB_PART}, ${currentAlpha.toFixed(3)})`; retroGridCtx.beginPath(); retroGridCtx.moveTo(fixedLineStartX, Math.round(currentDrawY)); retroGridCtx.lineTo(fixedLineEndX, Math.round(currentDrawY)); retroGridCtx.stroke(); } } let nextSpacing = GRID_BASE_SPACING * Math.pow(1 + progress * 1.5, GRID_SPACING_POWER); currentDrawY += Math.max(1, nextSpacing); } retroGridCtx.strokeStyle = GRID_LINE_COLOR_FIXED; retroGridCtx.beginPath(); const numLinesHalf = Math.floor(GRID_NUM_PERSPECTIVE_LINES / 2); const horizonSpreadWidth = width * GRID_HORIZON_SPREAD_FACTOR; const maxSpreadAtBottom = width * GRID_BOTTOM_SPREAD_FACTOR; for (let i = 0; i <= numLinesHalf; i++) { let spreadProgress = Math.pow(i / numLinesHalf, GRID_PERSPECTIVE_POWER); let startX_R = vanishingPointX + spreadProgress * (horizonSpreadWidth / 2); let startX_L = vanishingPointX - spreadProgress * (horizonSpreadWidth / 2); let bottomX_R = vanishingPointX + spreadProgress * (maxSpreadAtBottom / 2); let bottomX_L = vanishingPointX - spreadProgress * (maxSpreadAtBottom / 2); retroGridCtx.moveTo(startX_R, horizonY); retroGridCtx.lineTo(bottomX_R, height); if (i > 0) { retroGridCtx.moveTo(startX_L, horizonY); retroGridCtx.lineTo(bottomX_L, height); } } retroGridCtx.stroke(); } catch (e) { console.error("Error in drawRetroGrid:", e); } }
+function drawRetroGrid() { /* ... ongewijzigd ... */ try { if (!retroGridCtx || !retroGridCanvas || retroGridCanvas.width === 0 || retroGridCanvas.height === 0) return; if (!isPaused || isShowingPortraitMessage) { gridOffsetY -= GRID_SPEED; } const width = retroGridCanvas.width; const height = retroGridCanvas.height; retroGridCtx.clearRect(0, 0, width, height); const horizonY = Math.round(height * GRID_HORIZON_Y_FACTOR); const vanishingPointX = width / 2; const perspectiveHeight = height - horizonY; retroGridCtx.lineWidth = GRID_LINE_WIDTH; const fixedLineWidth = width * GRID_HORIZONTAL_LINE_WIDTH_FACTOR; const fixedLineStartX = vanishingPointX - fixedLineWidth / 2; const fixedLineEndX = vanishingPointX + fixedLineWidth / 2; const fadeStartY = horizonY + perspectiveHeight * 0.1; const fadeEndY = height; const fadeRange = Math.max(1, fadeEndY - fadeStartY); retroGridCtx.strokeStyle = GRID_LINE_COLOR_FIXED; retroGridCtx.beginPath(); retroGridCtx.moveTo(fixedLineStartX, horizonY); retroGridCtx.lineTo(fixedLineEndX, horizonY); retroGridCtx.stroke(); let normalizedOffset = gridOffsetY % GRID_BASE_SPACING; if (normalizedOffset > 0) { normalizedOffset -= GRID_BASE_SPACING; } let currentDrawY = horizonY - normalizedOffset; if (currentDrawY <= horizonY) currentDrawY += GRID_BASE_SPACING; while (currentDrawY < height + GRID_BASE_SPACING) { let progress = Math.max(0, Math.min(1, (currentDrawY - horizonY) / perspectiveHeight)); if (currentDrawY > horizonY && currentDrawY <= height + GRID_LINE_WIDTH*2) { let currentAlpha; if (currentDrawY <= fadeStartY) { currentAlpha = GRID_MIN_ALPHA; } else if (currentDrawY >= fadeEndY) { currentAlpha = GRID_BASE_ALPHA; } else { const fadeProgress = (currentDrawY - fadeStartY) / fadeRange; currentAlpha = GRID_MIN_ALPHA + (GRID_BASE_ALPHA - GRID_MIN_ALPHA) * fadeProgress; } currentAlpha = Math.max(0, Math.min(GRID_BASE_ALPHA, currentAlpha)); if (currentAlpha > 0.01) { retroGridCtx.strokeStyle = `rgba(${GRID_RGB_PART}, ${currentAlpha.toFixed(3)})`; retroGridCtx.beginPath(); retroGridCtx.moveTo(fixedLineStartX, Math.round(currentDrawY)); retroGridCtx.lineTo(fixedLineEndX, Math.round(currentDrawY)); retroGridCtx.stroke(); } } let nextSpacing = GRID_BASE_SPACING * Math.pow(1 + progress * 1.5, GRID_SPACING_POWER); currentDrawY += Math.max(1, nextSpacing); } retroGridCtx.strokeStyle = GRID_LINE_COLOR_FIXED; retroGridCtx.beginPath(); const numLinesHalf = Math.floor(GRID_NUM_PERSPECTIVE_LINES / 2); const horizonSpreadWidth = width * GRID_HORIZON_SPREAD_FACTOR; const maxSpreadAtBottom = width * GRID_BOTTOM_SPREAD_FACTOR; for (let i = 0; i <= numLinesHalf; i++) { let spreadProgress = Math.pow(i / numLinesHalf, GRID_PERSPECTIVE_POWER); let startX_R = vanishingPointX + spreadProgress * (horizonSpreadWidth / 2); let startX_L = vanishingPointX - spreadProgress * (horizonSpreadWidth / 2); let bottomX_R = vanishingPointX + spreadProgress * (maxSpreadAtBottom / 2); let bottomX_L = vanishingPointX - spreadProgress * (maxSpreadAtBottom / 2); retroGridCtx.moveTo(startX_R, horizonY); retroGridCtx.lineTo(bottomX_R, height); if (i > 0) { retroGridCtx.moveTo(startX_L, horizonY); retroGridCtx.lineTo(bottomX_L, height); } } retroGridCtx.stroke(); } catch (e) { console.error("Error in drawRetroGrid:", e); } }
 
 /** Berekent een punt op een kubische BÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©zier curve. */
 function calculateBezierPoint(t, p0, p1, p2, p3) { /* ... ongewijzigd ... */ const u = 1 - t; const tt = t * t; const uu = u * u; const uuu = uu * u; const ttt = tt * t; let p = uuu * p0; p += 3 * uu * t * p1; p += 3 * u * tt * p2; p += ttt * p3; return p; }
@@ -1427,13 +1060,6 @@ function calculateBezierPoint(t, p0, p1, p2, p3) { /* ... ongewijzigd ... */ con
 function defineChallengingStagePaths() { /* ... ongewijzigd ... */ challengingStagePaths = {}; const w = gameCanvas?.width; const h = gameCanvas?.height; if (!w || !h || w === 0) { console.error("Cannot define CS paths: Canvas size unknown or zero width."); return; } const enemyW = ENEMY_WIDTH; const enemyH = ENEMY_HEIGHT; const offTop = -enemyH * 1.5; const offBottom = h + enemyH * 2; const offLeft = -enemyW * 1.5; const offRight = w + enemyW * 1.5; const midX = w / 2; const midY = h / 2; const CS3_START_SHIFT_X = -28; const shiftPathX = (originalPath, shiftX) => { return originalPath.map(seg => { const newSeg = JSON.parse(JSON.stringify(seg)); if (newSeg.p0 && typeof newSeg.p0.x === 'number') newSeg.p0.x += shiftX; if (newSeg.p1 && typeof newSeg.p1.x === 'number') newSeg.p1.x += shiftX; if (newSeg.p2 && typeof newSeg.p2.x === 'number') newSeg.p2.x += shiftX; if (newSeg.p3 && typeof newSeg.p3.x === 'number' && newSeg.p3.x !== offLeft && newSeg.p3.x !== offRight) { newSeg.p3.x += shiftX; } return newSeg; }); }; const cmScale = (37.8 / 800) * 0.3; const exampleStartX_L_frac_orig = 0.5 - cmScale; const exampleMidY_frac = 450 / 600; const exampleCp1X_L_frac_orig = 0.49; const exampleCp1Y_frac = 600 / 600; const exampleCp2X_L_frac_orig = 0.48; const exampleCp2Y_frac = 300 / 600; const path5_startX_orig = w * exampleStartX_L_frac_orig; const path5_midY = h * exampleMidY_frac; const path5_cp1X_orig = w * exampleCp1X_L_frac_orig; const path5_cp1Y = h * Math.min(1.0, exampleCp1Y_frac); const path5_cp2X_orig = w * exampleCp2X_L_frac_orig; const path5_cp2Y = h * exampleCp2Y_frac; const path5_endX_orig = offLeft; const path5_endY = offTop; const path5_seg1_p0_orig = { x: path5_startX_orig, y: offTop }; const path5_seg1_p3_orig = { x: path5_startX_orig, y: path5_midY }; const path5_seg1_p1_orig = { x: path5_startX_orig, y: offTop + (path5_midY - offTop) * 0.33 }; const path5_seg1_p2_orig = { x: path5_startX_orig, y: offTop + (path5_midY - offTop) * 0.66 }; const path5_seg2_p0_orig = path5_seg1_p3_orig; const path5_seg2_p1_orig = { x: path5_cp1X_orig, y: path5_cp1Y }; const path5_seg2_p2_orig = { x: path5_cp2X_orig, y: path5_cp2Y }; const path5_seg2_p3_orig = { x: path5_endX_orig, y: path5_endY }; const original_CS3_DiveLoopL_Sharp = [ { p0: path5_seg1_p0_orig, p1: path5_seg1_p1_orig, p2: path5_seg1_p2_orig, p3: path5_seg1_p3_orig }, { p0: path5_seg2_p0_orig, p1: path5_seg2_p1_orig, p2: path5_seg2_p2_orig, p3: path5_seg2_p3_orig } ]; const original_CS3_DiveLoopR_Sharp = original_CS3_DiveLoopL_Sharp.map(seg => ({ p0: { x: w - seg.p0.x, y: seg.p0.y }, p1: { x: w - seg.p1.x, y: seg.p1.y }, p2: { x: w - seg.p2.x, y: seg.p2.y }, p3: { x: (seg.p3.x === offLeft) ? offRight : w - seg.p3.x, y: seg.p3.y } })); challengingStagePaths['CS3_DiveLoopL_Sharp'] = shiftPathX(original_CS3_DiveLoopL_Sharp, CS3_START_SHIFT_X); challengingStagePaths['CS3_DiveLoopR_Sharp'] = shiftPathX(original_CS3_DiveLoopR_Sharp, CS3_START_SHIFT_X); const flyByY = h * 0.70; const controlOffsetYFlyBy = h * 0.03; const controlOffsetXFlyBy = w * 0.15; challengingStagePaths['CS_HorizontalFlyByL'] = [{ p0: { x: offLeft, y: flyByY }, p1: { x: offLeft + controlOffsetXFlyBy, y: flyByY - controlOffsetYFlyBy }, p2: { x: offRight - controlOffsetXFlyBy, y: flyByY + controlOffsetYFlyBy }, p3: { x: offRight, y: flyByY } }]; challengingStagePaths['CS_HorizontalFlyByR'] = [{ p0: { x: offRight, y: flyByY }, p1: { x: offRight - controlOffsetXFlyBy, y: flyByY - controlOffsetYFlyBy }, p2: { x: offLeft + controlOffsetXFlyBy, y: flyByY + controlOffsetYFlyBy }, p3: { x: offLeft, y: flyByY } }]; const loopDipY = h * 0.80; const loopRiseY = h * 0.55; const loopExitY = h * 0.15; challengingStagePaths['CS_LoopAttack_TL'] = [ { p0: { x: w * 0.1, y: offTop }, p1: { x: w * 0.2, y: h * 0.2 }, p2: { x: w * 0.6, y: loopDipY }, p3: { x: w * 0.7, y: loopDipY } }, { p0: { x: w * 0.7, y: loopDipY }, p1: { x: w * 0.8, y: loopDipY }, p2: { x: w * 0.8, y: loopRiseY }, p3: { x: w * 0.7, y: loopRiseY } }, { p0: { x: w * 0.7, y: loopRiseY }, p1: { x: w * 0.6, y: loopRiseY }, p2: { x: offRight, y: loopExitY }, p3: { x: offRight, y: loopExitY + h*0.1 } } ]; challengingStagePaths['CS_LoopAttack_TR'] = [ { p0: { x: w * 0.9, y: offTop }, p1: { x: w * 0.8, y: h * 0.2 }, p2: { x: w * 0.4, y: loopDipY }, p3: { x: w * 0.3, y: loopDipY } }, { p0: { x: w * 0.3, y: loopDipY }, p1: { x: w * 0.2, y: loopDipY }, p2: { x: w * 0.2, y: loopRiseY }, p3: { x: w * 0.3, y: loopRiseY } }, { p0: { x: w * 0.3, y: loopRiseY }, p1: { x: w * 0.4, y: loopRiseY }, p2: { x: offLeft, y: loopExitY }, p3: { x: offLeft, y: loopExitY + h*0.1 } } ]; challengingStagePaths['CS_LoopAttack_BL'] = [ { p0: { x: offLeft, y: h * 0.6 }, p1: { x: w * 0.1, y: h * 0.4 }, p2: { x: w * 0.6, y: h * 0.2 }, p3: { x: midX, y: h * 0.3 } }, { p0: { x: midX, y: h * 0.3 }, p1: { x: w * 0.4, y: h * 0.4 }, p2: { x: w * 0.3, y: loopDipY * 0.9 }, p3: { x: w*0.4, y: loopDipY } }, { p0: { x: w*0.4, y: loopDipY }, p1: { x: w * 0.5, y: loopDipY * 1.05 }, p2: { x: midX, y: offTop }, p3: { x: midX + w*0.1, y: offTop } } ]; challengingStagePaths['CS_LoopAttack_BR'] = [ { p0: { x: offRight, y: h * 0.6 }, p1: { x: w * 0.9, y: h * 0.4 }, p2: { x: w * 0.4, y: h * 0.2 }, p3: { x: midX, y: h * 0.3 } }, { p0: { x: midX, y: h * 0.3 }, p1: { x: w * 0.6, y: h * 0.4 }, p2: { x: w * 0.7, y: loopDipY * 0.9 }, p3: { x: w*0.6, y: loopDipY } }, { p0: { x: w*0.6, y: loopDipY }, p1: { x: w * 0.5, y: loopDipY * 1.05 }, p2: { x: midX, y: offTop }, p3: { x: midX - w*0.1, y: offTop } } ]; for (const key in challengingStagePaths) { challengingStagePaths[key] = challengingStagePaths[key].filter(seg => seg?.p0 && seg?.p1 && seg?.p2 && seg?.p3 && !isNaN(seg.p0.x + seg.p0.y + seg.p1.x + seg.p1.y + seg.p2.x + seg.p2.y + seg.p3.x + seg.p3.y) ); if (challengingStagePaths[key].length === 0) { console.error(`CS Path ${key} empty after validation! Adding fallback.`); challengingStagePaths[key] = [{ p0:{x:w/2, y:offTop}, p1:{x:w/2, y:h/3}, p2:{x:w/2, y:h*2/3}, p3:{x:w/2, y:offBottom} }]; } } }
 
 /** Resizes all canvases to fit the window and redraws/recalculates related elements. */
-
-// ===== NEBULA DUAL + SPIEGEL OVER VLOER - PER ELEMENT SCHUIFJES =====
-// Deze schuifjes zijn puur code (onzichtbaar in visual). Pas ze hier aan:
-// Vloer zelf staat op 50%, maar elk element heeft eigen zichtbaarheid in reflectie.
-
-
-
 function resizeCanvases() {
     try {
         const width = window.innerWidth;
@@ -1472,9 +1098,6 @@ function resizeCanvases() {
         }
 
 
-        if (nebulaCanvas && (nebulaCanvas.width !== width || nebulaCanvas.height !== height)) {
-            nebulaCanvas.width = width; nebulaCanvas.height = height; drawNebulaBackground();
-        }
         if (starrySkyCanvas && (starrySkyCanvas.width !== width || starrySkyCanvas.height !== height)) {
             starrySkyCanvas.width = width; starrySkyCanvas.height = height; createStars();
         }

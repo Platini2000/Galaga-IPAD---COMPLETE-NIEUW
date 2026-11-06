@@ -2574,7 +2574,7 @@ function handleEnemyHit(enemy, shootingPlayerId = null) {
                  else if (highScoreHolderId === 'player2' || highScoreHolderId === 'ai_p2') previouslyTriggeredFlag = player2TriggeredHighScoreSound;
 
                  // Alleen spelen als deze specifieke speler het geluid nog niet getriggerd heeft *voor deze score reeks*
-                 // OF als de houder is veranderd (wat impliceert dat iemand anders de score heeft gepakt/geÃƒÂ«venaard)
+                 // OF als de houder is veranderd (wat impliceert dat iemand anders de score heeft gepakt/geÃ«venaard)
                  if (!previouslyTriggeredFlag || (highScoreHolderId !== oldHighScoreHolderId && oldHighScore > 0)) {
                     playSound('hiScoreSound', false, 0.2);
                     if (highScoreHolderId === 'player1') player1TriggeredHighScoreSound = true;
@@ -2638,7 +2638,7 @@ function switchPlayerTurn() {
     if (!isTwoPlayerMode || selectedGameMode === 'coop') return false; // Niet voor CO-OP
     // stopSound('hiScoreSound'); // Verplaatst naar binnen de high score logica
 
-    // Sla de staat van de Zojuist GeÃƒÂ«indigde Speler op.
+    // Sla de staat van de Zojuist GeÃ«indigde Speler op.
     if (currentPlayer === 1) {
         player1Score = score;
         player1IsDualShipActive = isDualShipActive;
