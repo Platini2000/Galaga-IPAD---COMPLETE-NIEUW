@@ -3234,6 +3234,51 @@ const AI_DODGE_MOVEMENT_SMOOTHING_FACTOR = 0.015;
 const AI_NORMAL_MOVEMENT_SMOOTHING_FACTOR = 0.04;
 const AI_CAPTURE_DIVE_SHOOT_STOP_DURATION_MS = 3000;
 
+
+// --- AI ANTI-KAMPEER / ANGSTFASE REGEL (3 SEC) + SHIELD-JACHT ---
+var AI_MAX_STATIONARY_MS = 3000;
+var AI_STATIONARY_MIN_MOVE = 2;
+var _aiStationaryByShip = {};
+function aiGetStationaryState(shipId, currentX, now) {
+    if (!_aiStationaryByShip[shipId]) _aiStationaryByShip[shipId] = { lastX: currentX, lastMoveTime: now, forcedHuntUntil: 0 };
+    var st = _aiStationaryByShip[shipId];
+    if (Math.abs(currentX - st.lastX) > AI_STATIONARY_MIN_MOVE) { st.lastX = currentX; st.lastMoveTime = now; }
+    else { st.lastX = currentX; }
+    return st;
+}
+function aiPickHuntTarget(list, shipCenterX) {
+    var best = null, bestScore = -Infinity;
+    var arr = list || (typeof enemies !== 'undefined' ? enemies : []);
+    for (var i = 0; i < arr.length; i++) {
+        var e = arr[i];
+        if (!e || e.isVisible === false) continue;
+        var score = (e.state === 'attacking' || e.state === 'diving_to_capture_position') ? 1000 : 0;
+        score += (typeof ENEMY3_TYPE !== 'undefined' && e.type === ENEMY3_TYPE && e.hasCapturedShip) ? 2000 : 0;
+        score -= Math.abs((e.x + e.width / 2) - shipCenterX);
+        if (score > bestScore) { bestScore = score; best = e; }
+    }
+    return best;
+}
+function aiApplyMaxStationaryRule(opts) {
+    try {
+        var now = opts.now, shipId = opts.shipId, currentX = opts.currentX;
+        var shipCenterX = opts.shipCenterX, shipWidth = opts.shipWidth, canvasW = opts.canvasW;
+        var st = aiGetStationaryState(shipId, currentX, now);
+        if (!opts.blocked && now - st.lastMoveTime >= AI_MAX_STATIONARY_MS) { st.forcedHuntUntil = now + 1500; st.lastMoveTime = now; }
+        if (opts.blocked || now >= st.forcedHuntUntil) return null;
+        var hunt = null;
+        var isBossFight = (typeof isBossStage !== 'undefined' && isBossStage && typeof bossStageBoss !== 'undefined' && bossStageBoss && bossStagePhase === 'fighting' && bossStageBoss.isVisible !== false);
+        if (isBossFight) hunt = bossStageBoss;
+        else hunt = aiPickHuntTarget(opts.enemies, shipCenterX);
+        if (hunt) {
+            var targetX = (hunt.x + hunt.width / 2) - shipWidth / 2;
+            var align = Math.abs(shipCenterX - (hunt.x + hunt.width / 2));
+            return { forced: true, target: hunt, desiredX: targetX, shouldShoot: (align < shipWidth * 1.2) };
+        }
+        return { forced: true, target: null, desiredX: (canvasW / 2) - shipWidth / 2, shouldShoot: false };
+    } catch (e) { return null; }
+}
+
 function aiControl() {
     try {
         if (isCoopAIDemoActive || (isPlayerTwoAI && selectedOnePlayerGameVariant === '1P_VS_AI_COOP') ) return;
@@ -3297,6 +3342,7 @@ function aiControl() {
         }
 
         // SHIELD ACTIEF: geen ontwijken nodig voor kogels noch vijanden
+        let _aiShieldNoDodgeSingle = false;
         try {
             let shieldProtectsSingle = false;
             if (typeof shieldActive !== 'undefined' && shieldActive) {
@@ -3309,7 +3355,7 @@ function aiControl() {
                 }
                 const bossCapturing = (typeof capturingBossId !== 'undefined' && capturingBossId && typeof enemies !== 'undefined' && enemies.some(e=>e.id===capturingBossId));
                 if (shieldProtectsSingle && !bossCapturing) {
-                    // Forceer geen dodge
+                    _aiShieldNoDodgeSingle = true;
                     isDodgingThreat = false;
                     aiPreviousDodgeDirection = 0;
                     aiDodgeCommitEndTime = 0;
@@ -3552,7 +3598,7 @@ function aiControl() {
             }
             allProjectedThreats.sort((a,b) => (b.isFromAbove ? 1 : -1) - (a.isFromAbove ? 1 : -1) || (b.originalVy || 0) - (a.originalVy || 0));
 
-            if (allProjectedThreats.length > 0) {
+            if (!_aiShieldNoDodgeSingle && allProjectedThreats.length > 0) {
                 isDodgingThreat = true;
                 let bestDodgeOption = { x: currentSmoothedShipXForAI, score: -Infinity, dir: 0, minDistance: Infinity, collisions: Infinity };
                 const shipAtCurrentPos = { x: currentSmoothedShipXForAI, y: activeShipForAI.y, width: effectiveShipWidth, height: activeShipForAI.height };
@@ -3679,6 +3725,26 @@ function aiControl() {
                 shouldTryShoot_AI = true;
             }
         }
+
+        // --- HARDE 3-SEC REGEL (single AI) ---
+        try {
+            var _huntSingle = aiApplyMaxStationaryRule({ now: now, shipId: aiIdentifierForAI || 'ai', currentX: currentSmoothedShipXForAI, shipCenterX: shipCenterX, shipWidth: effectiveShipWidth, canvasW: canvasWidth, enemies: enemies, blocked: (isMovingToCapture || isMovingForOwnFallingShip || isShowingBlockingMessage || aiIsCurrentlyTargetingCaptureBoss) });
+            if (_huntSingle) {
+                isDodgingThreat = false; aiPreviousDodgeDirection = 0; aiDodgeCommitEndTime = 0;
+                targetEnemyForAI = _huntSingle.target; desiredTargetX = _huntSingle.desiredX; shouldTryShoot_AI = _huntSingle.shouldShoot;
+                var _sMin = Math.max(AI_EDGE_BUFFER * 1.5, canvasWidth * 0.15);
+                var _sMax = Math.min(canvasWidth - effectiveShipWidth - AI_EDGE_BUFFER * 1.5, canvasWidth * 0.85 - effectiveShipWidth);
+                desiredTargetX = Math.max(_sMin, Math.min(_sMax, desiredTargetX));
+            }
+        } catch (e) {}
+        // --- SHIELD (single): geen dodge, direct vijand opzoeken + vuren ---
+        try {
+            if (_aiShieldNoDodgeSingle && !isMovingToCapture && !isMovingForOwnFallingShip && !isShowingBlockingMessage) {
+                isDodgingThreat = false; aiPreviousDodgeDirection = 0; aiDodgeCommitEndTime = 0;
+                var _shieldHunt = (typeof isBossStage !== 'undefined' && isBossStage && typeof bossStageBoss !== 'undefined' && bossStageBoss && bossStagePhase === 'fighting' && bossStageBoss.isVisible !== false) ? bossStageBoss : aiPickHuntTarget(enemies, shipCenterX);
+                if (_shieldHunt) { targetEnemyForAI = _shieldHunt; desiredTargetX = (_shieldHunt.x + _shieldHunt.width / 2) - effectiveShipWidth / 2; var _sAlign = Math.abs(shipCenterX - (_shieldHunt.x + _shieldHunt.width / 2)); shouldTryShoot_AI = (_sAlign < effectiveShipWidth * 1.2); }
+            }
+        } catch (e) {}
 
         let currentAiSmoothingFactor;
         if (isChallengingStage) {
@@ -4358,6 +4424,25 @@ function calculateAIDesiredState(currentShip, currentSmoothedX, isShipDual, game
         targetEnemyForAI = bossStageBoss;
         shouldTryShoot_AI_Calc = true;
     }
+    // --- HARDE 3-SEC REGEL (co-op AI) ---
+    try {
+        var _huntCoop = aiApplyMaxStationaryRule({ now: currentTime, shipId: shipIdentifier || 'ai', currentX: currentSmoothedX, shipCenterX: shipCenterX, shipWidth: effectiveShipWidth, canvasW: gameCanvas.width, enemies: gameEnemies, blocked: (isMovingToCaptureBeam || isMovingForOwnFallingShip || isTargetingPartnerRescue || isTargetingThreeSecondRuleBoss || isCoopAIAndGeneralIntroActive) });
+        if (_huntCoop) {
+            isDodgingThreatCurrentFrame = false; chosenDodgeDirThisFrame = 0; predictedCollisionsForReturn = 0;
+            targetEnemyForAI = _huntCoop.target; desiredTargetX = _huntCoop.desiredX; shouldTryShoot_AI_Calc = _huntCoop.shouldShoot;
+            var _cMin = Math.max(AI_EDGE_BUFFER * 1.5, gameCanvas.width * 0.15);
+            var _cMax = Math.min(gameCanvas.width - effectiveShipWidth - AI_EDGE_BUFFER * 1.5, gameCanvas.width * 0.85 - effectiveShipWidth);
+            desiredTargetX = Math.max(_cMin, Math.min(_cMax, desiredTargetX));
+        }
+    } catch (e) {}
+    // --- SHIELD (co-op): geen dodge, direct vijand opzoeken + vuren ---
+    try {
+        if (_shieldBoostActive && !_isBossCapturingForShieldCheck && !isMovingToCaptureBeam && !isMovingForOwnFallingShip && !isTargetingPartnerRescue && !isCoopAIAndGeneralIntroActive) {
+            isDodgingThreatCurrentFrame = false; chosenDodgeDirThisFrame = 0; predictedCollisionsForReturn = 0;
+            var _shieldHuntCoop = (typeof isBossStage !== 'undefined' && isBossStage && typeof bossStageBoss !== 'undefined' && bossStageBoss && bossStagePhase === 'fighting' && bossStageBoss.isVisible !== false) ? bossStageBoss : aiPickHuntTarget(gameEnemies, shipCenterX);
+            if (_shieldHuntCoop) { targetEnemyForAI = _shieldHuntCoop; desiredTargetX = (_shieldHuntCoop.x + _shieldHuntCoop.width / 2) - effectiveShipWidth / 2; var _cAlign = Math.abs(shipCenterX - (_shieldHuntCoop.x + _shieldHuntCoop.width / 2)); shouldTryShoot_AI_Calc = (_cAlign < effectiveShipWidth * 1.2); }
+        }
+    } catch (e) {}
     desiredTargetX = Math.max(AI_EDGE_BUFFER, Math.min(gameCanvas.width - effectiveShipWidth - AI_EDGE_BUFFER, desiredTargetX));
     return { desiredTargetX, shouldTryShoot: shouldTryShoot_AI_Calc, targetEnemyForAI, chosenDodgeDir: chosenDodgeDirThisFrame, isDodging: isDodgingThreatCurrentFrame, predictedCollisions: predictedCollisionsForReturn };
 }

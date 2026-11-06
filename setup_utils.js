@@ -1,6 +1,34 @@
 // --- START OF FILE setup_utils.js ---
 // --- DEEL 1      van 3 dit code blok    ---
 
+// --- Achtergrond-foto: direct laden bij start, als fallback als het <img> tag ontbreekt ---
+// Zorgt dat Afbeeldingen/Achtergrond.jpg altijd als eerste element in <body> staat,
+// volledig uitgerekt (via #backgroundImage in stijl.css), achter sterren / retrogrid / game.
+(function ensureAchtergrondFoto() {
+    function ensureBackgroundImage() {
+        if (document.getElementById('backgroundImage')) return;
+        var img = document.createElement('img');
+        img.id = 'backgroundImage';
+        img.src = 'Afbeeldingen/Achtergrond.jpg';
+        img.alt = '';
+        img.setAttribute('aria-hidden', 'true');
+        img.setAttribute('fetchpriority', 'high');
+        // Als allereerste element, dus achter alles
+        document.body.insertBefore(img, document.body.firstChild);
+    }
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', ensureBackgroundImage);
+    } else {
+        ensureBackgroundImage();
+    }
+    // Preload, zodat de browser hem meteen ophaalt
+    var link = document.createElement('link');
+    link.rel = 'preload';
+    link.as = 'image';
+    link.href = 'Afbeeldingen/Achtergrond.jpg';
+    document.head.appendChild(link);
+})();
+
 const
     // Enemy Types (Needs to be defined BEFORE game_logic.js uses them)
     ENEMY1_TYPE = 'enemy1', ENEMY2_TYPE = 'enemy2', ENEMY3_TYPE = 'enemy3',

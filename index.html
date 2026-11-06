@@ -2,35 +2,44 @@
 <html lang="nl">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no"> <!-- user-scalable=no toegevoegd -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <title>Galaga</title>
 
     <!-- PWA Manifest -->
     <link rel="manifest" href="manifest.json">
 
-    <!-- Theme Color voor browser UI (optioneel, maar goed voor PWA's) -->
+    <!-- Theme Color voor browser UI -->
     <meta name="theme-color" content="#000000">
 
-    <link rel="apple-touch-icon" href="icon-192.png"> <!-- Gebruikt je 192x192 icoon als primaire voor iOS -->
+    <link rel="apple-touch-icon" href="icon-192.png">
     <link rel="apple-touch-icon" sizes="192x192" href="icon-192.png">
     <link rel="apple-touch-icon" sizes="512x512" href="icon-512.png">
 
-    <!-- Apple PWA meta tags voor een meer app-achtige ervaring vanaf het beginscherm -->
+    <!-- Apple PWA meta tags -->
     <meta name="apple-mobile-web-app-capable" content="yes">
-    <!-- Voeg de niet-geprefixte versie toe en behoud de Apple-specifieke voor oudere iOS-versies -->
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <meta name="apple-mobile-web-app-title" content="Galaga"> <!-- Naam onder het icoon op iOS beginscherm -->
+    <meta name="apple-mobile-web-app-title" content="Galaga">
 
     <!-- Google Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
 
+    <!-- Achtergrond meteen ophalen bij het starten -->
+    <link rel="preload" as="image" href="Afbeeldingen/Achtergrond.jpg" fetchpriority="high">
+
     <!-- Stylesheet -->
     <link rel="stylesheet" href="stijl.css">
 </head>
 <body>
+    <!-- ACHTERGROND: als EERSTE element in <body>, volledig uitgerekt -->
+    <img id="backgroundImage"
+         src="Afbeeldingen/Achtergrond.jpg"
+         alt=""
+         aria-hidden="true"
+         fetchpriority="high" />
+
     <canvas id="starrySkyCanvas"></canvas>
     <canvas id="retroGridCanvas"></canvas>
     <canvas id="gameCanvas"></canvas>
@@ -41,5 +50,19 @@
     <script src="rendering_menu.js"></script>
     <!-- EINDE CORRECTE VOLGORDE -->
 
+    <!-- Diagnose: staat in de console (F12) als de foto niet laadt -->
+    <script>
+        (function () {
+            var img = document.getElementById('backgroundImage');
+            if (!img) return;
+            img.addEventListener('load', function () {
+                console.log('Achtergrond geladen:', img.naturalWidth + 'x' + img.naturalHeight);
+            });
+            img.addEventListener('error', function () {
+                console.error('Achtergrond NIET gevonden. Controleer: Afbeeldingen/Achtergrond.jpg (hoofdletters!) staat naast index.html');
+                img.style.background = '#050014';
+            });
+        })();
+    </script>
 </body>
 </html>
