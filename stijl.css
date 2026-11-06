@@ -1,0 +1,70 @@
+/* --- START OF FILE stijl.css --- */
+
+html {
+    height: 100%;
+    overflow: hidden;
+}
+
+body {
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+    background-color: #000; /* zwart, zodat er nooit een rand/kleur doorschijnt */
+    height: 100%;
+    display: block;
+}
+
+/* --- Canvas Stijlen --- */
+
+/* NIEUW: foto-achtergrond, helemaal onderaan */
+#backgroundImage {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    width: 100vw;
+    height: 100vh;
+    object-fit: cover; /* volledig uitgerekt, zonder balken, vult scherm van boven tot onder */
+    object-position: center center;
+    z-index: -3; /* achter sterren (-2), retrogrid (-1) en game (0) */
+    display: block;
+    pointer-events: none;
+    user-select: none;
+    -webkit-user-drag: none;
+}
+
+#starrySkyCanvas {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: -2;
+    display: block;
+    background: transparent; /* belangrijk: anders verbergt dit canvas de foto */
+}
+
+#retroGridCanvas {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: -1;
+    display: block;
+}
+
+#gameCanvas {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100% !important;
+    height: 100% !important;
+    background-color: transparent;
+    display: block;
+    z-index: 0;
+    cursor: default;
+}
+
+/* --- END OF FILE stijl.css --- */
