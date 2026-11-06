@@ -1701,7 +1701,7 @@ function triggerGameOver() { triggerFinalGameOverSequence(); }
   // 1 getal, alles volgt mee. 0 = onzichtbaar, 1 = vol.
   // 0.04 = zoals jij hem nu wilt hebben. Niets anders hier aanpassen voor felheid:
   // hoger / breder / langer gaat via ROOK_LIFE, ROOK_RISE en ROOK_SPREAD hieronder.
-  var ROOK_ALPHA = 0.04;
+  var ROOK_ALPHA = 0.03;
   // === ROOK-VORM: HIER REGEL JE HOGER / BREDER / LANGER ===
   var ROOK_LIFE = 8000;    // was 5000: elk deeltje leeft 8s i.p.v. 5s = langer zichtbaar
   var ROOK_RISE = 1.15;    // was 1.00: stijgt 35% sneller = komt hoger uit (samen met langere life: ~2x zo hoog)
