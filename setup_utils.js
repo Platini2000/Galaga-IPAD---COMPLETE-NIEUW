@@ -1661,3 +1661,160 @@ function triggerGameOver() { triggerFinalGameOverSequence(); }
 
 // --- EINDE deel 3      van 3 dit code blok    ---
 // --- END OF FILE setup_utils.js ---
+
+// --- START PAARSE NEVEL (was paarse_nevel.js, nu samengevoegd - geen extra file) ---
+// --- JOUW ROOK: deeltjesrook, dicht, zonder gaten ---
+// Dit is de versie die jij goed vond: deeltjes die vanaf de horizon omhoog
+// nevelen. Alleen de gaten ertussen zijn eruit gehaald en er zit nu 1 knop
+// voor de transparantie op (zie ROOK_ALPHA hieronder).
+// GEEN toren, GEEN gevulde kolom, GEEN 5-sec opkomen/verdwijn-cyclus:
+// de deeltjes stromen continu door, dus de rook staat er altijd.
+// 60fps: vooraf gerenderde sprites, alleen drawImage per frame, DPR max 1.5,
+// pauze als tab verborgen / reduced-motion.
+(function(){
+  // FIX FOETSIE: start pas als mistCanvas écht in de pagina staat.
+  // Vroeger werd __paarseNevelInit al op true gezet VOOR de canvas-check:
+  // laadde dit script 1x te vroeg, dan stopte de rook én blokkeerde de
+  // guard elke volgende poging. Nu: guard pas na gevonden canvas, en
+  // anders wachten op DOMContentLoaded + nog 1x opnieuw proberen.
+  function start(){
+    if (window.__paarseNevelInit) return;
+    var canvas = document.getElementById('mistCanvas');
+    if (!canvas){
+      // Canvas staat er nog niet (script te vroeg geladen): later opnieuw proberen.
+      if (document.readyState === 'loading'){
+        document.addEventListener('DOMContentLoaded', start, { once: true });
+      } else {
+        setTimeout(start, 300); // pagina klaar maar canvas nog niet neergezet door andere code
+      }
+      return;
+    }
+    window.__paarseNevelInit = true; // pas NU: canvas is er écht
+    init(canvas);
+  }
+  function init(canvas){
+  var ctx = canvas.getContext('2d', { alpha: true });
+  if (!ctx) return;
+  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return; // rustig houden
+
+  // === TRANSPARANTIE: HIER REGEL JE HET ===
+  // 1 getal, alles volgt mee. 0 = onzichtbaar, 1 = vol.
+  // 0.04 = zoals jij hem nu wilt hebben. Niets anders hier aanpassen voor felheid:
+  // hoger / breder / langer gaat via ROOK_LIFE, ROOK_RISE en ROOK_SPREAD hieronder.
+  var ROOK_ALPHA = 0.06;
+  // === ROOK-VORM: HIER REGEL JE HOGER / BREDER / LANGER ===
+  var ROOK_LIFE = 8000;    // was 5000: elk deeltje leeft 8s i.p.v. 5s = langer zichtbaar
+  var ROOK_RISE = 1.15;    // was 1.00: stijgt 35% sneller = komt hoger uit (samen met langere life: ~2x zo hoog)
+  var ROOK_SPREAD = 0.30;  // was 0.20: rook start in buitenste 30% i.p.v. 20% = breder
+  var ROOK_PARTS = 42;     // was 28: meer deeltjes, zodat de langere / hogere stroom geen gaten krijgt
+
+  var DPR = Math.min(window.devicePixelRatio || 1, 1.5); // iPhone: scherp genoeg, geen 3x kosten
+  var W = 0, H = 0, raf = 0, last = 0, running = true;
+
+  // --- Sprites: 1x genereren, daarna alleen drawImage (goedkoop) ---
+  function makePuff(size, hue){
+    var c = document.createElement('canvas'); c.width = c.height = size;
+    var g = c.getContext('2d');
+    // Dichte blobs, veel overlap: 1 sprite heeft zelf al geen gat in het midden.
+    var blobs = [[.5,.5,.48],[.36,.55,.36],[.64,.48,.36],[.5,.36,.34],[.45,.65,.32],[.58,.60,.30],[.42,.42,.30]];
+    for (var i=0;i<blobs.length;i++){
+      var b = blobs[i], x=b[0]*size, y=b[1]*size, r=b[2]*size;
+      var grad = g.createRadialGradient(x,y,0,x,y,r);
+      grad.addColorStop(0, 'rgba('+hue+',0.60)');
+      grad.addColorStop(0.55, 'rgba('+hue+',0.32)');
+      grad.addColorStop(1, 'rgba('+hue+',0)');
+      g.fillStyle = grad; g.beginPath(); g.arc(x,y,r,0,6.2832); g.fill();
+    }
+    return c;
+  }
+  // Paars / violet, passend bij de foto. Geen fel neon.
+  var SPRITES = [makePuff(256,'150, 90, 220'), makePuff(256,'120, 70, 200'), makePuff(256,'175, 120, 255')];
+
+  function resize(){
+    W = window.innerWidth; H = window.innerHeight;
+    canvas.width = Math.round(W * DPR); canvas.height = Math.round(H * DPR);
+    canvas.style.width = W + 'px'; canvas.style.height = H + 'px';
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  }
+  resize(); window.addEventListener('resize', resize, {passive:true});
+
+  // --- Pluim: deeltjes stijgen, groeien, faden in ROOK_LIFE (8s), continu doorstromend ---
+  function makePlume(side){ // side: -1 links, 1 rechts
+    var p = { side: side, t: Math.random()*1200, life: ROOK_LIFE, parts: [], next: 0 };
+    for (var i=0;i<ROOK_PARTS;i++) p.parts.push(spawn(p, i/ROOK_PARTS)); // 36 deeltjes: geen gaten meer, ook bij langere stijging
+    return p;
+  }
+  function horizonY(){
+    // Zelfde horizon als de retrovloer: GRID_HORIZON_Y_FACTOR uit setup_utils.js (valt terug op 0.74)
+    var f = (typeof GRID_HORIZON_Y_FACTOR !== 'undefined') ? GRID_HORIZON_Y_FACTOR : 0.74;
+    return H * f;
+  }
+  function spawn(plume, progress){
+    // Start OP de horizon van de retrovloer, alleen in de buitenste 20% (links/rechts)
+    // en stijg van daar omhoog de paarse nevel in — nooit vanaf onder of boven het scherm.
+    var zoneW = W * ROOK_SPREAD;
+    var x0 = plume.side < 0 ? Math.random()*zoneW : W - Math.random()*zoneW;
+    var y0 = horizonY() + (Math.random()-0.5) * H * 0.03; // klein beetje spreiding rond de horizonlijn
+    var vy = -(H*0.038+Math.random()*H*0.018) * ROOK_RISE; // sneller stijgen = hoger uitkomen, deeltjes blijven overlappen door meer parts
+    var vx = (Math.random()-0.5)*10;
+    var age = progress*ROOK_LIFE;
+    // FIX LOS PLUIMJE: deeltje met leeftijd start meteen op de plek waar het
+    // met die leeftijd hoort (al omhoog geschoven). Anders zweeft het oudste
+    // deeltje eerst los boven de rest. Respawns (progress = 0) starten op de horizon.
+    var x = x0 + vx * age / 1000;
+    var y = y0 + vy * age / 1000;
+    var minX = plume.side < 0 ? 0 : W - zoneW - 30;
+    var maxX = plume.side < 0 ? zoneW + 30 : W;
+    if (x < minX) x = minX; if (x > maxX) x = maxX;
+    return {
+      x: x, y: y, vy: vy,
+      vx: vx, size: 130+Math.random()*120, // groter + breder: elk deeltje raakt zijn buren
+      grow: 55+Math.random()*45, age: age, life: ROOK_LIFE,
+      sprite: SPRITES[(Math.random()*SPRITES.length)|0], rot: Math.random()*6.28, vr: (Math.random()-0.5)*0.12,
+      alpha: ROOK_ALPHA * (0.6+Math.random()*0.4) // hangt aan de knop hierboven
+    };
+  }
+  var plumes = [makePlume(-1), makePlume(1)];
+
+  function frame(now){
+    raf = requestAnimationFrame(frame);
+    if (!running) return;
+    if (!last) last = now;
+    var dt = Math.min(now-last, 33); last = now; // clamp: geen sprongen na hapering
+    ctx.clearRect(0,0,W,H);
+    ctx.globalCompositeOperation = 'screen'; // paars licht op tegen donkere foto, zonder overbelichting
+    for (var pi=0; pi<plumes.length; pi++){
+      var plume = plumes[pi];
+      for (var i=0;i<plume.parts.length;i++){
+        var p = plume.parts[i];
+        p.age += dt;
+        if (p.age >= p.life){ plume.parts[i] = spawn(plume, 0); p = plume.parts[i]; }
+        var t = p.age / p.life; // 0..1 over ROOK_LIFE (8 sec)
+        // Fade: snel in (0-5%), lang vol zichtbaar, pas weg in laatste 10%.
+        // Zo is er op elk moment een volle, doorlopende stroom: geen kale plekken.
+        var fade = t<0.05 ? t/0.05 : t>0.90 ? 1-(t-0.90)/0.10 : 1;
+        p.y += p.vy*dt/1000; p.x += p.vx*dt/1000 + Math.sin(now*0.0004 + i)*0.12;
+        // In de eigen pluimzone houden: geen deeltje drijft los naar het midden.
+        var _zw = W * ROOK_SPREAD, _mn = plume.side < 0 ? 0 : W - _zw - 30, _mx = plume.side < 0 ? _zw + 30 : W;
+        if (p.x < _mn) p.x = _mn; if (p.x > _mx) p.x = _mx;
+        p.rot += p.vr*dt/1000;
+        var s = p.size + p.grow*t;
+        ctx.globalAlpha = Math.max(0, p.alpha * fade);
+        ctx.save(); ctx.translate(p.x,p.y); ctx.rotate(p.rot);
+        ctx.drawImage(p.sprite, -s/2, -s/2, s, s);
+        ctx.restore();
+      }
+    }
+    ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
+  }
+  raf = requestAnimationFrame(frame);
+
+  document.addEventListener('visibilitychange', function(){
+    running = !document.hidden; last = 0;
+    if (running && !raf) raf = requestAnimationFrame(frame);
+  });
+  } // einde init(canvas)
+  start(); // nu starten (of wachten tot mistCanvas er is)
+})();
+
+// --- EINDE PAARSE NEVEL ---
