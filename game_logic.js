@@ -3,6 +3,9 @@
 
 // --- Hulpvariabele om bij te houden hoeveel Challenging Stages er al zijn geweest ---
 let completedChallengingStagesCount = 0;
+let bossStageMinionCycle = 0;
+let bossStageMinionNextPair = null;
+let bossStageMinionNextPairTime = 0;
 let isSimultaneousAssaultWave = false; // NIEUW: na CS level
 let justFinishedChallengingStage = false; // helper
 
@@ -1251,6 +1254,9 @@ function resetBossStageState() {
     bossStageBounceStartY = 0;
     bossStageBounceLastTime = 0;
     bossStageLastGridBeeShot = 0;
+    bossStageMinionCycle = 0;
+    bossStageMinionNextPair = null;
+    bossStageMinionNextPairTime = 0;
 }
 
 function buildBossStageSpawnQueue() {
@@ -1431,6 +1437,104 @@ function spawnOneBossStageBee() {
     }
 }
 
+
+// --- BOSS MINION CYCLUS (na elke reset: 3 bounces -> plop -> cirkel -> vuren -> duiken) ---
+// Per BOSS-type: enemy1-BOSS = 1 per kant, enemy2-BOSS = 2 per kant, enemy3-BOSS = 3 per kant.
+// Elke minion: cirkel omhoog, dan N kogels op de schepen (1/2/3), dan duiken op de schepen.
+function getBossMinionConfigForVariant() {
+    if (typeof bossStageVariant !== 'undefined' && bossStageVariant === 'enemy2') {
+        return { perSide: 2, type: ENEMY2_TYPE, width: ENEMY_WIDTH, height: ENEMY_HEIGHT, health: 2, shots: 2 };
+    }
+    if (typeof bossStageVariant !== 'undefined' && bossStageVariant === 'enemy3') {
+        return { perSide: 3, type: ENEMY3_TYPE, width: BOSS_WIDTH, height: BOSS_HEIGHT, health: 3, shots: 3 };
+    }
+    return { perSide: 1, type: ENEMY1_TYPE, width: ENEMY1_WIDTH, height: ENEMY1_HEIGHT, health: 1, shots: 1 };
+}
+function spawnBossStageMinions() {
+    // Oude aanroep = 1 paar (voor compatibiliteit); de echte cyclus gebruikt paren via boss_cycle_spawning
+    spawnBossStageMinionPair(0);
+}
+// Eén gespiegeld paar: 1 links + 1 rechts, exact even ver van het midden van de BOSS,
+// op dezelfde hoogte, met gespiegelde cirkels. k = paar-nummer (0, 1, 2...).
+function spawnBossStageMinionPair(k) {
+    try {
+        if (!bossStageBoss || !gameCanvas) return;
+        const cfg = getBossMinionConfigForVariant();
+        const bossCX = bossStageBoss.x + bossStageBoss.width / 2;
+        const bossCY = bossStageBoss.y + bossStageBoss.height * 0.5;
+        const now = Date.now();
+        const radius = Math.max(105, cfg.width * 1.9);
+        // Paar k staat steeds een stukje verder naar buiten, maar links en rechts altijd even ver
+        const centerDist = 70 + k * (cfg.width * 1.1 + 30);
+        const baseCY = bossCY - 85 - k * 12;
+        [-1, 1].forEach(function(side) {
+            const circleCX = bossCX + side * centerDist;
+            const circleCY = baseCY;
+            // Startpunt = buitenste punt van de cirkel, dus links en rechts exact gespiegeld
+            const sx = circleCX + side * radius * 1.45 - cfg.width / 2;
+            const sy = circleCY - cfg.height / 2;
+            const minion = {
+                x: sx, y: sy,
+                width: cfg.width, height: cfg.height,
+                targetGridX: null, targetGridY: null,
+                speed: (typeof BASE_ENEMY_ATTACK_SPEED !== 'undefined' ? BASE_ENEMY_ATTACK_SPEED : 5),
+                state: 'boss_minion_circle',
+                gridRow: -1, gridCol: -1,
+                type: cfg.type,
+                health: cfg.health,
+                isDamaged: false, isBluePhase: false,
+                velocityX: 0, velocityY: 0,
+                attackPathSegments: [], attackPathSegmentIndex: 0, attackPathT: 0,
+                attackFormationOffsetX: 0, attackGroupId: null,
+                entrancePathId: null,
+                pathSegmentIndex: 0, pathT: 0,
+                squadronId: -1, squadronEnemyIndex: -1,
+                id: 'boss-minion-' + Date.now() + '-' + side + '-' + k + '-' + Math.random().toString(36).substring(2, 5),
+                justReturned: false, canFireThisDive: false,
+                pathSpeedMultiplier: 1.0,
+                isBossMinion: true,
+                bossMinionShots: cfg.shots,
+                bossMinionHasFired: false,
+                bossMinionCircleStart: now,
+                bossMinionCircleDuration: 1500,
+                bossMinionCircleCX: circleCX,
+                bossMinionCircleCY: circleCY,
+                bossMinionCircleRadius: radius,
+                bossMinionCircleDir: side,
+                bossMinionCircleStartAngle: 0,
+                // 1 seconde onkwetsbaar vanaf uitploppen, zodat ze nooit direct weg zijn
+                bossMinionInvulnerableUntil: now + 1000
+            };
+            enemies.push(minion);
+        });
+        bossStageMinionCycle = (typeof bossStageMinionCycle !== 'undefined' ? bossStageMinionCycle : 0) + 1;
+    } catch (e) { console.error("[BOSS MINIONS] spawn error", e); }
+}
+function fireBossMinionShots(minion) {
+    // MINIONS VUREN NIET MEER in de bossfight: te druk. De minions duiken nog wel
+    // op de schepen af (dat blijft hun aanval), maar ze schieten geen kogel meer.
+    // Alleen de hoofdboss en de grid-bijtjes vuren nog in de bossfight.
+    // De functie blijft bestaan zodat startBossMinionDive hem kan blijven aanroepen.
+    if (minion) minion.bossMinionHasFired = true;
+    return;
+}
+function startBossMinionDive(minion) {
+    try {
+        fireBossMinionShots(minion);
+        let path = [];
+        if (typeof generateAttackPathInternal === 'function') path = generateAttackPathInternal(minion) || [];
+        if (path && path.length > 0) {
+            minion.attackPathSegments = path;
+            minion.attackPathSegmentIndex = 0;
+            minion.attackPathT = 0;
+            minion.state = 'attacking';
+        } else {
+            minion.state = 'attacking';
+            minion.attackPathSegments = [];
+        }
+    } catch (e) { console.error("[BOSS MINIONS] dive error", e); minion.state = 'attacking'; }
+}
+
 function updateBossStageLogic(now) {
     if (!isBossStage || !bossStageBoss) return;
     
@@ -1555,11 +1659,51 @@ function updateBossStageLogic(now) {
             if (Math.abs(dy) > 2) {
                 bossStageBoss.y += dy * 0.08 + 2.5;
             } else {
+                // BOSS is terug na lege grid: eerst 3 bounces, dan ploppen de kleintjes eruit
                 bossStageBoss.y = bossStageTargetY;
                 bossStageBoss.state = 'in_grid_boss'; // hovering
-                bossStagePhase = 'fighting';
+                bossStagePhase = 'boss_cycle_bouncing';
+                bossStageBounceStartY = bossStageBoss.y;
+                bossStageBounceLastTime = now;
+                bossStageBounceCount = 0;
+                bossStageMinionNextPair = null;
                 bossStageBoss.lastFiredTime = 0;
-                // Set next attack time
+            }
+            break;
+        }
+        case 'boss_cycle_bouncing': {
+            // Elke reset: 3 bounces, daarna ploppen de kleintjes eruit
+            isEntrancePhaseActive = false;
+            const elapsed = now - bossStageBounceLastTime;
+            bossStageBoss.y = bossStageBounceStartY + Math.sin((elapsed / 600) * Math.PI * 2) * 28;
+            if (elapsed > 600) {
+                bossStageBounceCount++; bossStageBounceLastTime = now;
+                if (bossStageBounceCount >= 3) {
+                    bossStageBoss.y = bossStageBounceStartY;
+                    bossStagePhase = 'boss_cycle_spawning';
+                }
+            }
+            break;
+        }
+        case 'boss_cycle_spawning': {
+            // PLOP per paar: eerst 1 links + 1 rechts (gespiegeld), daarna elke 2 sec weer 1 paar erbij
+            // Pas als alle paren eruit zijn, gaat de BOSS aanvallen
+            isEntrancePhaseActive = false;
+            const cfgSpawn = getBossMinionConfigForVariant();
+            const totalPairs = cfgSpawn.perSide;
+            if (typeof bossStageMinionNextPair === 'undefined' || bossStageMinionNextPair === null) {
+                bossStageMinionNextPair = 0;
+                bossStageMinionNextPairTime = now;
+            }
+            if (bossStageMinionNextPair < totalPairs && now >= (bossStageMinionNextPairTime || 0)) {
+                spawnBossStageMinionPair(bossStageMinionNextPair);
+                bossStageMinionNextPair++;
+                bossStageMinionNextPairTime = now + 2000;
+            }
+            if (bossStageMinionNextPair >= totalPairs) {
+                bossStageMinionNextPair = null;
+                bossStageBoss.state = 'in_grid_boss';
+                bossStagePhase = 'fighting';
                 const diffNext = (typeof getBossStageDifficulty === 'function' ? getBossStageDifficulty(bossStageVariant) : {bossNextAttackDelay:1500});
                 bossStageBoss.nextAttackTime = now + diffNext.bossNextAttackDelay;
             }
@@ -1614,10 +1758,16 @@ function updateBossStageLogic(now) {
                     bossStageBoss.x += dx * 0.08;
                     bossStageBoss.y += dy * 0.08;
                 } else {
+                    // BOSS is terug na links+rechts aanvallen = RESET:
+                    // weer 3 bounces, dan weer kleintjes, dan weer aanvallen
                     bossStageBoss.x = targetX;
                     bossStageBoss.y = bossStageTargetY;
                     bossStageBoss.state = 'in_grid_boss';
-                    bossStageBoss.nextAttackTime = now + 600;
+                    bossStagePhase = 'boss_cycle_bouncing';
+                    bossStageBounceStartY = bossStageBoss.y;
+                    bossStageBounceLastTime = now;
+                    bossStageBounceCount = 0;
+                    bossStageMinionNextPair = null;
                 }
             }
             // Boss schiet minder - MET SPRAY: enemy2=2 kogels, enemy3=3 kogels per duik
@@ -2435,6 +2585,8 @@ function startFullGridWave() {
 // --- DEEL 4      van 8 dit code blok    --- (Focus: Aangescherpte high score sound logic in handleEnemyHit)
 
 function handleEnemyHit(enemy, shootingPlayerId = null) {
+    // BOSS-MINION: 1 sec onkwetsbaar na het uitploppen
+    if (enemy && enemy.isBossMinion && enemy.bossMinionInvulnerableUntil && Date.now() < enemy.bossMinionInvulnerableUntil) return false;
     if (!enemy) return { destroyed: false, pointsAwarded: 0 };
     const now = Date.now();
     let points = 0; let destroyed = false; let wasBossDamagedBeforeHit = enemy.isDamaged; let playHitSoundId = null; let playHitSoundVolume = 1.0;
@@ -3546,10 +3698,43 @@ function aiControl() {
                 if (!bossCap) _bossShieldSkip = true;
             }
         } catch(e) {}
-        if (typeof isBossStage !== 'undefined' && isBossStage && typeof bossStageBoss !== 'undefined' && bossStageBoss && bossStagePhase === 'fighting' && bossStageBoss.isVisible !== false && !isInvincibleForAI && !isShowingBlockingMessage && !_bossShieldSkip) {
+        // BOSS: ontwijk-logica ook tijdens minion-fases (kleintjes eruit ploppen), niet alleen in 'fighting'.
+        // In bees_in_grid / waiting_grid_clear is de boss onzichtbaar, dus dan geen boss-target.
+        const _bossMinionPhases = ['fighting', 'bees_in_grid', 'waiting_grid_clear', 'waiting_for_grid_clear', 'waiting_grid', 'waiting_for_grid', 'boss_cycle_bouncing', 'boss_cycle_spawning', 'boss_cycle_attacking', 'spawning', 'bouncing'];
+        const _isBossCombatPhase = typeof bossStagePhase !== 'undefined' && _bossMinionPhases.includes(bossStagePhase);
+        const _bossVisibleForAI = !!(bossStageBoss && bossStageBoss.isVisible !== false);
+        if (typeof isBossStage !== 'undefined' && isBossStage && typeof bossStageBoss !== 'undefined' && bossStageBoss && _isBossCombatPhase && !isInvincibleForAI && !isShowingBlockingMessage && !_bossShieldSkip) {
             const bossCenterX = bossStageBoss.x + bossStageBoss.width / 2;
             const bossTargetX = bossCenterX - effectiveShipWidth / 2;
-            targetEnemyForAI = bossStageBoss;
+            // BOSS-GRID-Fase (bees_in_grid / waiting_grid_clear): de AI richt zich ALLEEN
+            // op de kleine gridvijanden. NOOIT op de (onzichtbare) boss - anders staat
+            // de AI onder de onzichtbare boss te wachten terwijl de kleintjes duiken
+            // en hij ze negeert. Duikende kleintjes gaan voor op grid-bijtjes.
+            const _bossGridPhases = ['bees_in_grid', 'waiting_grid_clear', 'waiting_for_grid_clear', 'waiting_grid', 'waiting_for_grid'];
+            const _isBossGridPhase = _bossGridPhases.includes(bossStagePhase);
+            if (_isBossGridPhase) {
+                let _bestGrid = null, _bestGridScore = -Infinity;
+                for (const _e of (typeof enemies !== 'undefined' ? enemies : [])) {
+                    if (!_e) continue;
+                    let _sc = 0;
+                    if (_e.state === 'attacking' || _e.state === 'diving_to_capture_position') _sc += 3000; // duikers eerst!
+                    else if (_e.state === 'in_grid') _sc += 500;
+                    _sc -= Math.abs((_e.x + (_e.width || 0) / 2) - (activeShipForAI.x + effectiveShipWidth / 2)) * 2;
+                    _sc -= Math.max(0, (activeShipForAI.y - (_e.y + (_e.height || 0)))) * 0.5;
+                    if (_sc > _bestGridScore) { _bestGridScore = _sc; _bestGrid = _e; }
+                }
+                if (_bestGrid) targetEnemyForAI = _bestGrid;
+            } else if (_bossVisibleForAI) {
+                targetEnemyForAI = bossStageBoss;
+            } else {
+                let _nearestMinion = null, _nearestDist = Infinity;
+                for (const _e of (typeof enemies !== 'undefined' ? enemies : [])) {
+                    if (!_e) continue;
+                    const _d = Math.abs((_e.x + (_e.width || 0) / 2) - (activeShipForAI.x + effectiveShipWidth / 2));
+                    if (_d < _nearestDist) { _nearestDist = _d; _nearestMinion = _e; }
+                }
+                if (_nearestMinion) targetEnemyForAI = _nearestMinion;
+            }
             // FIX: eindboss kogels zijn traag maar vallen precies op AI -> veel grotere lookahead + safety
             let BOSS_AI_LOOKAHEAD_Y = SHIP_HEIGHT * 14.0;
             let BOSS_AI_BULLET_PROJ_MS = 950;
@@ -3594,6 +3779,23 @@ function aiControl() {
                         vy: bullet.vy
                     });
                 }
+            }
+            // BOSS-MINIONS: elk kleintje is zelf een dreiging, niet alleen zijn kogel.
+            // Vooral duikende minions (state 'attacking') komen recht op het schip af.
+            // Zonder dit ontwijkt de AI in de minion-fase alleen boss-kogels en loopt hij in de kleintjes.
+            for (const minion of (typeof enemies !== 'undefined' ? enemies : [])) {
+                if (!minion) continue;
+                if (minion.y < -minion.height || minion.y > activeShipForAI.y + SHIP_HEIGHT * 8) continue;
+                const _isDivingMinion = minion.state === 'attacking';
+                const _mVX = minion.velocityX || minion.vx || 0;
+                const _mVY = minion.velocityY || minion.vy || (_isDivingMinion ? 3.5 : 0);
+                const _projX = minion.x + _mVX * 36;
+                const _projY = minion.y + _mVY * 36;
+                const _safetyX = effectiveShipWidth * (_isDivingMinion ? 1.6 : 1.1);
+                const _safetyY = SHIP_HEIGHT * (_isDivingMinion ? 1.6 : 1.0);
+                const _mW = minion.width || ENEMY_WIDTH, _mH = minion.height || ENEMY_HEIGHT;
+                bossThreats.push({ x: minion.x - _safetyX * 0.5, y: minion.y - _safetyY * 0.5, width: _mW + _safetyX, height: _mH + _safetyY, isFromAbove: true, vx: _mVX, vy: _mVY });
+                bossThreats.push({ x: _projX - _safetyX * 0.5, y: _projY - _safetyY * 0.5, width: _mW + _safetyX, height: _mH + _safetyY, isFromAbove: true, vx: _mVX, vy: _mVY });
             }
             if (bossStageBoss.state === 'attacking') {
                 bossThreats.push({
@@ -3655,7 +3857,10 @@ function aiControl() {
                 if (minColl === 0) {
                     // FIX: NIET meer terugblenden naar bossTarget als we ontwijken - 100% ontwijken
                     // Alleen als we al veilig zijn, klein beetje terug naar boss
-                    if (safeCandidates.length >= 3) {
+                    // Alleen terugblenden naar de boss als er GEEN minions actief zijn.
+                    // Anders trekt de AI zichzelf steeds weer onder de kleintjes.
+                    const _minionsActive = (typeof enemies !== 'undefined' && enemies.some(e => e && e.isBossMinion));
+                    if (safeCandidates.length >= 3 && !_minionsActive && _bossVisibleForAI) {
                         desiredTargetX = desiredTargetX * 0.82 + bossTargetX * 0.18;
                     }
                     if (aiPreviousDodgeDirection !== 0) aiDodgeCommitEndTime = now + 340;
@@ -3666,9 +3871,15 @@ function aiControl() {
             } else {
                 isDodgingThreat = false;
                 const wiggle = Math.sin(now/280)*12;
-                // NIEUW: strakker boss volgen
-                const bossCenterForSingle = bossStageBoss.x + bossStageBoss.width/2;
-                const predBossX = bossCenterForSingle + (bossStageBoss.velocityX || 0) * 10;
+                // Geen dreiging: boss zichtbaar -> boss volgen. Boss onzichtbaar (minions) ->
+                // dichtstbijzijnde minion volgen, NIET de onzichtbare boss.
+                let _followX = bossStageBoss.x + bossStageBoss.width/2;
+                let _followVX = bossStageBoss.velocityX || 0;
+                if ((_isBossGridPhase || !_bossVisibleForAI) && targetEnemyForAI && targetEnemyForAI !== bossStageBoss) {
+                    _followX = targetEnemyForAI.x + (targetEnemyForAI.width || 0) / 2;
+                    _followVX = targetEnemyForAI.velocityX || targetEnemyForAI.vx || 0;
+                }
+                const predBossX = _followX + _followVX * 10;
                 desiredTargetX = Math.max(AI_EDGE_BUFFER, Math.min(canvasWidth - effectiveShipWidth - AI_EDGE_BUFFER, predBossX - effectiveShipWidth/2 + wiggle*0.5));
                 aiPreviousDodgeDirection = 0;
             }
@@ -3928,6 +4139,29 @@ function aiControl() {
             }
         } catch (e) {}
 
+        // BOSS-GRID-Fase, laatste afdwinging: target blijft een kleine gridvijand,
+        // ook als een latere regel (hunt/shield) hem net naar de boss had getrokken.
+        // Ontwijken wint nog steeds van mikken: bij een dreiging blijft de dodge-X staan.
+        try {
+            const _gridPhasesFinal = ['bees_in_grid', 'waiting_grid_clear', 'waiting_for_grid_clear', 'waiting_grid', 'waiting_for_grid'];
+            if (typeof isBossStage !== 'undefined' && isBossStage && _gridPhasesFinal.includes(bossStagePhase) && enemies.length > 0 && !isMovingToCapture && !isMovingForOwnFallingShip) {
+                let _bg = null, _bgScore = -Infinity;
+                for (const _e of enemies) {
+                    if (!_e) continue;
+                    let _s = 0;
+                    if (_e.state === 'attacking' || _e.state === 'diving_to_capture_position') _s += 3000;
+                    else if (_e.state === 'in_grid') _s += 500;
+                    _s -= Math.abs((_e.x + (_e.width || 0) / 2) - shipCenterX) * 2;
+                    if (_s > _bgScore) { _bgScore = _s; _bg = _e; }
+                }
+                if (_bg) {
+                    targetEnemyForAI = _bg;
+                    shouldTryShoot_AI = true;
+                    if (!isDodgingThreat) desiredTargetX = Math.max(AI_EDGE_BUFFER, Math.min(canvasWidth - effectiveShipWidth - AI_EDGE_BUFFER, (_bg.x + (_bg.width || 0) / 2) - effectiveShipWidth / 2));
+                }
+            }
+        } catch (e) {}
+
         let currentAiSmoothingFactor;
         if (isChallengingStage) {
             currentAiSmoothingFactor = CS_SHOOTING_MOVE_FRACTION; // Snellere, directere beweging in CS
@@ -3951,8 +4185,12 @@ function aiControl() {
                 }
                 if (targetEnemyForAI) {
                     const isBossEnemy3ModeForShoot = (typeof isBossStage !== 'undefined' && isBossStage && typeof bossStageVariant !== 'undefined' && bossStageVariant === 'enemy3');
-                    // In BOSS STAGE enemy3: altijd vuren op kleine enemy3 in grid, geen respect, geen capture
-                    if (isBossEnemy3ModeForShoot && targetEnemyForAI.type === ENEMY3_TYPE && !targetEnemyForAI.hasCapturedShip) {
+                    // BOSS-GRID-Fase: gridbijtjes zijn hier GEEN capture-boss, dus geen respect-regel.
+                    // Zonder dit mikte de AI wel op de gridbijtjes maar mocht hij nooit vuren.
+                    const _isBossGridShootPhase = (typeof isBossStage !== 'undefined' && isBossStage && ['bees_in_grid', 'waiting_grid_clear', 'waiting_for_grid_clear', 'waiting_grid', 'waiting_for_grid'].includes(bossStagePhase));
+                    if (_isBossGridShootPhase && enemies.some(e => e && e.id === targetEnemyForAI.id)) {
+                        canActuallyShootTarget = true;
+                    } else if (isBossEnemy3ModeForShoot && targetEnemyForAI.type === ENEMY3_TYPE && !targetEnemyForAI.hasCapturedShip) {
                         // Alleen dodgen en kogels ontwijken blijft actief, vuren mag altijd
                         canActuallyShootTarget = true;
                     } else {
@@ -4531,8 +4769,11 @@ function calculateAIDesiredState(currentShip, currentSmoothedX, isShipDual, game
                 if(targetEnemyForAI.type===ENEMY3_TYPE&&!targetEnemyForAI.hasCapturedShip){
                     const probStateBald=['in_grid','preparing_capture','diving_to_capture_position','capturing'].includes(targetEnemyForAI.state)||isEntrancePhaseActive;
                     const isThisAIsCaptureTarget = (activeCapturingBoss && targetEnemyForAI.id === activeCapturingBoss.id && aiPlayerActivelySeekingCaptureById === shipIdentifier);
+                    // BOSS-GRID-Fase: gridbijtjes zijn hier GEEN capture-boss, dus geen respect-regel.
+                    // Zonder dit mikte de AI wel op de gridbijtjes maar mocht hij nooit vuren.
+                    const _gridPhaseShootFree = (typeof isBossStage !== 'undefined' && isBossStage && ['bees_in_grid', 'waiting_grid_clear', 'waiting_for_grid_clear', 'waiting_grid', 'waiting_for_grid'].includes(bossStagePhase) && (gameEnemies || []).some(e => e && e.id === targetEnemyForAI.id));
 
-                    if(probStateBald && !isTargetingThreeSecondRuleBoss && !isTargetingPartnerRescue && !isThisAIsCaptureTarget) {
+                    if(probStateBald && !_gridPhaseShootFree && !isTargetingThreeSecondRuleBoss && !isTargetingPartnerRescue && !isThisAIsCaptureTarget) {
                         shouldTryShoot_AI_Calc=false;
                     }
                 }
@@ -4590,7 +4831,10 @@ function calculateAIDesiredState(currentShip, currentSmoothedX, isShipDual, game
     }
 
     // BOSS STAGE: VEILIGHEID EERST, DAN DIRECT TERUG VUREN OP EINDBAAS
-    if (typeof isBossStage !== 'undefined' && isBossStage && typeof bossStageBoss !== 'undefined' && bossStageBoss && typeof bossStagePhase !== 'undefined' && bossStagePhase === 'fighting') {
+    // NIET in de grid-fase: dan richten de AI's zich alleen op de kleine gridvijanden.
+    const _coopBossGridPhases = ['bees_in_grid', 'waiting_grid_clear', 'waiting_for_grid_clear', 'waiting_grid', 'waiting_for_grid'];
+    const _coopIsBossGridPhase = (typeof isBossStage !== 'undefined' && isBossStage && _coopBossGridPhases.includes(bossStagePhase));
+    if (!_coopIsBossGridPhase && typeof isBossStage !== 'undefined' && isBossStage && typeof bossStageBoss !== 'undefined' && bossStageBoss && typeof bossStagePhase !== 'undefined' && bossStagePhase === 'fighting') {
         try {
             if (bossStageBoss.isVisible !== false) {
                 const bossCenterX = bossStageBoss.x + bossStageBoss.width/2;
@@ -4624,9 +4868,31 @@ function calculateAIDesiredState(currentShip, currentSmoothedX, isShipDual, game
     if (typeof isSimultaneousAssaultWave !== "undefined" && isSimultaneousAssaultWave) { if (typeof isEntrancePhaseActive !== "undefined" && isEntrancePhaseActive && !isAllEnemiesInGridForSimultaneous()) { shouldTryShoot_AI_Calc = false; } }
     if (typeof gameEnemies !== "undefined") { const bossWithShipAttacking = gameEnemies.find(e => e && e.type === ENEMY3_TYPE && e.hasCapturedShip && (e.state === "attacking" || e.state === "diving")); if (bossWithShipAttacking) { shouldTryShoot_AI_Calc = true; targetEnemyForAI = bossWithShipAttacking; } }
     // BOSS FIGHT FINAL OVERRIDE: altijd terugvuren op eindbaas, zelfs als andere logic het uitzet (behalve als volledig geblokkeerd)
-    if (typeof isBossStage !== 'undefined' && isBossStage && typeof bossStageBoss !== 'undefined' && bossStageBoss && bossStagePhase === 'fighting' && bossStageBoss.isVisible !== false) {
+    // NIET in de grid-fase: daar geldt de grid-focus hieronder (alleen kleine gridvijanden).
+    if (!_coopIsBossGridPhase && typeof isBossStage !== 'undefined' && isBossStage && typeof bossStageBoss !== 'undefined' && bossStageBoss && bossStagePhase === 'fighting' && bossStageBoss.isVisible !== false) {
         targetEnemyForAI = bossStageBoss;
         shouldTryShoot_AI_Calc = true;
+    }
+    // BOSS-GRID-Fase, laatste afdwinging (co-op): target = beste kleine gridvijand.
+    // Duikende kleintjes gaan voor op grid-bijtjes. Ontwijken wint nog steeds van mikken:
+    // bij een dreiging blijft de dodge-X staan, maar het schieten blijft op de gridvijand gericht.
+    if (_coopIsBossGridPhase && !isMovingToCaptureBeam && !isMovingForOwnFallingShip && (gameEnemies || []).length > 0) {
+        let _cg = null, _cgScore = -Infinity;
+        for (const _e of gameEnemies) {
+            if (!_e) continue;
+            let _s = 0;
+            if (_e.state === 'attacking' || _e.state === 'diving_to_capture_position') _s += 3000;
+            else if (_e.state === 'in_grid') _s += 500;
+            _s -= Math.abs((_e.x + (_e.width || 0) / 2) - shipCenterX) * 2;
+            if (_s > _cgScore) { _cgScore = _s; _cg = _e; }
+        }
+        if (_cg) {
+            targetEnemyForAI = _cg;
+            shouldTryShoot_AI_Calc = true;
+            if (!isDodgingThreatCurrentFrame) {
+                desiredTargetX = Math.max(AI_EDGE_BUFFER, Math.min(gameCanvas.width - effectiveShipWidth - AI_EDGE_BUFFER, (_cg.x + (_cg.width || 0) / 2) - effectiveShipWidth / 2));
+            }
+        }
     }
     // --- HARDE 3-SEC REGEL (co-op AI) ---
     try {
@@ -5103,6 +5369,8 @@ function moveEntities(overrideP1Left = null, overrideP1Right = null) {
             if (bulletHit) continue;
             for (let j = enemies.length - 1; j >= 0; j--) {
                 const enemy = enemies[j]; if (!enemy) { enemies.splice(j,1); continue; }
+                // BOSS-MINION: 1 sec onkwetsbaar na het uitploppen, kogel vliegt er gewoon doorheen
+                if (enemy.isBossMinion && enemy.bossMinionInvulnerableUntil && Date.now() < enemy.bossMinionInvulnerableUntil) continue;
                 // FIX beamer: enemy3 onkwetsbaar zolang beamer actief is EN zolang hij net gecaptured heeft en weggaat met schip
                 // Pas weer kwetsbaar als hij terug in grid staat (in_grid) of aanvalt met schip
                 if (enemy.type === ENEMY3_TYPE) {
@@ -5343,6 +5611,8 @@ function moveEntities(overrideP1Left = null, overrideP1Right = null) {
         // Enemy State Machine and Movement
         for (let i = enemies.length - 1; i >= 0; i--) {
              let enemy = enemies[i]; if (!enemy) { enemies.splice(i,1); continue; }
+             // Boss-minions zijn eenmalig: na hun duik verdwijnen ze, ze keren NIET terug naar een grid
+             if (enemy.isBossMinion && enemy.state === 'returning') { enemies.splice(i,1); continue; }
              const enemyId = enemy.id;
              if (enemy.capturePrepareTimeout && enemy.state !== 'preparing_capture') { clearTimeout(enemy.capturePrepareTimeout); const timeoutIndex = enemySpawnTimeouts.indexOf(enemy.capturePrepareTimeout); if (timeoutIndex > -1) enemySpawnTimeouts.splice(timeoutIndex, 1); enemy.capturePrepareTimeout = null; }
              const currentEnemyWidthCorrected = (enemy.type === ENEMY3_TYPE) ? BOSS_WIDTH : ((enemy.type === ENEMY1_TYPE) ? ENEMY1_WIDTH : ENEMY_WIDTH);
@@ -5351,6 +5621,19 @@ function moveEntities(overrideP1Left = null, overrideP1Right = null) {
              const previousStateBeforeSwitch = enemy.state;
 
              switch (enemy.state) {
+                 case 'boss_minion_circle': {
+                    // Mooie cirkel-beweging naar boven toe, daarna vuren + duiken
+                    const elapsedC = now - (enemy.bossMinionCircleStart || now);
+                    const durC = enemy.bossMinionCircleDuration || 950;
+                    const progC = Math.min(1, elapsedC / durC);
+                    const angC = (enemy.bossMinionCircleStartAngle || 0) + progC * Math.PI * 2 * (enemy.bossMinionCircleDir || 1);
+                    const oldMX = enemy.x, oldMY = enemy.y;
+                    enemy.x = (enemy.bossMinionCircleCX || enemy.x) + (enemy.bossMinionCircleDir || 1) * Math.cos(angC) * (enemy.bossMinionCircleRadius || 105) * 1.45 - enemy.width / 2;
+                    enemy.y = (enemy.bossMinionCircleCY || enemy.y) - Math.sin(angC) * (enemy.bossMinionCircleRadius || 105) * 0.85 - progC * 90 - enemy.height / 2;
+                    if (gameCanvas) { enemy.x = Math.max(4, Math.min(gameCanvas.width - enemy.width - 4, enemy.x)); enemy.y = Math.max(8, Math.min(gameCanvas.height * 0.45, enemy.y)); }
+                    enemy.velocityX = enemy.x - oldMX; enemy.velocityY = enemy.y - oldMY;
+                    if (progC >= 1) { startBossMinionDive(enemy); }
+                    break; }
                  case 'following_bezier_path': { let pathSpeedFactor = CS_ENTRANCE_PATH_SPEED; const speedMultiplier = enemy.pathSpeedMultiplier || 1.0; pathSpeedFactor *= speedMultiplier; if (!isChallengingStage) { enemies.splice(i, 1); enemy = null; break; } let pathSource = challengingStagePaths; let pathSegments = pathSource[enemy.entrancePathId]; if (!pathSegments || enemy.pathSegmentIndex >= pathSegments.length) { enemies.splice(i, 1); enemy = null; break; } const segmentCS = pathSegments[enemy.pathSegmentIndex]; if (!segmentCS || !segmentCS.p0 || !segmentCS.p1 || !segmentCS.p2 || !segmentCS.p3) { console.error(`Invalid CS Bezier segment ${enemy.pathSegmentIndex} for path ${enemy.entrancePathId}. Enemy ${enemy.id}`); enemies.splice(i, 1); enemy = null; break; } enemy.pathT += pathSpeedFactor; let newX_CS, newY_CS; let oldX_CS = enemy.x, oldY_CS = enemy.y; if (enemy.pathT >= 1.0) { enemy.pathT = 0; enemy.pathSegmentIndex++; if (enemy.pathSegmentIndex >= pathSegments.length) { enemies.splice(i, 1); enemy = null; } else { const nextSegmentCS = pathSegments[enemy.pathSegmentIndex]; if (nextSegmentCS?.p0) { newX_CS = nextSegmentCS.p0.x; newY_CS = nextSegmentCS.p0.y; } else { console.error(`Invalid next CS Bezier segment ${enemy.pathSegmentIndex} for path ${enemy.entrancePathId}. Enemy ${enemyId}`); enemies.splice(i, 1); enemy = null; } } } else { try { newX_CS = calculateBezierPoint(enemy.pathT, segmentCS.p0.x, segmentCS.p1.x, segmentCS.p2.x, segmentCS.p3.x); newY_CS = calculateBezierPoint(enemy.pathT, segmentCS.p0.y, segmentCS.p1.y, segmentCS.p2.y, segmentCS.p3.y); } catch (bezierError) { console.error(`Error calculating CS Bezier point for enemy ${enemyId}:`, bezierError); enemies.splice(i, 1); enemy = null; } } if (enemy) { if (isNaN(newX_CS) || isNaN(newY_CS)) { console.error(`NaN detected in CS path calculation for enemy ${enemyId}. Removing.`); enemies.splice(i, 1); enemy = null; } else { enemy.velocityX = newX_CS - oldX_CS; enemy.velocityY = newY_CS - oldY_CS; enemy.x = newX_CS; enemy.y = newY_CS; } } break; }
                  case 'following_entrance_path': { if (isChallengingStage) { enemies.splice(i, 1); enemy = null; break; } let pathSource = normalWaveEntrancePaths; let pathSegments = pathSource[enemy.entrancePathId]; let pathSpeedFactor; if (enemy.entrancePathId === 'boss_loop_left' || enemy.entrancePathId === 'boss_loop_right') { pathSpeedFactor = BOSS_LOOP_ENTRANCE_PATH_SPEED; } else { pathSpeedFactor = NORMAL_ENTRANCE_PATH_SPEED; }
                     if (typeof isSimultaneousAssaultWave !== 'undefined' && isSimultaneousAssaultWave) { if (enemy.entrancePathId === 'boss_loop_left' || enemy.entrancePathId === 'boss_loop_right') { pathSpeedFactor = NORMAL_ENTRANCE_PATH_SPEED * 3.2; } else { pathSpeedFactor = NORMAL_ENTRANCE_PATH_SPEED * 0.90; } } if (!pathSegments) { console.warn(`Enemy ${enemyId} missing SHARED path ${enemy.entrancePathId}. Switching to moving_to_grid.`); try { enemy.targetGridX = enemy.targetGridX ?? (gameCanvas.width/2); enemy.targetGridY = enemy.targetGridY ?? ENEMY_TOP_MARGIN; } catch(err){ console.error(`Error getting grid pos for ${enemyId} after missing path`, err); enemy.targetGridX = gameCanvas.width/2; enemy.targetGridY = ENEMY_TOP_MARGIN; } enemy.state = 'moving_to_grid'; enemy.pathT = 0; enemy.pathSegmentIndex = 0; enemy.velocityX = 0; enemy.velocityY = 0; if (enemy.squadronId !== undefined && squadronCompletionStatus[enemy.squadronId]) { squadronCompletionStatus[enemy.squadronId].completed++; } break; } if (enemy.pathSegmentIndex >= pathSegments.length) { console.warn(`Enemy ${enemyId} path index ${enemy.pathSegmentIndex} out of bounds for SHARED path ${enemy.entrancePathId}. Switching to moving_to_grid.`); try { enemy.targetGridX = enemy.targetGridX ?? (gameCanvas.width/2); enemy.targetGridY = enemy.targetGridY ?? ENEMY_TOP_MARGIN; } catch(err){ console.error(`Error getting grid pos for ${enemyId} after invalid path index`, err); enemy.targetGridX = gameCanvas.width/2; enemy.targetGridY = ENEMY_TOP_MARGIN; } enemy.state = 'moving_to_grid'; enemy.pathT = 0; enemy.pathSegmentIndex = 0; enemy.velocityX = 0; enemy.velocityY = 0; if (enemy.squadronId !== undefined && squadronCompletionStatus[enemy.squadronId]) { squadronCompletionStatus[enemy.squadronId].completed++; } break; } const segmentNorm = pathSegments[enemy.pathSegmentIndex]; if (!segmentNorm || !segmentNorm.p0 || !segmentNorm.p1 || !segmentNorm.p2 || !segmentNorm.p3) { console.error(`Invalid Normal Bezier segment ${enemy.pathSegmentIndex} for SHARED path ${enemy.entrancePathId}. Enemy ${enemyId}. Switching to moving_to_grid.`); try { enemy.targetGridX = enemy.targetGridX ?? (gameCanvas.width/2); enemy.targetGridY = enemy.targetGridY ?? ENEMY_TOP_MARGIN + enemy.gridRow * (ENEMY_HEIGHT + ENEMY_V_SPACING); } catch(err){ console.error(`Error getting grid pos for ${enemyId} after bad segment`, err); enemy.targetGridX = gameCanvas.width/2; enemy.targetGridY = ENEMY_TOP_MARGIN; } enemy.state = 'moving_to_grid'; enemy.pathT = 0; enemy.pathSegmentIndex = 0; enemy.velocityX = 0; enemy.velocityY = 0; if (enemy.squadronId !== undefined && squadronCompletionStatus[enemy.squadronId]) { squadronCompletionStatus[enemy.squadronId].completed++; } break; } enemy.pathT += pathSpeedFactor; let newX_Norm, newY_Norm; let oldX_Norm = enemy.x, oldY_Norm = enemy.y; if (enemy.pathT >= 1.0) { enemy.pathT = 0; enemy.pathSegmentIndex++; if (enemy.pathSegmentIndex >= pathSegments.length) { let finalPathX, finalPathY; try { finalPathX = calculateBezierPoint(1.0, segmentNorm.p0.x, segmentNorm.p1.x, segmentNorm.p2.x, segmentNorm.p3.x); finalPathY = calculateBezierPoint(1.0, segmentNorm.p0.y, segmentNorm.p1.y, segmentNorm.p2.y, segmentNorm.p3.y); } catch(err) { console.error(`Error calculating final bezier point for ${enemyId} at end of normal path ${enemy.entrancePathId}`, err); finalPathX = segmentNorm.p3.x; finalPathY = segmentNorm.p3.y; } enemy.x = finalPathX; enemy.y = finalPathY; try { enemy.targetGridX = enemy.targetGridX ?? (gameCanvas.width/2); enemy.targetGridY = enemy.targetGridY ?? ENEMY_TOP_MARGIN; } catch(err){ console.error(`Error getting target grid pos for ${enemyId} at end of normal path ${enemy.entrancePathId}`, err); enemy.targetGridX = enemy.x; enemy.targetGridY = ENEMY_TOP_MARGIN + enemy.gridRow * (ENEMY_HEIGHT + ENEMY_V_SPACING); } const previousState = enemy.state; enemy.state = 'moving_to_grid'; enemy.velocityX = 0; enemy.velocityY = 0; enemy.pathSegmentIndex = 0; if (previousState === 'following_entrance_path' && enemy.squadronId !== undefined && squadronCompletionStatus[enemy.squadronId]) { squadronCompletionStatus[enemy.squadronId].completed++; } break; } else { const nextSegmentNorm = pathSegments[enemy.pathSegmentIndex]; if (nextSegmentNorm?.p0) { newX_Norm = nextSegmentNorm.p0.x; newY_Norm = nextSegmentNorm.p0.y; } else { console.error(`Invalid next Normal Bezier segment ${enemy.pathSegmentIndex} for SHARED path ${enemy.entrancePathId}. Enemy ${enemyId}. Switching to moving_to_grid.`); try { enemy.targetGridX = enemy.targetGridX ?? (gameCanvas.width/2); enemy.targetGridY = enemy.targetGridY ?? ENEMY_TOP_MARGIN; } catch(err){ console.error(`Error getting grid pos for ${enemyId} after bad next segment`, err); enemy.targetGridX = gameCanvas.width/2; enemy.targetGridY = ENEMY_TOP_MARGIN; } enemy.state = 'moving_to_grid'; enemy.pathT = 0; enemy.pathSegmentIndex = 0; enemy.velocityX = 0; enemy.velocityY = 0; if (enemy.squadronId !== undefined && squadronCompletionStatus[enemy.squadronId]) { squadronCompletionStatus[enemy.squadronId].completed++; } break; } } } else { try { newX_Norm = calculateBezierPoint(enemy.pathT, segmentNorm.p0.x, segmentNorm.p1.x, segmentNorm.p2.x, segmentNorm.p3.x); newY_Norm = calculateBezierPoint(enemy.pathT, segmentNorm.p0.y, segmentNorm.p1.y, segmentNorm.p2.y, segmentNorm.p3.y); } catch (bezierError) { console.error(`Error calculating Normal Bezier point for enemy ${enemyId}:`, bezierError); try { enemy.targetGridX = enemy.targetGridX ?? (gameCanvas.width/2); enemy.targetGridY = enemy.targetGridY ?? ENEMY_TOP_MARGIN; } catch(err){ console.error(`Error getting grid pos for ${enemyId} after bezier error`, err); enemy.targetGridX = gameCanvas.width/2; enemy.targetGridY = ENEMY_TOP_MARGIN; } enemy.state = 'moving_to_grid'; enemy.pathT = 0; enemy.pathSegmentIndex = 0; enemy.velocityX = 0; enemy.velocityY = 0; if (enemy.squadronId !== undefined && squadronCompletionStatus[enemy.squadronId]) { squadronCompletionStatus[enemy.squadronId].completed++; } break; } } if (enemy && enemy.state === 'following_entrance_path') { if (isNaN(newX_Norm) || isNaN(newY_Norm)) { console.error(`NaN detected in Normal path calculation for enemy ${enemyId}. Switching to moving_to_grid.`); try { enemy.targetGridX = enemy.targetGridX ?? (gameCanvas.width/2); enemy.targetGridY = enemy.targetGridY ?? ENEMY_TOP_MARGIN; } catch(err){ console.error(`Error getting grid pos for ${enemyId} after NaN`, err); enemy.targetGridX = gameCanvas.width/2; enemy.targetGridY = ENEMY_TOP_MARGIN; } enemy.state = 'moving_to_grid'; enemy.pathT = 0; enemy.pathSegmentIndex = 0; enemy.velocityX = 0; enemy.velocityY = 0; if (enemy.squadronId !== undefined && squadronCompletionStatus[enemy.squadronId]) { squadronCompletionStatus[enemy.squadronId].completed++; } } else { let finalX = newX_Norm; const isPattern1LoopSquadron = currentWavePatternIndex === 1 && (enemy.squadronId === 2 || enemy.squadronId === 3); const isSecondInPair = typeof enemy.squadronEnemyIndex === 'number' && enemy.squadronEnemyIndex % 2 !== 0; if (isPattern1LoopSquadron && isSecondInPair) { const pairOffset = currentEnemyWidthCorrected + ENTRANCE_PAIR_HORIZONTAL_GAP; finalX = newX_Norm + pairOffset; } enemy.velocityX = finalX - oldX_Norm; enemy.velocityY = newY_Norm - oldY_Norm; enemy.x = finalX; enemy.y = newY_Norm; } } break; }
@@ -5660,7 +5943,7 @@ function moveEntities(overrideP1Left = null, overrideP1Right = null) {
 
             // --- Enemy vs Player Ship Collision Detection ---
             if (enemy && !isShowingPlayerGameOverMessage && !(isTwoPlayerMode && selectedGameMode === 'coop' && (isPlayer1ShowingGameOverMessage || isPlayer2ShowingGameOverMessage)) && gameOverSequenceStartTime === 0) {
-                const collisionStates = ['attacking', 'following_entrance_path', 'following_bezier_path', 'diving_to_capture_position'];
+                const collisionStates = ['attacking', 'following_entrance_path', 'following_bezier_path', 'diving_to_capture_position', 'boss_minion_circle'];
                 if (collisionStates.includes(enemy.state)) {
                     let shipsToCollideWith = [];
                     if (isTwoPlayerMode && selectedGameMode === 'coop') {
