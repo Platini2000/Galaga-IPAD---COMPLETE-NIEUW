@@ -2745,7 +2745,7 @@ function handleEnemyHit(enemy, shootingPlayerId = null) {
 
         // --- SCORE-UP + LUCKY 7 (alleen bij een kill, dus destroyed) ---
         // SCORE-UP = VASTE punten per kill (geen verdubbeling meer):
-        //   vijand die VLIEGT = 5000, vijand die STILSTAAT in het grid = 2500
+        //   vijand die VLIEGT = 1000, vijand die STILSTAAT in het grid = 500
         // LUCKY 7: elke 7e kill = +10000 erbij, daarna teller weer op 0.
         // Vliegende score van deze 2 upgrades: GEEL + 1 seconde in beeld.
         let scoreUpBonusThisHit = false;
@@ -2755,7 +2755,7 @@ function handleEnemyHit(enemy, shootingPlayerId = null) {
                 const _sp = (typeof playerNumFromShooterId === 'function') ? playerNumFromShooterId(shootingPlayerId) : 1;
                 if (typeof isUpgradeActiveForPlayer === 'function' && isUpgradeActiveForPlayer('SCORE-UP', _sp)) {
                     const _isFlying = enemy.state !== 'in_grid';
-                    points = _isFlying ? 5000 : 2500;
+                    points = _isFlying ? 1000 : 500;
                     scoreUpBonusThisHit = true;
                 }
                 if (typeof isUpgradeActiveForPlayer === 'function' && isUpgradeActiveForPlayer('LUCKY 7', _sp)) {
