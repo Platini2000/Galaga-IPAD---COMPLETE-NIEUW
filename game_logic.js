@@ -170,9 +170,57 @@ function getAILivesForBeamer1UP() {
     return [];
 }
 window.getAILivesForBeamer1UP = getAILivesForBeamer1UP;
+// --- BEAMER: wie mag deze upgrade pakken (alleen tussen AI-spelers) ---
+// Laatste moment (Date.now) waarop een AI-speler een beamer-upgrade pakte. 0 = nog nooit.
+// Bij gelijke stand (punten bij normale upgrades / levens bij 1UP) wint wie het LANGST
+// geen upgrade heeft gehad (kleinste timestamp), zodat het niet steeds dezelfde wordt.
+var beamerUpgradeLastReceivedAt = { 1: 0, 2: 0 };
+var beamerDesignatedAIPlayerNum = null; // 1 of 2, of null als er geen lopende beamer-upgrade is
+var beamerDesignatedUpgradeType = null;
+function beamerIsAIPlayer(playerNum) {
+    try {
+        if (typeof isCoopAIDemoActive !== 'undefined' && isCoopAIDemoActive) return true; // beide AI
+        if (typeof isPlayerTwoAI !== 'undefined' && isPlayerTwoAI && typeof selectedOnePlayerGameVariant !== 'undefined' && selectedOnePlayerGameVariant === '1P_VS_AI_COOP') return playerNum === 2; // alleen P2 is AI, P1 is mens
+        if (typeof isManualControl !== 'undefined' && !isManualControl) return true; // 1P AI-demo / single AI
+        if (typeof isPlayerTwoAI !== 'undefined' && isPlayerTwoAI && typeof selectedOnePlayerGameVariant !== 'undefined' && selectedOnePlayerGameVariant === '1P_VS_AI_NORMAL' && typeof currentPlayer !== 'undefined' && currentPlayer === 2) return true;
+    } catch(e) {}
+    return false;
+}
+function beamerClearDesignation() { beamerDesignatedAIPlayerNum = null; beamerDesignatedUpgradeType = null; try { window.beamerDesignatedAIPlayerNum = null; } catch(e) {} }
+function beamerSetDesignation(playerNum, upgradeType) {
+    beamerDesignatedAIPlayerNum = playerNum; beamerDesignatedUpgradeType = upgradeType || null;
+    try { window.beamerDesignatedAIPlayerNum = playerNum; window.beamerDesignatedUpgradeType = upgradeType || null; } catch(e) {}
+}
+// Fallback als een beamer-boss (nog) geen target heeft: bereken eerlijk wie hem zou moeten krijgen.
+// 1UP -> minste levens, anders -> minste punten, gelijk -> langst geen upgrade gehad.
+function beamerPickFairPlayerNum(upgradeType, p1ScoreVal, p2ScoreVal) {
+    try {
+        var is1UP = (upgradeType === '1UP');
+        var a = is1UP ? player1Lives : p1ScoreVal, b = is1UP ? player2Lives : p2ScoreVal;
+        if (a < b) return 1; if (b < a) return 2;
+        var t1 = beamerUpgradeLastReceivedAt[1] || 0, t2 = beamerUpgradeLastReceivedAt[2] || 0;
+        if (t1 !== t2) return (t1 < t2) ? 1 : 2; // langst geleden (kleinste timestamp) wint
+        if (typeof beamerTargetAlternation === 'undefined') beamerTargetAlternation = 0;
+        var pick = (beamerTargetAlternation === 0) ? 1 : 2;
+        beamerTargetAlternation = 1 - beamerTargetAlternation; window.beamerTargetAlternation = beamerTargetAlternation;
+        return pick;
+    } catch(e) { return 1; }
+}
+function beamerGetDesignatedPlayerNum(boss) {
+    try {
+        if (boss && typeof boss.beamerTargetPlayerNum === 'number') return boss.beamerTargetPlayerNum;
+        if (typeof beamerDesignatedAIPlayerNum === 'number') return beamerDesignatedAIPlayerNum;
+    } catch(e) {}
+    return null;
+}
+window.beamerUpgradeLastReceivedAt = beamerUpgradeLastReceivedAt;
+window.beamerClearDesignation = beamerClearDesignation;
+window.beamerSetDesignation = beamerSetDesignation;
+window.beamerPickFairPlayerNum = beamerPickFairPlayerNum;
+window.beamerIsAIPlayer = beamerIsAIPlayer;
 function getNextBeamerUpgradeType() {
     try {
-        const types = ['DUAL', 'SHIELD', 'RAPID', 'SPREAD', 'CLEAR', '1UP'];
+        const types = ['DUAL', 'SHIELD', 'RAPID', 'SPREAD', 'CLEAR', '1UP', 'TRIPLE', 'PIERCING', 'BOUNCE', 'SCORE-UP', 'LUCKY 7'];
         // 1UP-REGEL VOOR AI-MODES: 1UP mag alleen als minimaal 1 meespelende speler < 3 levens heeft.
         // Dus: alle spelers >= 3 (en zeker >= 5) -> geen 1UP meer, ook niet via pity/bag.
         // Gewicht 0 hieronder geldt DUS ALLEEN in dat geblokkeerde geval.
@@ -182,7 +230,7 @@ function getNextBeamerUpgradeType() {
         const isAIBeamerMode = aiLives.length > 0;
         const aiNeeds1UP = isAIBeamerMode && aiLives.some(l => l < 3); // 1 speler < 3 -> NIET blokkeren
         const block1UPForAI = isAIBeamerMode && !aiNeeds1UP;
-        const non1UPTypes = ['DUAL', 'SHIELD', 'RAPID', 'SPREAD', 'CLEAR'];
+        const non1UPTypes = ['DUAL', 'SHIELD', 'RAPID', 'SPREAD', 'CLEAR', 'TRIPLE', 'PIERCING', 'BOUNCE', 'SCORE-UP', 'LUCKY 7'];
         const pickNon1UP = () => non1UPTypes[Math.floor(Math.random() * non1UPTypes.length)];
         let p1L = 99, p2L = 99, singleL = 99;
         try {
@@ -204,7 +252,12 @@ function getNextBeamerUpgradeType() {
             'RAPID': 1.0,
             'SPREAD': 1.0,
             'CLEAR': 1.0,
-            '1UP': 1.0
+            '1UP': 1.0,
+            'TRIPLE': 1.0,
+            'PIERCING': 1.0,
+            'BOUNCE': 1.0,
+            'SCORE-UP': 1.0,
+            'LUCKY 7': 1.0
         };
         if (block1UPForAI) weights['1UP'] = 0;
         // Lives gebaseerd: sneller 1UP bij lage levens
@@ -302,9 +355,9 @@ function getNextBeamerUpgradeType() {
         return next;
     } catch(e){
         console.error("beamer randomizer fallback", e);
-        const fallback = ['DUAL','SHIELD','RAPID','SPREAD','CLEAR','1UP'];
+        const fallback = ['DUAL','SHIELD','RAPID','SPREAD','CLEAR','1UP','TRIPLE','PIERCING','BOUNCE','SCORE-UP','LUCKY 7'];
         // Ook in de fallback mag een geblokkeerde 1UP er nooit uit komen.
-        try { if (typeof getAILivesForBeamer1UP === 'function') { const _ai = getAILivesForBeamer1UP(); if (_ai.length > 0 && !_ai.some(l => l < 3)) return (function(){ const f2 = ['DUAL','SHIELD','RAPID','SPREAD','CLEAR'][Math.floor(Math.random()*5)]; lastBeamerUpgradeType = f2; window._beamer1UPPityCounter = _beamer1UPPityCounter; return f2; })(); } } catch(e2) {}
+        try { if (typeof getAILivesForBeamer1UP === 'function') { const _ai = getAILivesForBeamer1UP(); if (_ai.length > 0 && !_ai.some(l => l < 3)) return (function(){ const f2 = ['DUAL','SHIELD','RAPID','SPREAD','CLEAR','TRIPLE','PIERCING','BOUNCE','SCORE-UP','LUCKY 7'][Math.floor(Math.random()*10)]; lastBeamerUpgradeType = f2; window._beamer1UPPityCounter = _beamer1UPPityCounter; return f2; })(); } } catch(e2) {}
         let f = fallback[Math.floor(Math.random()*fallback.length)];
         if (f === '1UP') _beamer1UPPityCounter = 0;
         lastBeamerUpgradeType = f;
@@ -742,12 +795,22 @@ function resetWaveInternal() {
             if (typeof spreadStagesRemaining !== 'undefined' && spreadStagesRemaining>0) { spreadStagesRemaining--; if(spreadStagesRemaining<=0) expiredTypes.push('SPREAD'); }
             if (typeof clearStagesRemaining !== 'undefined' && clearStagesRemaining>0) { clearStagesRemaining--; if(clearStagesRemaining<=0) expiredTypes.push('CLEAR'); }
             if (typeof dualStagesRemaining !== 'undefined' && dualStagesRemaining>0) { dualStagesRemaining--; if(dualStagesRemaining<=0) expiredTypes.push('DUAL'); }
+            if (typeof tripleStagesRemaining !== 'undefined' && tripleStagesRemaining>0) { tripleStagesRemaining--; if(tripleStagesRemaining<=0) expiredTypes.push('TRIPLE'); }
+            if (typeof piercingStagesRemaining !== 'undefined' && piercingStagesRemaining>0) { piercingStagesRemaining--; if(piercingStagesRemaining<=0) expiredTypes.push('PIERCING'); }
+            if (typeof bounceStagesRemaining !== 'undefined' && bounceStagesRemaining>0) { bounceStagesRemaining--; if(bounceStagesRemaining<=0) expiredTypes.push('BOUNCE'); }
+            if (typeof scoreUpStagesRemaining !== 'undefined' && scoreUpStagesRemaining>0) { scoreUpStagesRemaining--; if(scoreUpStagesRemaining<=0) expiredTypes.push('SCORE-UP'); }
+            if (typeof lucky7StagesRemaining !== 'undefined' && lucky7StagesRemaining>0) { lucky7StagesRemaining--; if(lucky7StagesRemaining<=0) expiredTypes.push('LUCKY 7'); }
         }
         // Expire alleen wat echt op is
         if (expiredTypes.includes('SHIELD')) { if (typeof shieldActive !== 'undefined') shieldActive = false; if (typeof shieldActivePlayer !== 'undefined') shieldActivePlayer = null; shieldStagesRemaining = 0; console.log("[UPGRADE PERSIST] SHIELD expired na 2 stages"); }
         if (expiredTypes.includes('RAPID')) { if (typeof rapidActive !== 'undefined') rapidActive = false; if (typeof rapidActiveUntil !== 'undefined') rapidActiveUntil = 0; if (typeof rapidActivePlayer !== 'undefined') rapidActivePlayer = null; rapidStagesRemaining = 0; console.log("[UPGRADE PERSIST] RAPID expired"); }
         if (expiredTypes.includes('SPREAD')) { if (typeof spreadActive !== 'undefined') spreadActive = false; if (typeof spreadActiveUntil !== 'undefined') spreadActiveUntil = 0; if (typeof spreadActivePlayer !== 'undefined') spreadActivePlayer = null; spreadStagesRemaining = 0; console.log("[UPGRADE PERSIST] SPREAD expired"); }
         if (expiredTypes.includes('CLEAR')) { if (typeof isClearNoBulletsActive !== 'undefined') isClearNoBulletsActive = false; if (typeof clearActiveUntil !== 'undefined') clearActiveUntil = 0; clearStagesRemaining = 0; console.log("[UPGRADE PERSIST] CLEAR expired"); }
+        if (expiredTypes.includes('TRIPLE')) { if (typeof tripleActive !== 'undefined') tripleActive = false; if (typeof tripleActiveUntil !== 'undefined') tripleActiveUntil = 0; if (typeof tripleActivePlayer !== 'undefined') tripleActivePlayer = null; tripleStagesRemaining = 0; console.log("[UPGRADE PERSIST] TRIPLE expired na 2 stages"); }
+        if (expiredTypes.includes('PIERCING')) { if (typeof piercingActive !== 'undefined') piercingActive = false; if (typeof piercingActiveUntil !== 'undefined') piercingActiveUntil = 0; if (typeof piercingActivePlayer !== 'undefined') piercingActivePlayer = null; piercingStagesRemaining = 0; console.log("[UPGRADE PERSIST] PIERCING expired na 2 stages"); }
+        if (expiredTypes.includes('BOUNCE')) { if (typeof bounceActive !== 'undefined') bounceActive = false; if (typeof bounceActiveUntil !== 'undefined') bounceActiveUntil = 0; if (typeof bounceActivePlayer !== 'undefined') bounceActivePlayer = null; bounceStagesRemaining = 0; console.log("[UPGRADE PERSIST] BOUNCE expired na 2 stages"); }
+        if (expiredTypes.includes('SCORE-UP')) { if (typeof scoreUpActive !== 'undefined') scoreUpActive = false; if (typeof scoreUpActiveUntil !== 'undefined') scoreUpActiveUntil = 0; if (typeof scoreUpActivePlayer !== 'undefined') scoreUpActivePlayer = null; scoreUpStagesRemaining = 0; console.log("[UPGRADE PERSIST] SCORE-UP expired na 2 stages"); }
+        if (expiredTypes.includes('LUCKY 7')) { if (typeof lucky7Active !== 'undefined') lucky7Active = false; if (typeof lucky7ActiveUntil !== 'undefined') lucky7ActiveUntil = 0; if (typeof lucky7ActivePlayer !== 'undefined') lucky7ActivePlayer = null; lucky7StagesRemaining = 0; if (typeof lucky7KillCounts !== 'undefined') lucky7KillCounts = { 1: 0, 2: 0 }; console.log("[UPGRADE PERSIST] LUCKY 7 expired na 2 stages"); }
         if (expiredTypes.includes('DUAL')) {
             // dual ship verloopt na 3 stages
             if (typeof isDualShipActive !== 'undefined') isDualShipActive = false;
@@ -775,6 +838,27 @@ function resetWaveInternal() {
             if (typeof clearActiveUntil !== 'undefined') clearActiveUntil = Date.now() + 999999999; // blokkeert hele stage(s)
             if (typeof enemyBullets !== 'undefined') enemyBullets = [];
             console.log("[UPGRADE PERSIST] CLEAR blijft actief, nog "+clearStagesRemaining+" stage(s)");
+        }
+        // NIEUW: timers verversen zodat de nieuwe upgrades de volle 2 stages blijven duren
+        if (typeof tripleStagesRemaining !== 'undefined' && tripleStagesRemaining > 0 && typeof tripleActive !== 'undefined' && tripleActive) {
+            if (typeof tripleActiveUntil !== 'undefined') tripleActiveUntil = Date.now() + 999999999;
+            console.log("[UPGRADE PERSIST] TRIPLE blijft actief, nog "+tripleStagesRemaining+" stage(s)");
+        }
+        if (typeof piercingStagesRemaining !== 'undefined' && piercingStagesRemaining > 0 && typeof piercingActive !== 'undefined' && piercingActive) {
+            if (typeof piercingActiveUntil !== 'undefined') piercingActiveUntil = Date.now() + 999999999;
+            console.log("[UPGRADE PERSIST] PIERCING blijft actief, nog "+piercingStagesRemaining+" stage(s)");
+        }
+        if (typeof bounceStagesRemaining !== 'undefined' && bounceStagesRemaining > 0 && typeof bounceActive !== 'undefined' && bounceActive) {
+            if (typeof bounceActiveUntil !== 'undefined') bounceActiveUntil = Date.now() + 999999999;
+            console.log("[UPGRADE PERSIST] BOUNCE blijft actief, nog "+bounceStagesRemaining+" stage(s)");
+        }
+        if (typeof scoreUpStagesRemaining !== 'undefined' && scoreUpStagesRemaining > 0 && typeof scoreUpActive !== 'undefined' && scoreUpActive) {
+            if (typeof scoreUpActiveUntil !== 'undefined') scoreUpActiveUntil = Date.now() + 999999999;
+            console.log("[UPGRADE PERSIST] SCORE-UP blijft actief, nog "+scoreUpStagesRemaining+" stage(s)");
+        }
+        if (typeof lucky7StagesRemaining !== 'undefined' && lucky7StagesRemaining > 0 && typeof lucky7Active !== 'undefined' && lucky7Active) {
+            if (typeof lucky7ActiveUntil !== 'undefined') lucky7ActiveUntil = Date.now() + 999999999;
+            console.log("[UPGRADE PERSIST] LUCKY 7 blijft actief, nog "+lucky7StagesRemaining+" stage(s)");
         }
         // dual blijft actief via expireLevel, ook verlengen indien nodig
         if (typeof dualStagesRemaining !== 'undefined' && dualStagesRemaining > 0) {
@@ -1641,6 +1725,11 @@ function handleBossStageBossHit(shootingPlayerId = null) {
     
     // --- Score per hit ALLEEN voor hoofdboss, MET vliegende score ---
     let hitPoints = 10;
+    // SCORE-UP: boss-stage hits van deze speler tellen dubbel
+    try {
+        const _bp = (typeof playerNumFromShooterId === 'function') ? playerNumFromShooterId(shootingPlayerId) : 1;
+        if (typeof isUpgradeActiveForPlayer === 'function' && isUpgradeActiveForPlayer('SCORE-UP', _bp)) hitPoints *= 2;
+    } catch(e) {}
     try {
         if (typeof bossStageVariant !== 'undefined') {
             if (bossStageVariant === 'enemy2') hitPoints = 20;
@@ -1686,7 +1775,9 @@ function handleBossStageBossHit(shootingPlayerId = null) {
         }
         // VLIEGENDE SCORE - correcte manier zoals in handleEnemyHit
         const now = Date.now();
-        const scoreColor = (typeof FLOATING_SCORE_COLOR_ACTIVE !== 'undefined') ? FLOATING_SCORE_COLOR_ACTIVE : "red";
+        // SCORE-UP actief? Dan ook hier: GEEL + 1 seconde (anders normale kleur/duur)
+        const _bossScoreUp = (typeof isUpgradeActiveForPlayer === 'function' && typeof playerNumFromShooterId === 'function') ? isUpgradeActiveForPlayer('SCORE-UP', playerNumFromShooterId(shootingPlayerId)) : false;
+        const scoreColor = _bossScoreUp ? "#FFD700" : ((typeof FLOATING_SCORE_COLOR_ACTIVE !== 'undefined') ? FLOATING_SCORE_COLOR_ACTIVE : "red");
         if (typeof floatingScores !== 'undefined' && bossStageBoss) {
             floatingScores.push({ 
                 text: hitPoints.toString(), 
@@ -1694,7 +1785,8 @@ function handleBossStageBossHit(shootingPlayerId = null) {
                 y: bossStageBoss.y + bossStageBoss.height * 0.2, 
                 color: scoreColor, 
                 creationTime: now, 
-                displayStartTime: now + (typeof FLOATING_SCORE_APPEAR_DELAY !== 'undefined' ? FLOATING_SCORE_APPEAR_DELAY : 0)
+                displayStartTime: now + (typeof FLOATING_SCORE_APPEAR_DELAY !== 'undefined' ? FLOATING_SCORE_APPEAR_DELAY : 0),
+                durationMs: _bossScoreUp ? 1000 : undefined
             });
         }
     } catch(e) { console.error("Boss hit score error", e); }
@@ -2498,6 +2590,35 @@ function handleEnemyHit(enemy, shootingPlayerId = null) {
             }
         }
 
+        // --- SCORE-UP + LUCKY 7 (alleen bij een kill, dus destroyed) ---
+        // SCORE-UP = VASTE punten per kill (geen verdubbeling meer):
+        //   vijand die VLIEGT = 5000, vijand die STILSTAAT in het grid = 2500
+        // LUCKY 7: elke 7e kill = +10000 erbij, daarna teller weer op 0.
+        // Vliegende score van deze 2 upgrades: GEEL + 1 seconde in beeld.
+        let scoreUpBonusThisHit = false;
+        let lucky7BonusThisHit = false;
+        try {
+            if (destroyed && points >= 0) {
+                const _sp = (typeof playerNumFromShooterId === 'function') ? playerNumFromShooterId(shootingPlayerId) : 1;
+                if (typeof isUpgradeActiveForPlayer === 'function' && isUpgradeActiveForPlayer('SCORE-UP', _sp)) {
+                    const _isFlying = enemy.state !== 'in_grid';
+                    points = _isFlying ? 5000 : 2500;
+                    scoreUpBonusThisHit = true;
+                }
+                if (typeof isUpgradeActiveForPlayer === 'function' && isUpgradeActiveForPlayer('LUCKY 7', _sp)) {
+                    if (typeof lucky7KillCounts === 'undefined') lucky7KillCounts = { 1: 0, 2: 0 };
+                    lucky7KillCounts[_sp] = (lucky7KillCounts[_sp] || 0) + 1;
+                    if (lucky7KillCounts[_sp] >= 7) {
+                        lucky7KillCounts[_sp] = 0;
+                        points += 10000;
+                        lucky7BonusThisHit = true;
+                        if (typeof createExplosion === 'function') createExplosion(enemy.x + enemyWidthForCalc / 2, enemy.y + enemyHeightForCalc / 2);
+                        console.log("[UPGRADE] LUCKY 7 - 7e kill speler " + _sp + " -> +10000 + explosie");
+                    }
+                }
+            }
+        } catch(e) { console.error("SCORE-UP/LUCKY7 bonus error", e); }
+
         if (points > 0) {
             let playerSpecificEnemiesHitIncrementer = null;
             let playerLocalScore = 0;
@@ -2640,8 +2761,12 @@ function handleEnemyHit(enemy, shootingPlayerId = null) {
                  playerSpecificEnemiesHitIncrementer();
             }
 
-            const scoreColor = (enemy.state === 'in_grid' || isChallengingStage) ? FLOATING_SCORE_COLOR_GRID : FLOATING_SCORE_COLOR_ACTIVE;
-            floatingScores.push({ text: points.toString(), x: enemy.x + enemyWidthForCalc / 2, y: enemy.y, color: scoreColor, creationTime: now, displayStartTime: now + FLOATING_SCORE_APPEAR_DELAY });
+            const isUpgradeScore = scoreUpBonusThisHit || lucky7BonusThisHit;
+            const scoreColor = isUpgradeScore ? "#FFD700" : ((enemy.state === 'in_grid' || isChallengingStage) ? FLOATING_SCORE_COLOR_GRID : FLOATING_SCORE_COLOR_ACTIVE);
+            floatingScores.push({ text: points.toString(), x: enemy.x + enemyWidthForCalc / 2, y: enemy.y, color: scoreColor, creationTime: now, displayStartTime: now + FLOATING_SCORE_APPEAR_DELAY, durationMs: isUpgradeScore ? 1000 : undefined });
+            if (lucky7BonusThisHit) {
+                floatingScores.push({ text: "LUCKY 7 +10000", x: enemy.x + enemyWidthForCalc / 2, y: enemy.y - 20, color: "#FFD700", creationTime: now, displayStartTime: now + FLOATING_SCORE_APPEAR_DELAY, durationMs: 1000 });
+            }
         }
 
         createExplosion(enemy.x + enemyWidthForCalc / 2, enemy.y + enemyHeightForCalc / 2);
@@ -2926,6 +3051,14 @@ function firePlayerBullet(shooterId = null, isTapEvent = false) {
     } catch(e) { _shooterPlayerNum = 1; }
     const _isRapidForThisShooter = (typeof rapidActive !== 'undefined' && rapidActive && typeof rapidActivePlayer !== 'undefined' && rapidActivePlayer === _shooterPlayerNum && Date.now() < rapidActiveUntil);
     const _isSpreadForThisShooter = (typeof spreadActive !== 'undefined' && spreadActive && typeof spreadActivePlayer !== 'undefined' && spreadActivePlayer === _shooterPlayerNum && Date.now() < spreadActiveUntil);
+    // NIEUW: onafhankelijk van RAPID/SPREAD/DUAL, dus alles combineert
+    const _isTripleForThisShooter = (typeof isUpgradeActiveForPlayer === 'function') ? isUpgradeActiveForPlayer('TRIPLE', _shooterPlayerNum) : (typeof tripleActive !== 'undefined' && tripleActive && tripleActivePlayer === _shooterPlayerNum && Date.now() < tripleActiveUntil);
+    const _isPiercingForThisShooter = (typeof isUpgradeActiveForPlayer === 'function') ? isUpgradeActiveForPlayer('PIERCING', _shooterPlayerNum) : (typeof piercingActive !== 'undefined' && piercingActive && piercingActivePlayer === _shooterPlayerNum && Date.now() < piercingActiveUntil);
+    const _isBounceForThisShooter = (typeof isUpgradeActiveForPlayer === 'function') ? isUpgradeActiveForPlayer('BOUNCE', _shooterPlayerNum) : (typeof bounceActive !== 'undefined' && bounceActive && bounceActivePlayer === _shooterPlayerNum && Date.now() < bounceActiveUntil);
+    // BOSS-RESPECT (kogel-upgrades): AI mag WEL vuren op andere vijanden.
+    // Geen schiet-stop hier: de botsing in moveEntities laat AI-kogels
+    // door de te-respecteren boss heen vliegen, zodat geen enkele
+    // SPREAD/TRIPLE/RAPID/DUAL-kogel hem raakt. Na de capture: vogelvrij.
 
     // RAPID UPGRADE FIX: kleine beetje sneller, niet elke frame
     const RAPID_SHOOT_COOLDOWN = 90; // normaal 140, rapid 90 = ~35% sneller
@@ -2968,37 +3101,31 @@ function firePlayerBullet(shooterId = null, isTapEvent = false) {
     try {
         const bulletY = shootingShipObject.y;
         let bulletsCreated = 0;
-        const spreadOffsets = [-12, 0, 12];
-        if (isDual) {
-            const ship1CenterX = shootingShipObject.x + shootingShipObject.width / 2;
-            const ship2CenterX = shootingShipObject.x + DUAL_SHIP_OFFSET_X + shootingShipObject.width / 2;
-            if (_isSpreadForThisShooter) {
-                // DUAL + SPREAD: 3 kogels per schip = 6 totaal, op beide schepen
-                for (let off of spreadOffsets) {
-                    bullets.push({ x: ship1CenterX - PLAYER_BULLET_WIDTH / 2 + off, y: bulletY, width: PLAYER_BULLET_WIDTH, height: PLAYER_BULLET_HEIGHT, speed: PLAYER_BULLET_SPEED, playerId: currentShooterPlayerId, spread: true, spreadOffset: off });
-                }
-                for (let off of spreadOffsets) {
-                    bullets.push({ x: ship2CenterX - PLAYER_BULLET_WIDTH / 2 + off, y: bulletY, width: PLAYER_BULLET_WIDTH, height: PLAYER_BULLET_HEIGHT, speed: PLAYER_BULLET_SPEED, playerId: currentShooterPlayerId, spread: true, spreadOffset: off });
-                }
-                bulletsCreated = 6;
-            } else {
-                // DUAL zonder spread: 2 kogels
-                const bulletX1 = ship1CenterX - PLAYER_BULLET_WIDTH / 2;
-                const bulletX2 = ship2CenterX - PLAYER_BULLET_WIDTH / 2;
-                bullets.push({ x: bulletX1, y: bulletY, width: PLAYER_BULLET_WIDTH, height: PLAYER_BULLET_HEIGHT, speed: PLAYER_BULLET_SPEED, playerId: currentShooterPlayerId });
-                bullets.push({ x: bulletX2, y: bulletY, width: PLAYER_BULLET_WIDTH, height: PLAYER_BULLET_HEIGHT, speed: PLAYER_BULLET_SPEED, playerId: currentShooterPlayerId });
-                bulletsCreated = 2;
+        // Kogel-patroon: SPREAD en TRIPLE stapelen.
+        // - geen van beide: 1 kogel per schip
+        // - SPREAD of TRIPLE alleen: 3 kogels per schip ([-12,0,12])
+        // - SPREAD + TRIPLE: 5 kogels per schip ([-24,-12,0,12,24])
+        // PIERCING/BOUNCE zijn eigenschappen OP de kogel, geen patroon: ze werken
+        // dus met elk patroon en met DUALSHIP (per schip).
+        let patternOffsets = [0];
+        if (_isSpreadForThisShooter && _isTripleForThisShooter) patternOffsets = [-24, -12, 0, 12, 24];
+        else if (_isSpreadForThisShooter || _isTripleForThisShooter) patternOffsets = [-12, 0, 12];
+        const makeBullet = (cx, off) => {
+            const b = { x: cx - PLAYER_BULLET_WIDTH / 2 + off, y: bulletY, width: PLAYER_BULLET_WIDTH, height: PLAYER_BULLET_HEIGHT, speed: PLAYER_BULLET_SPEED, playerId: currentShooterPlayerId, vx: 0, hitEnemyIds: [] };
+            if (patternOffsets.length > 1) { b.spread = true; b.spreadOffset = off; }
+            if (_isTripleForThisShooter) b.triple = true;
+            if (_isPiercingForThisShooter) b.piercing = true;
+            if (_isBounceForThisShooter) { b.bounce = true; b.bouncesLeft = 1; }
+            return b;
+        };
+        const shipCenters = isDual
+            ? [shootingShipObject.x + shootingShipObject.width / 2, shootingShipObject.x + DUAL_SHIP_OFFSET_X + shootingShipObject.width / 2]
+            : [shootingShipObject.x + shootingShipObject.width / 2];
+        for (let cx of shipCenters) {
+            for (let off of patternOffsets) {
+                bullets.push(makeBullet(cx, off));
+                bulletsCreated++;
             }
-        } else if (_isSpreadForThisShooter) {
-            const centerX = shootingShipObject.x + shootingShipObject.width / 2;
-            for(let off of spreadOffsets) {
-                bullets.push({ x: centerX - PLAYER_BULLET_WIDTH / 2 + off, y: bulletY, width: PLAYER_BULLET_WIDTH, height: PLAYER_BULLET_HEIGHT, speed: PLAYER_BULLET_SPEED, playerId: currentShooterPlayerId, spread: true, spreadOffset: off });
-            }
-            bulletsCreated = 3;
-        } else {
-            const bulletX = shootingShipObject.x + shootingShipObject.width / 2 - PLAYER_BULLET_WIDTH / 2;
-            bullets.push({ x: bulletX, y: bulletY, width: PLAYER_BULLET_WIDTH, height: PLAYER_BULLET_HEIGHT, speed: PLAYER_BULLET_SPEED, playerId: currentShooterPlayerId });
-            bulletsCreated = 1;
         }
 
         if (useSingleShotFlag && !isTapEvent) setSingleShotFlag(true);
@@ -3841,12 +3968,10 @@ function aiControl() {
                                 if (!isBossStageFree && targetEnemyForAI && !targetEnemyForAI.hasCapturedShip && targetEnemyForAI.state === 'in_grid') {
                                     const needsCap = (typeof captureAttemptMadeThisLevel !== 'undefined' && !captureAttemptMadeThisLevel);
                                     if (needsCap) {
-                                        if (isDualActiveForAI) canActuallyShootTarget = false;
-                                        try {
-                                            if ((typeof rapidActive !== 'undefined' && rapidActive) || (typeof spreadActive !== 'undefined' && spreadActive)) {
-                                                canActuallyShootTarget = false;
-                                            }
-                                        } catch(e) {}
+                                        // Geen extra blok hier: AI mag op andere vijanden vuren.
+                                        // Alleen mikken OP de te-respecteren boss is geblokkeerd (hierboven).
+                                        // Kogels die de boss toch zouden raken, vliegen er in de
+                                        // botsing doorheen (zie moveEntities).
                                     }
                                 }
                             } catch(e) {}
@@ -4200,6 +4325,18 @@ function calculateAIDesiredState(currentShip, currentSmoothedX, isShipDual, game
             targetEnemyForAI = generalTargetWhileDodgingCoop;
         }
         shouldTryShoot_AI_Calc = (targetEnemyForAI !== null);
+        // BEAMER: aangewezen AI blijft naar de upgrade sturen, ook als hij net een vijand ontweek.
+        // Ontwijken mag hem alleen even van de beam af houden als de dreiging precies OP de beam ligt.
+        try {
+            var _beamBoss = gameEnemies.find(function(e){ return e && e.id === capturingBossId && e.type === ENEMY3_TYPE; });
+            var _myNum2 = (shipIdentifier === 'p1') ? 1 : 2;
+            if (_beamBoss && captureBeamActive && _beamBoss.state === 'capturing' && _beamBoss.beamerUpgradeType && _beamBoss.beamerUpgradeType !== 'DUAL' && beamerGetDesignatedPlayerNum(_beamBoss) === _myNum2 && canThisAIShipBeCapturedPhysically) {
+                var _beamCX = _beamBoss.x + _beamBoss.width / 2 - effectiveShipWidth / 2;
+                var _shipAtBeam = { x: _beamCX, y: currentShip.y, width: effectiveShipWidth, height: currentShip.height };
+                var _threatOnBeam = allProjectedThreats.some(function(th){ return checkCollision(_shipAtBeam, th); });
+                if (!_threatOnBeam) { desiredTargetX = _beamCX; isMovingToCaptureBeam = true; targetEnemyForAI = _beamBoss; shouldTryShoot_AI_Calc = false; }
+            }
+        } catch(e) {}
         // Shield boost: schiet ook als niet perfect uitgelijnd
         if (_shieldBoostActive && targetEnemyForAI) { shouldTryShoot_AI_Calc = true; }
 
@@ -4229,26 +4366,28 @@ function calculateAIDesiredState(currentShip, currentSmoothedX, isShipDual, game
                             proceedWithCapture = true;
                         }
                     }
-                    // --- NIEUW 1UP REGEL: AI met minste levens MOET 1UP pakken, andere AI niet ---
+                    // --- BEAMER-REGEL (alle upgrades): alleen de aangewezen AI pakt hem ---
+                    // Aangewezen = minste punten, of bij 1UP minste levens, bij gelijk langst geen upgrade.
+                    // De andere AI krijgt GEEN ga-naar-upgrade doel en pakt hem dus niet per ongeluk af.
+                    // Een menselijke speler valt hier niet onder (die code loopt alleen voor AI-modes).
                     try {
-                        if (proceedWithCapture && activeCapturingBoss && activeCapturingBoss.beamerUpgradeType === '1UP') {
-                            const isP1 = (shipIdentifier === 'p1');
-                            const myLives = livesOfThisAIShip;
-                            const otherLives = isP1 ? player2Lives : player1Lives;
-                            if (myLives > otherLives) {
-                                // ik heb meer levens, laat andere met minste levens de 1UP pakken
-                                console.log(`[AI 1UP] ${shipIdentifier} heeft ${myLives} vs ${otherLives} - skipt 1UP, laat minste pakken`);
+                        if (proceedWithCapture && activeCapturingBoss && activeCapturingBoss.beamerUpgradeType && activeCapturingBoss.beamerUpgradeType !== 'DUAL') {
+                            var myNum = (shipIdentifier === 'p1') ? 1 : 2;
+                            var designated = beamerGetDesignatedPlayerNum(activeCapturingBoss);
+                            if (designated === null) { // geen target vastgelegd (bv. beam uit andere route): eerlijk berekenen + vastleggen
+                                designated = beamerPickFairPlayerNum(activeCapturingBoss.beamerUpgradeType, (typeof player1Score !== 'undefined' ? player1Score : 0), (typeof player2Score !== 'undefined' ? player2Score : 0));
+                                try { activeCapturingBoss.beamerTargetPlayerNum = designated; beamerSetDesignation(designated, activeCapturingBoss.beamerUpgradeType); } catch(e2) {}
+                            }
+                            if (designated !== myNum) {
+                                console.log(`[AI BEAMER] ${shipIdentifier} is NIET aangewezen (P${designated} pakt ${activeCapturingBoss.beamerUpgradeType}) - skipt`);
                                 proceedWithCapture = false;
                                 if (aiPlayerActivelySeekingCaptureById === shipIdentifier) aiPlayerActivelySeekingCaptureById = null;
-                            } else if (myLives < otherLives) {
-                                console.log(`[AI 1UP] ${shipIdentifier} minst levens (${myLives} vs ${otherLives}) - PAKT 1UP`);
-                                proceedWithCapture = true;
                             } else {
-                                // gelijk: 1 speler pakt gewoon upgrade, degene die al seeking is mag door
-                                console.log(`[AI 1UP] Gelijk levens (${myLives}) - ${shipIdentifier} pakt 1UP`);
+                                console.log(`[AI BEAMER] ${shipIdentifier} is aangewezen - PAKT ${activeCapturingBoss.beamerUpgradeType}`);
+                                proceedWithCapture = true;
                             }
                         }
-                    } catch(e) { console.warn("AI 1UP error", e); }
+                    } catch(e) { console.warn("AI BEAMER designation error", e); }
                 }
                 if (proceedWithCapture) {
                     isMovingToCaptureBeam = true; const beamCenterX = activeCapturingBoss.x + activeCapturingBoss.width / 2;
@@ -4359,6 +4498,19 @@ function calculateAIDesiredState(currentShip, currentSmoothedX, isShipDual, game
     }
 
 
+        // BOSS-RESPECT / INVVLIEGEN: met kogel-upgrade niet schieten, maar WEL invliegen:
+        // als er niet ontweken hoeft te worden, onder de te-respecteren boss gaan hangen
+        // zodat die zijn capture kan doen. Ontwijken wint altijd van invliegen.
+        try {
+            const _pnInv = (shipIdentifier === 'p2' || shipIdentifier === 'ai_p2') ? 2 : 1;
+            var _isNonDesignatedBeamerAI = false;
+            try { var _bBoss = (typeof enemies !== 'undefined' ? enemies.find(function(e){ return e && e.type === ENEMY3_TYPE && !e.hasCapturedShip && ['in_grid','preparing_capture','diving_to_capture_position','capturing'].includes(e.state); }) : null); if (_bBoss && _bBoss.beamerUpgradeType && _bBoss.beamerUpgradeType !== 'DUAL' && beamerGetDesignatedPlayerNum(_bBoss) !== null && beamerGetDesignatedPlayerNum(_bBoss) !== _pnInv && beamerIsAIPlayer(_pnInv)) _isNonDesignatedBeamerAI = true; } catch(e) {}
+            if (!_isNonDesignatedBeamerAI && typeof isBulletUpgradeBossRespectActiveForPlayer === 'function' && isBulletUpgradeBossRespectActiveForPlayer(_pnInv) && !isDodgingThreatCurrentFrame) {
+                const _bossInv = (typeof enemies !== 'undefined' ? enemies.find(e => e && e.type === ENEMY3_TYPE && !e.hasCapturedShip && ['in_grid','preparing_capture','diving_to_capture_position','capturing'].includes(e.state)) : null) || (typeof activeCapturingBoss !== 'undefined' ? activeCapturingBoss : null);
+                if (_bossInv) desiredTargetX = Math.max(AI_EDGE_BUFFER, Math.min(canvasWidth - effectiveShipWidth - AI_EDGE_BUFFER, (_bossInv.x + _bossInv.width / 2) - effectiveShipWidth / 2));
+            }
+        } catch(e) {}
+
         // Finale veiligheidschecks voor schieten, ongeacht hoe shouldTryShoot_AI_Calc eerder werd gezet
     if (shouldTryShoot_AI_Calc) {
         if (isMovingToCaptureBeam || isMovingForOwnFallingShip) {
@@ -4398,13 +4550,10 @@ function calculateAIDesiredState(currentShip, currentSmoothedX, isShipDual, game
                 if (!isBossStageFreeDual && targetEnemyForAI && targetEnemyForAI.type===ENEMY3_TYPE && !targetEnemyForAI.hasCapturedShip && targetEnemyForAI.state==='in_grid') {
                     const needsCapDual = (typeof captureAttemptMadeThisLevel !== 'undefined' && !captureAttemptMadeThisLevel);
                     if (needsCapDual) {
-                        if (isShipDual) shouldTryShoot_AI_Calc=false;
-                        // rapid/spread ook respecteren
-                        try {
-                            if ((typeof rapidActive !== 'undefined' && rapidActive) || (typeof spreadActive !== 'undefined' && spreadActive)) {
-                                shouldTryShoot_AI_Calc=false;
-                            }
-                        } catch(e) {}
+                        // Geen extra blok hier: AI mag op andere vijanden vuren.
+                        // Alleen mikken OP de te-respecteren boss is geblokkeerd (hierboven).
+                        // Kogels die de boss toch zouden raken, vliegen er in de
+                        // botsing doorheen (zie moveEntities).
                     }
                 }
             } catch(e) {}
@@ -4599,8 +4748,11 @@ function triggerImmediateCaptureDive() {
         } catch(e) {}
         if (!pendingBeamerUpgradeType) pendingBeamerUpgradeType = 'DUAL';
 
-        // --- FAIR BEAMER LOGICA + 1UP REGEL ---
-        // AI speler met minste levens pakt 1UP, als gelijk pakt 1 speler gewoon de upgrade
+        // --- FAIR BEAMER LOGICA ---
+        // 1UP = UITZONDERING: naar de speler met de MINSTE LEVENS (die heeft hem het hardst nodig).
+        // ALLE andere upgrades (DUAL, SHIELD, RAPID, SPREAD, CLEAR, TRIPLE, PIERCING,
+        // BOUNCE, SCORE-UP, LUCKY 7): naar de (AI-)speler met de MINSTE PUNTEN.
+        // Bij gelijke stand (levens bij 1UP / punten bij de rest): om en om.
         let targetInfo;
         if (isTwoPlayerMode && selectedGameMode === 'coop' && potentialTargets.length === 2) {
             const p1Target = potentialTargets.find(t => t.playerNum === 1);
@@ -4615,26 +4767,23 @@ function triggerImmediateCaptureDive() {
                         targetInfo = p2Target;
                         console.log(`[BEAMER 1UP] 1UP! P2 minst levens (${player2Lives} vs ${player1Lives}) -> RECHTS P2 pakt`);
                     } else {
-                        // GELIJK: 1 speler pakt gewoon upgrade (om en om voor fairness)
-                        if (typeof beamerTargetAlternation === 'undefined') beamerTargetAlternation = 0;
-                        targetInfo = (beamerTargetAlternation === 0) ? p1Target : p2Target;
-                        console.log(`[BEAMER 1UP] 1UP! Gelijk levens (${player1Lives}) -> ${beamerTargetAlternation === 0 ? 'P1' : 'P2'} pakt upgrade`);
-                        beamerTargetAlternation = 1 - beamerTargetAlternation;
-                        window.beamerTargetAlternation = beamerTargetAlternation;
+                        // Gelijk: wie het langst geen upgrade heeft gehad, pakt hem.
+                        targetInfo = (beamerPickFairPlayerNum('1UP', player1Score, player2Score) === 1) ? p1Target : p2Target;
+                        console.log(`[BEAMER 1UP] 1UP! Gelijke levens (${player1Lives}) -> P${targetInfo.playerNum} pakt (langst geen upgrade)`);
                     }
                 } else {
-                    if (player1Lives < player2Lives) {
+                    const p1Score = (typeof player1Score !== 'undefined' && isFinite(player1Score)) ? player1Score : 0;
+                    const p2Score = (typeof player2Score !== 'undefined' && isFinite(player2Score)) ? player2Score : 0;
+                    if (p1Score < p2Score) {
                         targetInfo = p1Target;
-                        console.log(`[BEAMER FAIR] P1 heeft minder levens (${player1Lives} vs ${player2Lives}) -> beamer naar LINKS (P1)`);
-                    } else if (player2Lives < player1Lives) {
+                        console.log(`[BEAMER FAIR] ${pendingBeamerUpgradeType}! P1 minst punten (${p1Score} vs ${p2Score}) -> LINKS P1 pakt`);
+                    } else if (p2Score < p1Score) {
                         targetInfo = p2Target;
-                        console.log(`[BEAMER FAIR] P2 heeft minder levens (${player2Lives} vs ${player1Lives}) -> beamer naar RECHTS (P2)`);
+                        console.log(`[BEAMER FAIR] ${pendingBeamerUpgradeType}! P2 minst punten (${p2Score} vs ${p1Score}) -> RECHTS P2 pakt`);
                     } else {
-                        if (typeof beamerTargetAlternation === 'undefined') beamerTargetAlternation = 0;
-                        targetInfo = (beamerTargetAlternation === 0) ? p1Target : p2Target;
-                        console.log(`[BEAMER FAIR] Gelijk levens (${player1Lives} vs ${player2Lives}) -> beamer naar ${beamerTargetAlternation === 0 ? 'LINKS (P1)' : 'RECHTS (P2)'} (om en om)`);
-                        beamerTargetAlternation = 1 - beamerTargetAlternation;
-                        window.beamerTargetAlternation = beamerTargetAlternation;
+                        // Gelijk: wie het langst geen upgrade heeft gehad, pakt hem.
+                        targetInfo = (beamerPickFairPlayerNum(pendingBeamerUpgradeType, p1Score, p2Score) === 1) ? p1Target : p2Target;
+                        console.log(`[BEAMER FAIR] ${pendingBeamerUpgradeType}! Gelijke punten (${p1Score}) -> beamer naar P${targetInfo.playerNum} (langst geen upgrade)`);
                     }
                 }
             } else {
@@ -4654,6 +4803,8 @@ function triggerImmediateCaptureDive() {
             const chosenBoss = potentialCapturingBosses[Math.floor(Math.random() * potentialCapturingBosses.length)];
             const now = Date.now();
 
+            // Aangewezen AI-pakker vastleggen: alleen hij krijgt straks een ga-naar-upgrade doel.
+            try { chosenBoss.beamerTargetPlayerNum = targetInfo.playerNum; beamerSetDesignation(targetInfo.playerNum, pendingBeamerUpgradeType); } catch(e) {}
             chosenBoss.isPreparingForImmediateCapture = true;
             chosenBoss.justReturned = true;
             chosenBoss.captureDiveInitiationTime = now; // <<< TOEGEVOEGD >>>
@@ -4741,7 +4892,7 @@ function resetJustReturnedFlags(excludedIds) {
 // --- START OF FILE game_logic.js ---
 // --- DEEL 7      van 8 dit code blok    ---
 
-function updateFloatingScores() { if (isPaused) return; try { const now = Date.now(); floatingScores = floatingScores.filter(fs => (now - fs.creationTime < FLOATING_SCORE_DURATION + FLOATING_SCORE_APPEAR_DELAY)); } catch (e) { console.error("Error updating floating scores:", e); floatingScores = []; } }
+function updateFloatingScores() { if (isPaused) return; try { const now = Date.now(); floatingScores = floatingScores.filter(fs => (now - fs.creationTime < (typeof fs.durationMs === 'number' ? fs.durationMs : FLOATING_SCORE_DURATION + FLOATING_SCORE_APPEAR_DELAY))); } catch (e) { console.error("Error updating floating scores:", e); floatingScores = []; } }
 
 /** Update de positie en alpha van alle actieve explosie deeltjes. */
 function updateExplosions() { if (isPaused) return; try { const now = Date.now(); for (let i = explosions.length - 1; i >= 0; i--) { const explosion = explosions[i]; const elapsedTime = now - explosion.creationTime; if (elapsedTime > explosion.duration) { explosions.splice(i, 1); continue; } explosion.particles.forEach(p => { p.x += p.vx; p.y += p.vy; p.alpha = Math.max(0, 1.0 - (elapsedTime / explosion.duration) * EXPLOSION_FADE_SPEED); }); } } catch (e) { console.error("Error updating explosions:", e); explosions = []; } }
@@ -4890,6 +5041,11 @@ function moveEntities(overrideP1Left = null, overrideP1Right = null) {
         try {
             if (typeof rapidActive !== 'undefined' && rapidActive && Date.now() > rapidActiveUntil) { rapidActive = false; rapidActivePlayer = null; }
             if (typeof spreadActive !== 'undefined' && spreadActive && Date.now() > spreadActiveUntil) { spreadActive = false; spreadActivePlayer = null; }
+            if (typeof tripleActive !== 'undefined' && tripleActive && Date.now() > tripleActiveUntil) { tripleActive = false; tripleActivePlayer = null; }
+            if (typeof piercingActive !== 'undefined' && piercingActive && Date.now() > piercingActiveUntil) { piercingActive = false; piercingActivePlayer = null; }
+            if (typeof bounceActive !== 'undefined' && bounceActive && Date.now() > bounceActiveUntil) { bounceActive = false; bounceActivePlayer = null; }
+            if (typeof scoreUpActive !== 'undefined' && scoreUpActive && Date.now() > scoreUpActiveUntil) { scoreUpActive = false; scoreUpActivePlayer = null; }
+            if (typeof lucky7Active !== 'undefined' && lucky7Active && Date.now() > lucky7ActiveUntil) { lucky7Active = false; lucky7ActivePlayer = null; if (typeof lucky7KillCounts !== 'undefined') lucky7KillCounts = { 1: 0, 2: 0 }; }
             if (typeof isClearNoBulletsActive !== 'undefined' && isClearNoBulletsActive && Date.now() >= clearActiveUntil) { 
                 isClearNoBulletsActive = false; 
                 clearActiveUntil = 0;
@@ -4903,8 +5059,20 @@ function moveEntities(overrideP1Left = null, overrideP1Right = null) {
         for (let i = bullets.length - 1; i >= 0; i--) {
             const b = bullets[i]; if (!b) { bullets.splice(i, 1); continue; }
             b.y -= b.speed;
+            if (typeof b.vx === 'number' && b.vx) b.x += b.vx; // BOUNCE: stuurt kogel naar volgende vijand
+            // BOUNCE-spoor: laatste posities bewaren voor de tekenaar (max 7, oudste eruit).
+            if (b.bounce) {
+                if (!b.bounceTrail) b.bounceTrail = [];
+                b.bounceTrail.push({ x: b.x + b.width / 2, y: b.y + b.height / 2 });
+                if (b.bounceTrail.length > 7) b.bounceTrail.shift();
+            }
             if (b.spread && typeof b.spreadOffset !== 'undefined') {
                 b.x += b.spreadOffset * 0.06;
+            }
+            // BOUNCE: kaats tegen de zijkanten (kogel blijft in het veld)
+            if (b.bounce) {
+                if (b.x < 0) { b.x = 0; if (typeof b.spreadOffset === 'number') b.spreadOffset = Math.abs(b.spreadOffset); if (typeof b.vx === 'number') b.vx = Math.abs(b.vx); }
+                else if (gameCanvas && b.x + b.width > gameCanvas.width) { b.x = gameCanvas.width - b.width; if (typeof b.spreadOffset === 'number') b.spreadOffset = -Math.abs(b.spreadOffset); if (typeof b.vx === 'number') b.vx = -Math.abs(b.vx); }
             }
             if (b.y + PLAYER_BULLET_HEIGHT < 0) { bullets.splice(i, 1); continue; }
             let bulletHit = false;
@@ -4916,9 +5084,19 @@ function moveEntities(overrideP1Left = null, overrideP1Right = null) {
                     const bulletRect = { x: b.x, y: b.y, width: b.width, height: b.height };
                     if (checkCollision(bulletRect, bossRect)) {
                         const shooterId = b.playerId || null;
-                        bullets.splice(i, 1);
-                        handleBossStageBossHit(shooterId);
-                        bulletHit = true;
+                        // PIERCING: kogel vliegt door, maar raakt dezelfde boss maar 1x
+                        if (b.piercing) {
+                            if (!b.hitEnemyIds) b.hitEnemyIds = [];
+                            if (b.hitEnemyIds.indexOf('bossStageBoss') === -1) {
+                                b.hitEnemyIds.push('bossStageBoss');
+                                handleBossStageBossHit(shooterId);
+                            }
+                            bulletHit = true; // deze frame niet ook nog normale vijanden raken
+                        } else {
+                            bullets.splice(i, 1);
+                            handleBossStageBossHit(shooterId);
+                            bulletHit = true;
+                        }
                     }
                 }
             }
@@ -4931,6 +5109,20 @@ function moveEntities(overrideP1Left = null, overrideP1Right = null) {
                     if (enemy.state === 'capturing' || enemy.state === 'preparing_capture' || enemy.state === 'diving_to_capture_position') {
                         continue;
                     }
+                    // BOSS-RESPECT VOOR AI-KOGELS: schutter is AI (ai / ai_p2) EN heeft
+                    // SPREAD/TRIPLE/RAPID/DUAL EN boss moet nog een capture doen ->
+                    // deze kogel raakt de boss NIET, hij vliegt erdoorheen en kan
+                    // een vijand erachter nog raken. Zo kan de AI gewoon op andere
+                    // vijanden blijven vuren zonder de boss te raken.
+                    // Menselijke kogels: niet gefilterd. Na de capture: vogelvrij
+                    // (isBulletUpgradeBossRespectActiveForPlayer geeft dan false).
+                    try {
+                        const _shooterIsAI = (b.playerId === 'ai' || b.playerId === 'ai_p2');
+                        if (_shooterIsAI && typeof isBulletUpgradeBossRespectActiveForPlayer === 'function') {
+                            const _pnB = (typeof playerNumFromShooterId === 'function') ? playerNumFromShooterId(b.playerId) : 1;
+                            if (isBulletUpgradeBossRespectActiveForPlayer(_pnB)) continue;
+                        }
+                    } catch(e) {}
                     if (enemy.hasCapturedShip && (enemy.state === 'showing_capture_message' || enemy.state === 'returning')) {
                         continue;
                     }
@@ -4941,7 +5133,55 @@ function moveEntities(overrideP1Left = null, overrideP1Right = null) {
                 }
                 const enemyRect = { x: enemy.x, y: enemy.y, width: (enemy.type === ENEMY3_TYPE) ? BOSS_WIDTH : ((enemy.type === ENEMY1_TYPE) ? ENEMY1_WIDTH : ENEMY_WIDTH), height: (enemy.type === ENEMY3_TYPE) ? BOSS_HEIGHT : ((enemy.type === ENEMY1_TYPE) ? ENEMY1_HEIGHT : ENEMY_HEIGHT) };
                 const bulletRect = { x: b.x, y: b.y, width: b.width, height: b.height };
-                if (checkCollision(bulletRect, enemyRect)) { bullets.splice(i, 1); const hitResult = handleEnemyHit(enemy, b.playerId); if (hitResult.destroyed) enemies.splice(j, 1); break; }
+                if (checkCollision(bulletRect, enemyRect)) {
+                    // PIERCING/BOUNCE: dezelfde vijand niet 2x met dezelfde kogel raken
+                    if ((b.piercing || b.bounce) && b.hitEnemyIds && b.hitEnemyIds.indexOf(enemy.id) !== -1) continue;
+                    const hitResult = handleEnemyHit(enemy, b.playerId);
+                    if (b.piercing || (b.bounce && b.bouncesLeft > 0)) {
+                        // Kogel blijft leven: doorvliegen (PIERCING) of doorsturen (BOUNCE)
+                        if (!b.hitEnemyIds) b.hitEnemyIds = [];
+                        b.hitEnemyIds.push(enemy.id);
+                        if (b.bounce) {
+                            b.bouncesLeft--;
+                            // Richt de kogel naar de dichtstbijzijnde nog levende andere vijand
+                            let nearest = null, nearestDist = Infinity;
+                            for (let k = 0; k < enemies.length; k++) {
+                                const other = enemies[k];
+                                if (!other || other.id === enemy.id || (b.hitEnemyIds && b.hitEnemyIds.indexOf(other.id) !== -1)) continue;
+                                // BOUNCE: kaats niet naar een boss die nog gerespecteerd moet worden
+                                try {
+                                    if (other.type === ENEMY3_TYPE && (b.playerId === 'ai' || b.playerId === 'ai_p2') && typeof isBulletUpgradeBossRespectActiveForPlayer === 'function') {
+                                        const _pnBounce = (typeof playerNumFromShooterId === 'function') ? playerNumFromShooterId(b.playerId) : 1;
+                                        if (isBulletUpgradeBossRespectActiveForPlayer(_pnBounce)) continue;
+                                    }
+                                } catch(e) {}
+                                const d = Math.abs((other.x + 20) - (b.x + b.width / 2)) + Math.abs(other.y - b.y);
+                                if (d < nearestDist) { nearestDist = d; nearest = other; }
+                            }
+                            if (nearest) {
+                                const dx = (nearest.x + 20) - (b.x + b.width / 2);
+                                b.vx = Math.max(-4, Math.min(4, dx * 0.08));
+                                b.spreadOffset = 0; // niet meer uitwaaieren tijdens de bounce
+                                // BOUNCE zichtbaar maken: flitsring + vonken op de raakplek.
+                                b.bounceFlashUntil = Date.now() + 250;
+                                try {
+                                    if (typeof hitSparks !== 'undefined' && hitSparks) {
+                                        for (let _s = 0; _s < 8; _s++) {
+                                            const _ang = (_s / 8) * Math.PI * 2;
+                                            const _sp = 1.5 + Math.random() * 2.5;
+                                            hitSparks.push({ x: b.x + b.width / 2, y: b.y + b.height / 2, vx: Math.cos(_ang) * _sp, vy: Math.sin(_ang) * _sp - 0.5, size: 5, color: 'rgba(255, 205, 45, 0.95)', alpha: 1.0, creationTime: Date.now(), lifetime: 400, duration: 400 });
+                                        }
+                                    }
+                                } catch(e) {}
+                            }
+                        }
+                        if (hitResult.destroyed) enemies.splice(j, 1);
+                        break; // deze frame geen 2e vijand met dezelfde kogel
+                    }
+                    bullets.splice(i, 1);
+                    if (hitResult.destroyed) enemies.splice(j, 1);
+                    break;
+                }
             }
         }
 
@@ -5180,6 +5420,7 @@ function moveEntities(overrideP1Left = null, overrideP1Right = null) {
                     else if (elapsedCaptureTime < totalBeamStayTime) { captureBeamProgress = 1.0 - ((elapsedCaptureTime - (totalBeamStayTime - halfAnimationTime)) / halfAnimationTime); }
                     else {
                         captureBeamProgress = 0; captureBeamActive = false; capturingBossId = null; stopSound('captureSound');
+                        try { beamerClearDesignation(); enemy.beamerTargetPlayerNum = null; } catch(e) {}
                         enemy.state = 'attacking'; enemy.attackPathSegments = generateAttackPathInternal(enemy); enemy.attackPathSegmentIndex = 0; enemy.attackPathT = 0; enemy.speed = BASE_ENEMY_ATTACK_SPEED * ENEMY3_ATTACK_SPEED_FACTOR; enemy.lastFiredTime = 0; enemy.canFireThisDive = true; enemy.attackFormationOffsetX = 0; enemy.attackGroupId = null;
                         if (isCoopAIDemoActive) coopAICaptureDiveAnticipationActive = false;
                         break;
@@ -5242,7 +5483,18 @@ function moveEntities(overrideP1Left = null, overrideP1Right = null) {
                                 isDualUpgradeCapture = false;
                                 upgradeTypeForBeam = null;
                             }
+                                                        // BEAMER-REGEL bij het pakken: een AI die NIET is aangewezen, pakt de upgrade NIET.
+                                                        // De beam blijft gewoon actief, zodat de aangewezen AI (of een mens) hem alsnog kan pakken.
+                                                        // Geldt alleen voor AI-spelers; een menselijke speler mag hem altijd pakken als hij er eerder bij is.
                                                         if (shipHitObject && isUpgradeBeam && upgradeTypeForBeam) {
+                                                            try {
+                                                                var _hitIsAI = beamerIsAIPlayer(playerHitId);
+                                                                var _designatedHit = beamerGetDesignatedPlayerNum(enemy);
+                                                                if (_hitIsAI && _designatedHit !== null && _designatedHit !== playerHitId) { console.log(`[AI BEAMER] P${playerHitId} niet aangewezen (P${_designatedHit} pakt) - upgrade NIET gegeven, beam blijft actief`); shipHitObject = null; }
+                                                            } catch(e) {}
+                                                        }
+                                                        if (shipHitObject && isUpgradeBeam && upgradeTypeForBeam) {
+                                                            try { if (beamerIsAIPlayer(playerHitId)) { beamerUpgradeLastReceivedAt[playerHitId] = Date.now(); window.beamerUpgradeLastReceivedAt = beamerUpgradeLastReceivedAt; } beamerClearDesignation(); try { enemy.beamerTargetPlayerNum = null; } catch(e) {} } catch(e) {}
                                 try {
                                     let pNum = playerHitId || 1;
                                     // Geen upgrade meldingen meer - beamer icoon met SHIELD text eronder blijft wel
@@ -5279,6 +5531,42 @@ function moveEntities(overrideP1Left = null, overrideP1Right = null) {
                                             if (typeof spreadStagesRemaining !== 'undefined') spreadStagesRemaining = 2;
                                             if (typeof setUpgradeStages === 'function') setUpgradeStages('SPREAD', 2);
                                             console.log("[UPGRADE] SPREAD gepakt - 2 stages actief");
+                                        } else if (upgradeTypeForBeam === 'TRIPLE') {
+                                            tripleActive = true;
+                                            tripleActiveUntil = Date.now() + 999999999; // 2 volle stages
+                                            tripleActivePlayer = pNum;
+                                            if (typeof tripleStagesRemaining !== 'undefined') tripleStagesRemaining = 2;
+                                            if (typeof setUpgradeStages === 'function') setUpgradeStages('TRIPLE', 2);
+                                            console.log("[UPGRADE] TRIPLE gepakt - 2 stages actief");
+                                        } else if (upgradeTypeForBeam === 'PIERCING') {
+                                            piercingActive = true;
+                                            piercingActiveUntil = Date.now() + 999999999; // 2 volle stages
+                                            piercingActivePlayer = pNum;
+                                            if (typeof piercingStagesRemaining !== 'undefined') piercingStagesRemaining = 2;
+                                            if (typeof setUpgradeStages === 'function') setUpgradeStages('PIERCING', 2);
+                                            console.log("[UPGRADE] PIERCING gepakt - 2 stages actief");
+                                        } else if (upgradeTypeForBeam === 'BOUNCE') {
+                                            bounceActive = true;
+                                            bounceActiveUntil = Date.now() + 999999999; // 2 volle stages
+                                            bounceActivePlayer = pNum;
+                                            if (typeof bounceStagesRemaining !== 'undefined') bounceStagesRemaining = 2;
+                                            if (typeof setUpgradeStages === 'function') setUpgradeStages('BOUNCE', 2);
+                                            console.log("[UPGRADE] BOUNCE gepakt - 2 stages actief");
+                                        } else if (upgradeTypeForBeam === 'SCORE-UP') {
+                                            scoreUpActive = true;
+                                            scoreUpActiveUntil = Date.now() + 999999999; // 2 volle stages
+                                            scoreUpActivePlayer = pNum;
+                                            if (typeof scoreUpStagesRemaining !== 'undefined') scoreUpStagesRemaining = 2;
+                                            if (typeof setUpgradeStages === 'function') setUpgradeStages('SCORE-UP', 2);
+                                            console.log("[UPGRADE] SCORE-UP gepakt - 2 stages actief");
+                                        } else if (upgradeTypeForBeam === 'LUCKY 7') {
+                                            lucky7Active = true;
+                                            lucky7ActiveUntil = Date.now() + 999999999; // 2 volle stages
+                                            lucky7ActivePlayer = pNum;
+                                            if (typeof lucky7KillCounts !== 'undefined') lucky7KillCounts[pNum] = 0; // tellen start vers
+                                            if (typeof lucky7StagesRemaining !== 'undefined') lucky7StagesRemaining = 2;
+                                            if (typeof setUpgradeStages === 'function') setUpgradeStages('LUCKY 7', 2);
+                                            console.log("[UPGRADE] LUCKY 7 gepakt - 2 stages actief");
                                         } else if (upgradeTypeForBeam === '1UP') {
                                             if (isTwoPlayerMode && selectedGameMode === 'coop') {
                                                 if (pNum === 1) player1Lives++; else player2Lives++;

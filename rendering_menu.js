@@ -43,6 +43,14 @@ const PAUSE_TEXT_FONT = INTRO_TEXT_FONT;
 const PAUSE_TEXT_COLOR = INTRO_TEXT_COLOR_NORMAL;
 const PAUSE_TEXT_SHADOW = true;
 
+// --- Kogel-randjes per upgrade: licht + transparant, niet fel ---
+// Triple = lichtblauw, Piercing = lichtgroen. Alleen een dun randje om de kogel,
+// zodat je in één oogopslag ziet welke upgrade actief is.
+const TRIPLE_BULLET_RING_COLOR = 'rgba(125, 210, 255, 1)'; // feller: was 110,190,255 @ 0.85
+const PIERCING_BULLET_RING_COLOR = 'rgba(85, 255, 190, 1)'; // feller: was 100,255,170 @ 0.85
+const BOUNCE_BULLET_COLOR = 'rgba(255, 205, 45, 1)'; // BOUNCE: fel geel-oranje, eigen kleur zodat je hem herkent
+const UPGRADE_BULLET_RING_LINE_WIDTH = 1; // was 2: iets dunner randje, zelfde kleuren
+
 // GAME_OVER_DURATION is defined in setup_utils.js
 const RESULTS_SCREEN_DURATION = 10000;
 const PLAYER_GAME_OVER_MESSAGE_DURATION = 5000;
@@ -1887,11 +1895,68 @@ function renderGame() {
                             gameCtx.shadowBlur = 12;
                             gameCtx.globalAlpha = 1;
                         }
-                        if (typeof bulletImage !== 'undefined' && bulletImage.complete) {
-                            gameCtx.drawImage(bulletImage, Math.round(b.x), Math.round(b.y), b.width, b.height);
+                        // TRIPLE / PIERCING / BOUNCE: dunne glowing capsule in de eigen (felle) kleur.
+                        // Rechter voorbeeld: capsule + zachte glow + lichte kern. Geen rechthoekig randje meer.
+                        // BOUNCE krijgt extra: een vervagend spoor + een flitsring vlak na het kaatsen,
+                        // zodat je ziet dat de kogel de vijand raakt en wegketst naar de volgende.
+                        if (b.triple || b.piercing || b.bounce) {
+                            gameCtx.save();
+                            // BOUNCE-spoor: oudere posities, steeds transparanter.
+                            if (b.bounce && b.bounceTrail) {
+                                for (let _ti = 0; _ti < b.bounceTrail.length; _ti++) {
+                                    const _tp = b.bounceTrail[_ti];
+                                    if (!_tp) continue;
+                                    gameCtx.globalAlpha = 0.12 + 0.08 * _ti / Math.max(1, b.bounceTrail.length);
+                                    gameCtx.fillStyle = BOUNCE_BULLET_COLOR;
+                                    gameCtx.beginPath();
+                                    gameCtx.arc(_tp.x, _tp.y, 2.5, 0, Math.PI * 2);
+                                    gameCtx.fill();
+                                }
+                                gameCtx.globalAlpha = 1;
+                            }
+                            const _mainColor = b.bounce ? BOUNCE_BULLET_COLOR : (b.piercing ? PIERCING_BULLET_RING_COLOR : TRIPLE_BULLET_RING_COLOR);
+                            const _thinW = Math.max(3, b.width * 0.6);
+                            const _thinH = b.height * 0.95;
+                            const _cx = b.x + b.width / 2, _cy = b.y + b.height / 2;
+                            const _x = _cx - _thinW / 2, _y = _cy - _thinH / 2;
+                            const _r = _thinW / 2;
+                            gameCtx.shadowColor = _mainColor;
+                            gameCtx.shadowBlur = b.bounce ? 14 : 10;
+                            gameCtx.fillStyle = _mainColor;
+                            gameCtx.beginPath();
+                            gameCtx.moveTo(_x + _r, _y);
+                            gameCtx.lineTo(_x + _thinW - _r, _y);
+                            gameCtx.arc(_x + _thinW - _r, _y + _r, _r, -Math.PI / 2, Math.PI / 2);
+                            gameCtx.lineTo(_x + _r, _y + _thinH);
+                            gameCtx.arc(_x + _r, _y + _thinH - _r, _r, Math.PI / 2, Math.PI * 1.5);
+                            gameCtx.closePath();
+                            gameCtx.fill();
+                            gameCtx.shadowBlur = 0;
+                            gameCtx.fillStyle = 'rgba(255, 255, 255, 0.6)';
+                            gameCtx.fillRect(_cx - 0.5, _y + 2, 1, _thinH - 4);
+                            if (b.piercing && b.triple) {
+                                gameCtx.fillStyle = TRIPLE_BULLET_RING_COLOR;
+                                gameCtx.fillRect(_cx - 1.5, _y + 2, 1, _thinH - 4);
+                            }
+                            // BOUNCE-flits: uitzettende ring vlak na het raken + kaatsen.
+                            if (b.bounce && b.bounceFlashUntil && Date.now() < b.bounceFlashUntil) {
+                                const _prog = 1 - (b.bounceFlashUntil - Date.now()) / 250;
+                                gameCtx.globalAlpha = 0.9 * (1 - _prog);
+                                gameCtx.strokeStyle = BOUNCE_BULLET_COLOR;
+                                gameCtx.lineWidth = 2;
+                                gameCtx.beginPath();
+                                gameCtx.arc(_cx, _cy, 6 + _prog * 18, 0, Math.PI * 2);
+                                gameCtx.stroke();
+                                gameCtx.globalAlpha = 1;
+                            }
+                            gameCtx.restore();
                         } else {
-                            gameCtx.fillStyle = "yellow";
-                            gameCtx.fillRect(Math.round(b.x), Math.round(b.y), b.width, b.height);
+                            if (typeof bulletImage !== 'undefined' && bulletImage.complete) {
+                                gameCtx.drawImage(bulletImage, Math.round(b.x), Math.round(b.y), b.width, b.height);
+                            } else {
+                                gameCtx.fillStyle = "yellow";
+                                gameCtx.fillRect(Math.round(b.x), Math.round(b.y), b.width, b.height);
+                            }
                         }
                         if (hasGlow) {
                             gameCtx.restore();
@@ -2067,6 +2132,11 @@ function renderGame() {
                              if (iconType === 'SHIELD') iconColor = "#00BFFF";
                              else if (iconType === 'RAPID') iconColor = "#FFFF00";
                              else if (iconType === 'SPREAD') iconColor = "#FFFFFF";
+                            else if (iconType === 'TRIPLE') iconColor = "#00FFFF";
+                            else if (iconType === 'PIERCING') iconColor = "#00FFCC";
+                            else if (iconType === 'BOUNCE') iconColor = "#00FF7A";
+                            else if (iconType === 'SCORE-UP') iconColor = "#FFD700";
+                            else if (iconType === 'LUCKY 7') iconColor = "#FFAA00";
                              else if (iconType === 'CLEAR') iconColor = "#FF4500";
                              else if (iconType === '1UP') iconColor = "#FF0000";
                              else if (iconType === 'DUAL') iconColor = "#00FF00";
@@ -2074,6 +2144,11 @@ function renderGame() {
                              if (iconType === 'SHIELD' && typeof shieldIconImage !== 'undefined') iconImg = shieldIconImage;
                              else if (iconType === 'RAPID' && typeof rapidIconImage !== 'undefined') iconImg = rapidIconImage;
                              else if (iconType === 'SPREAD' && typeof spreadIconImage !== 'undefined') iconImg = spreadIconImage;
+                            else if (iconType === 'TRIPLE' && typeof tripleIconImage !== 'undefined') iconImg = tripleIconImage;
+                            else if (iconType === 'PIERCING' && typeof piercingIconImage !== 'undefined') iconImg = piercingIconImage;
+                            else if (iconType === 'BOUNCE' && typeof bounceIconImage !== 'undefined') iconImg = bounceIconImage;
+                            else if (iconType === 'SCORE-UP' && typeof scoreUpIconImage !== 'undefined') iconImg = scoreUpIconImage;
+                            else if (iconType === 'LUCKY 7' && typeof lucky7IconImage !== 'undefined') iconImg = lucky7IconImage;
                              else if (iconType === 'CLEAR' && typeof clearIconImage !== 'undefined') iconImg = clearIconImage;
                              else if (iconType === '1UP' && typeof oneUpIconImage !== 'undefined') iconImg = oneUpIconImage;
                              else if (iconType === 'DUAL' && typeof dualIconImage !== 'undefined') iconImg = dualIconImage;

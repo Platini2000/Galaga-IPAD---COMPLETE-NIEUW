@@ -205,6 +205,98 @@ let spreadActiveUntil = 0;
 let spreadActivePlayer = null;
 let clearActiveUntil = 0;
 let isClearNoBulletsActive = false;
+// --- NIEUWE BEAMER UPGRADES: TRIPLE / PIERCING / BOUNCE / SCORE-UP / LUCKY 7 ---
+// Zelfde patroon als RAPID/SPREAD: Active + Until + Player + StagesRemaining (2 stages).
+// Alleen DUAL (dualship) heeft 3 stages. Upgrades stapelen: ze werken naast elkaar
+// en naast DUALSHIP, omdat de schiet-logica ze onafhankelijk van elkaar checkt.
+let tripleActive = false;
+let tripleActiveUntil = 0;
+let tripleActivePlayer = null;
+let piercingActive = false;
+let piercingActiveUntil = 0;
+let piercingActivePlayer = null;
+let bounceActive = false;
+let bounceActiveUntil = 0;
+let bounceActivePlayer = null;
+let scoreUpActive = false;
+let scoreUpActiveUntil = 0;
+let scoreUpActivePlayer = null;
+let lucky7Active = false;
+let lucky7ActiveUntil = 0;
+let lucky7ActivePlayer = null;
+let lucky7KillCounts = { 1: 0, 2: 0 };
+// Helper: is upgrade <type> actief voor deze speler? (centraal, voor schieten/score)
+function isUpgradeActiveForPlayer(type, playerNum) {
+    try {
+        if (typeof playerNum === 'undefined' || playerNum === null) return false;
+        if (type === 'TRIPLE') return !!(typeof tripleActive !== 'undefined' && tripleActive && tripleActivePlayer === playerNum && Date.now() < tripleActiveUntil);
+        if (type === 'PIERCING') return !!(typeof piercingActive !== 'undefined' && piercingActive && piercingActivePlayer === playerNum && Date.now() < piercingActiveUntil);
+        if (type === 'BOUNCE') return !!(typeof bounceActive !== 'undefined' && bounceActive && bounceActivePlayer === playerNum && Date.now() < bounceActiveUntil);
+        if (type === 'SCORE-UP') return !!(typeof scoreUpActive !== 'undefined' && scoreUpActive && scoreUpActivePlayer === playerNum && Date.now() < scoreUpActiveUntil);
+        if (type === 'LUCKY 7') return !!(typeof lucky7Active !== 'undefined' && lucky7Active && lucky7ActivePlayer === playerNum && Date.now() < lucky7ActiveUntil);
+        if (type === 'RAPID') return !!(typeof rapidActive !== 'undefined' && rapidActive && rapidActivePlayer === playerNum && Date.now() < rapidActiveUntil);
+        if (type === 'SPREAD') return !!(typeof spreadActive !== 'undefined' && spreadActive && spreadActivePlayer === playerNum && Date.now() < spreadActiveUntil);
+    } catch(e) {}
+    return false;
+}
+window.isUpgradeActiveForPlayer = isUpgradeActiveForPlayer;
+// --- BOSS-RESPECT VOOR KOGEL-UPGRADES: SPREAD / TRIPLE / RAPID / DUAL ---
+// Zolang de boss (ENEMY3) nog geen capture-poging heeft gedaan, moet een schip
+// met een kogel-upgrade de boss respecteren: NIET schieten (ook niet op een
+// andere vijand, want SPREAD/TRIPLE-zijkogels en DUAL/RAPID-kogels raken de
+// boss alsnog), WEL kogels ontwijken en WEL invliegen richting de boss.
+// Na de capture-poging (captureAttemptMadeThisLevel / boss heeft al een schip
+// / beam voorbij) is het vogelvrij: deze helper geeft dan false terug.
+// DUAL = dualship actief voor die speler. Per-speler, nooit globaal.
+function hasBulletUpgradeForPlayer(playerNum) {
+    try {
+        if (typeof playerNum === 'undefined' || playerNum === null) playerNum = 1;
+        if (isUpgradeActiveForPlayer('RAPID', playerNum)) return true;
+        if (isUpgradeActiveForPlayer('SPREAD', playerNum)) return true;
+        if (isUpgradeActiveForPlayer('TRIPLE', playerNum)) return true;
+        if (playerNum === 1 && typeof player1IsDualShipActive !== 'undefined' && player1IsDualShipActive) return true;
+        if (playerNum === 2 && typeof player2IsDualShipActive !== 'undefined' && player2IsDualShipActive) return true;
+        // 1P / single-pool fallback: het ene schip
+        if (playerNum === 1 && typeof isDualShipActive !== 'undefined' && isDualShipActive && typeof isTwoPlayerMode !== 'undefined' && !isTwoPlayerMode) return true;
+    } catch(e) {}
+    return false;
+}
+window.hasBulletUpgradeForPlayer = hasBulletUpgradeForPlayer;
+// Is er op dit moment een boss die nog gerespecteerd moet worden?
+// True = boss in grid / aan het voorbereiden / aan het capturen EN capture nog niet gedaan.
+function isBossRespectActive() {
+    try {
+        if (typeof captureAttemptMadeThisLevel !== 'undefined' && captureAttemptMadeThisLevel) return false;
+        // Boss-stage enemy3 is expliciet vogelvrij (geen capture daar)
+        if (typeof isBossStage !== 'undefined' && isBossStage && typeof bossStageVariant !== 'undefined' && bossStageVariant === 'enemy3') return false;
+        if (typeof captureBeamActive !== 'undefined' && captureBeamActive) return true;
+        if (typeof capturingBossId !== 'undefined' && capturingBossId) return true;
+        if (typeof enemies !== 'undefined' && Array.isArray(enemies)) {
+            for (const e of enemies) {
+                if (!e || e.type !== ENEMY3_TYPE || e.hasCapturedShip) continue;
+                if (['in_grid','preparing_capture','diving_to_capture_position','capturing'].includes(e.state) || (typeof isEntrancePhaseActive !== 'undefined' && isEntrancePhaseActive && (e.state === 'following_entrance_path' || e.state === 'moving_to_grid'))) return true;
+            }
+        }
+    } catch(e) {}
+    return false;
+}
+window.isBossRespectActive = isBossRespectActive;
+// Combinatie: deze speler heeft een kogel-upgrade EN de boss moet nog gerespecteerd worden.
+function isBulletUpgradeBossRespectActiveForPlayer(playerNum) {
+    try { return hasBulletUpgradeForPlayer(playerNum) && isBossRespectActive(); } catch(e) { return false; }
+}
+window.isBulletUpgradeBossRespectActiveForPlayer = isBulletUpgradeBossRespectActiveForPlayer;
+
+// Helper: spelerNummer (1/2) uit een shootingPlayerId ('player1'/'player2'/'ai_p2'/'ai'/null)
+function playerNumFromShooterId(shootingPlayerId) {
+    try {
+        if (shootingPlayerId === 'player1') return 1;
+        if (shootingPlayerId === 'player2' || shootingPlayerId === 'ai_p2') return 2;
+        if (typeof currentPlayer !== 'undefined' && currentPlayer) return currentPlayer;
+    } catch(e) {}
+    return 1;
+}
+window.playerNumFromShooterId = playerNumFromShooterId;
 // FIX HELPER: centrale check of CLEAR nog actief is, auto-reset als verlopen
 function isClearBlocking() {
     try {
@@ -227,7 +319,12 @@ let rapidStagesRemaining = 0;
 let spreadStagesRemaining = 0;
 let clearStagesRemaining = 0;
 let dualStagesRemaining = 0;
-function resetUpgradePersistenceCounters(){ try{ shieldStagesRemaining=0; rapidStagesRemaining=0; spreadStagesRemaining=0; clearStagesRemaining=0; dualStagesRemaining=0; }catch(e){} }
+let tripleStagesRemaining = 0;
+let piercingStagesRemaining = 0;
+let bounceStagesRemaining = 0;
+let scoreUpStagesRemaining = 0;
+let lucky7StagesRemaining = 0;
+function resetUpgradePersistenceCounters(){ try{ shieldStagesRemaining=0; rapidStagesRemaining=0; spreadStagesRemaining=0; clearStagesRemaining=0; dualStagesRemaining=0; tripleStagesRemaining=0; piercingStagesRemaining=0; bounceStagesRemaining=0; scoreUpStagesRemaining=0; lucky7StagesRemaining=0; }catch(e){} }
 window.resetUpgradePersistenceCounters = resetUpgradePersistenceCounters;
 
 // --- NIEUW: Altijd zonder upgrades starten vanuit hoofdmenu / demo ---
@@ -244,6 +341,22 @@ function resetAllUpgradesForCleanStartFromMenu() {
         if (typeof spreadActivePlayer !== 'undefined') spreadActivePlayer = null;
         if (typeof isClearNoBulletsActive !== 'undefined') isClearNoBulletsActive = false;
         if (typeof clearActiveUntil !== 'undefined') clearActiveUntil = 0;
+        if (typeof tripleActive !== 'undefined') tripleActive = false;
+        if (typeof tripleActiveUntil !== 'undefined') tripleActiveUntil = 0;
+        if (typeof tripleActivePlayer !== 'undefined') tripleActivePlayer = null;
+        if (typeof piercingActive !== 'undefined') piercingActive = false;
+        if (typeof piercingActiveUntil !== 'undefined') piercingActiveUntil = 0;
+        if (typeof piercingActivePlayer !== 'undefined') piercingActivePlayer = null;
+        if (typeof bounceActive !== 'undefined') bounceActive = false;
+        if (typeof bounceActiveUntil !== 'undefined') bounceActiveUntil = 0;
+        if (typeof bounceActivePlayer !== 'undefined') bounceActivePlayer = null;
+        if (typeof scoreUpActive !== 'undefined') scoreUpActive = false;
+        if (typeof scoreUpActiveUntil !== 'undefined') scoreUpActiveUntil = 0;
+        if (typeof scoreUpActivePlayer !== 'undefined') scoreUpActivePlayer = null;
+        if (typeof lucky7Active !== 'undefined') lucky7Active = false;
+        if (typeof lucky7ActiveUntil !== 'undefined') lucky7ActiveUntil = 0;
+        if (typeof lucky7ActivePlayer !== 'undefined') lucky7ActivePlayer = null;
+        if (typeof lucky7KillCounts !== 'undefined') lucky7KillCounts = { 1: 0, 2: 0 };
         if (typeof isDualShipActive !== 'undefined') isDualShipActive = false;
         if (typeof player1IsDualShipActive !== 'undefined') player1IsDualShipActive = false;
         if (typeof player2IsDualShipActive !== 'undefined') player2IsDualShipActive = false;
@@ -253,15 +366,20 @@ function resetAllUpgradesForCleanStartFromMenu() {
         if (typeof spreadStagesRemaining !== 'undefined') spreadStagesRemaining = 0;
         if (typeof clearStagesRemaining !== 'undefined') clearStagesRemaining = 0;
         if (typeof dualStagesRemaining !== 'undefined') dualStagesRemaining = 0;
+        if (typeof tripleStagesRemaining !== 'undefined') tripleStagesRemaining = 0;
+        if (typeof piercingStagesRemaining !== 'undefined') piercingStagesRemaining = 0;
+        if (typeof bounceStagesRemaining !== 'undefined') bounceStagesRemaining = 0;
+        if (typeof scoreUpStagesRemaining !== 'undefined') scoreUpStagesRemaining = 0;
+        if (typeof lucky7StagesRemaining !== 'undefined') lucky7StagesRemaining = 0;
         if (typeof resetUpgradePersistenceCounters === 'function') resetUpgradePersistenceCounters();
         console.log("[RESET] Alle upgrades gereset voor clean start vanuit menu/demo");
     } catch(e){ console.error("resetAllUpgradesForCleanStartFromMenu error", e); }
 }
 window.resetAllUpgradesForCleanStartFromMenu = resetAllUpgradesForCleanStartFromMenu;
 
-function setUpgradeStages(type, stages){ try{ if(type==='SHIELD') shieldStagesRemaining=stages; else if(type==='RAPID') rapidStagesRemaining=stages; else if(type==='SPREAD') spreadStagesRemaining=stages; else if(type==='CLEAR') clearStagesRemaining=stages; else if(type==='DUAL') dualStagesRemaining=stages; }catch(e){} }
+function setUpgradeStages(type, stages){ try{ if(type==='SHIELD') shieldStagesRemaining=stages; else if(type==='RAPID') rapidStagesRemaining=stages; else if(type==='SPREAD') spreadStagesRemaining=stages; else if(type==='CLEAR') clearStagesRemaining=stages; else if(type==='DUAL') dualStagesRemaining=stages; else if(type==='TRIPLE') tripleStagesRemaining=stages; else if(type==='PIERCING') piercingStagesRemaining=stages; else if(type==='BOUNCE') bounceStagesRemaining=stages; else if(type==='SCORE-UP') scoreUpStagesRemaining=stages; else if(type==='LUCKY 7') lucky7StagesRemaining=stages; }catch(e){} }
 window.setUpgradeStages = setUpgradeStages;
-function decrementUpgradeStagesOnNewStage(){ try{ let expired=[]; if(typeof shieldStagesRemaining!=='undefined' && shieldStagesRemaining>0){ shieldStagesRemaining--; if(shieldStagesRemaining<=0) expired.push('SHIELD'); } if(typeof rapidStagesRemaining!=='undefined' && rapidStagesRemaining>0){ rapidStagesRemaining--; if(rapidStagesRemaining<=0) expired.push('RAPID'); } if(typeof spreadStagesRemaining!=='undefined' && spreadStagesRemaining>0){ spreadStagesRemaining--; if(spreadStagesRemaining<=0) expired.push('SPREAD'); } if(typeof clearStagesRemaining!=='undefined' && clearStagesRemaining>0){ clearStagesRemaining--; if(clearStagesRemaining<=0) expired.push('CLEAR'); } if(typeof dualStagesRemaining!=='undefined' && dualStagesRemaining>0){ dualStagesRemaining--; if(dualStagesRemaining<=0) expired.push('DUAL'); } return expired; }catch(e){ return []; } }
+function decrementUpgradeStagesOnNewStage(){ try{ let expired=[]; if(typeof shieldStagesRemaining!=='undefined' && shieldStagesRemaining>0){ shieldStagesRemaining--; if(shieldStagesRemaining<=0) expired.push('SHIELD'); } if(typeof rapidStagesRemaining!=='undefined' && rapidStagesRemaining>0){ rapidStagesRemaining--; if(rapidStagesRemaining<=0) expired.push('RAPID'); } if(typeof spreadStagesRemaining!=='undefined' && spreadStagesRemaining>0){ spreadStagesRemaining--; if(spreadStagesRemaining<=0) expired.push('SPREAD'); } if(typeof clearStagesRemaining!=='undefined' && clearStagesRemaining>0){ clearStagesRemaining--; if(clearStagesRemaining<=0) expired.push('CLEAR'); } if(typeof dualStagesRemaining!=='undefined' && dualStagesRemaining>0){ dualStagesRemaining--; if(dualStagesRemaining<=0) expired.push('DUAL'); } if(typeof tripleStagesRemaining!=='undefined' && tripleStagesRemaining>0){ tripleStagesRemaining--; if(tripleStagesRemaining<=0) expired.push('TRIPLE'); } if(typeof piercingStagesRemaining!=='undefined' && piercingStagesRemaining>0){ piercingStagesRemaining--; if(piercingStagesRemaining<=0) expired.push('PIERCING'); } if(typeof bounceStagesRemaining!=='undefined' && bounceStagesRemaining>0){ bounceStagesRemaining--; if(bounceStagesRemaining<=0) expired.push('BOUNCE'); } if(typeof scoreUpStagesRemaining!=='undefined' && scoreUpStagesRemaining>0){ scoreUpStagesRemaining--; if(scoreUpStagesRemaining<=0) expired.push('SCORE-UP'); } if(typeof lucky7StagesRemaining!=='undefined' && lucky7StagesRemaining>0){ lucky7StagesRemaining--; if(lucky7StagesRemaining<=0) expired.push('LUCKY 7'); } return expired; }catch(e){ return []; } }
 window.decrementUpgradeStagesOnNewStage = decrementUpgradeStagesOnNewStage;
 let upgradeMessageActive = false;
 let upgradeMessageText = "";
@@ -484,6 +602,9 @@ level1Image.src = 'Afbeeldingen/Level-1.png'; level5Image.src = 'Afbeeldingen/Le
 // --- NIEUW UPGRADE ICONEN ---
 const shieldIconImage = new Image(), clearIconImage = new Image(), dualIconImage = new Image(), oneUpIconImage = new Image(), spreadIconImage = new Image(), rapidIconImage = new Image();
 shieldIconImage.src = 'Afbeeldingen/shield_icon.png'; clearIconImage.src = 'Afbeeldingen/clear_icon.png'; dualIconImage.src = 'Afbeeldingen/dual_icon.png'; oneUpIconImage.src = 'Afbeeldingen/1up_icon.png'; spreadIconImage.src = 'Afbeeldingen/spread_icon.png'; rapidIconImage.src = 'Afbeeldingen/rapid_icon.png';
+// --- NIEUWE BEAMER UPGRADES: bestanden staan in Afbeeldingen/ (zelfde map als de andere upgrades) ---
+const tripleIconImage = new Image(), piercingIconImage = new Image(), bounceIconImage = new Image(), scoreUpIconImage = new Image(), lucky7IconImage = new Image();
+tripleIconImage.src = 'Afbeeldingen/triple_icon.png'; piercingIconImage.src = 'Afbeeldingen/piercing_icon.png'; bounceIconImage.src = 'Afbeeldingen/bounce_icon.png'; scoreUpIconImage.src = 'Afbeeldingen/score-up_icon.png'; lucky7IconImage.src = 'Afbeeldingen/lucky7_icon.png';
 
 // Web Audio API
 let audioContext;
@@ -863,7 +984,7 @@ function initializeDOMElements() {
     }
 
 
-    const imagesToLoad = [ shipImage, beeImage, bulletImage, bossGalagaImage, butterflyImage, logoImage, level1Image, level5Image, level10Image, level20Image, level30Image, level50Image, beeImage2, butterflyImage2, bossGalagaImage2, shieldIconImage, clearIconImage, dualIconImage, oneUpIconImage, spreadIconImage, rapidIconImage ];
+    const imagesToLoad = [ shipImage, beeImage, bulletImage, bossGalagaImage, butterflyImage, logoImage, level1Image, level5Image, level10Image, level20Image, level30Image, level50Image, beeImage2, butterflyImage2, bossGalagaImage2, shieldIconImage, clearIconImage, dualIconImage, oneUpIconImage, spreadIconImage, rapidIconImage, tripleIconImage, piercingIconImage, bounceIconImage, scoreUpIconImage, lucky7IconImage ];
     imagesToLoad.forEach(img => { if (img) img.onerror = () => console.error(`Error loading image: ${img.src}`); });
     return true;
 }
