@@ -3632,12 +3632,20 @@ function aiControl() {
             } else { aiPreviousDodgeDirection = 0; aiDodgeCommitEndTime = 0; }
         } else { aiPreviousDodgeDirection = 0; aiDodgeCommitEndTime = 0; } // Einde isInvincible/isShowingBlockingMessage check
 
+        // FIX single-AI DUAL: beamer-aanloop wint van ontwijken. Zonder dit wordt isMovingToCapture bij ELKE ontwijk-frame gewist (regel hieronder) en haalt de AI de 5-sec beam nooit - in coop valt de partner dan in, in single is er niemand. Daarom: als de beam actief is, geen dodge-branch.
+        let singleAIBeamActiveForCapture = false;
+        try {
+            const _cb = enemies.find(e => e.id === capturingBossId && e.type === ENEMY3_TYPE);
+            let _ready = true;
+            if (_cb && _cb.beamerUpgradeAvailableAt && Date.now() < _cb.beamerUpgradeAvailableAt && _cb.beamerUpgradeType && _cb.beamerUpgradeType !== 'DUAL') _ready = false;
+            singleAIBeamActiveForCapture = captureBeamActive && !!_cb && _cb.state === 'capturing' && !isShipCapturedForAI && _ready && aiLivesForAI > 1;
+        } catch(e) {}
         const isBossFightActiveForSingleAI = (typeof isBossStage !== 'undefined' && isBossStage && typeof bossStagePhase !== 'undefined' && bossStagePhase === 'fighting');
         if (isBossFightActiveForSingleAI) {
             // In boss fight: behoud boss target en blijf vuren tijdens ontwijken
             if (!targetEnemyForAI && typeof bossStageBoss !== 'undefined' && bossStageBoss) targetEnemyForAI = bossStageBoss;
             shouldTryShoot_AI = true;
-        } else if (isDodgingThreat && !isChallengingStage) { // Alleen toepassen als niet CS en niet boss
+        } else if (isDodgingThreat && !isChallengingStage && !singleAIBeamActiveForCapture) { // Alleen toepassen als niet CS en niet boss - NIET als beamer actief is (dan wint beamer-aanloop)
             isMovingToCapture = false; aiIsCurrentlyTargetingCaptureBoss = false; isTargetingThreeSecondRuleBoss = false; isMovingForOwnFallingShip = false; targetEnemyForAI = null;
             const isNearEdge = desiredTargetX < AI_EDGE_BUFFER * 2.5 || desiredTargetX > canvasWidth - effectiveShipWidth - AI_EDGE_BUFFER * 2.5;
             if (Math.abs(desiredTargetX - currentSmoothedShipXForAI) > effectiveShipWidth * 0.10 && !isNearEdge) {
@@ -3670,7 +3678,7 @@ function aiControl() {
                 let beamIconReadyForAI = true; try { if (capturingBossObject && capturingBossObject.beamerUpgradeAvailableAt && Date.now() < capturingBossObject.beamerUpgradeAvailableAt && capturingBossObject.beamerUpgradeType && capturingBossObject.beamerUpgradeType !== 'DUAL') beamIconReadyForAI = false; } catch(e) {}
                 const beamIsActiveAndPotentiallyTargeting = captureBeamActive && capturingBossObject && capturingBossObject.state === 'capturing' && !isShipCapturedForAI && beamIconReadyForAI;
                 if (beamIsActiveAndPotentiallyTargeting) {
-                    const wantsToCapture = (aiLivesForAI > 1 && !isDualActiveForAI);
+                    const wantsToCapture = (aiLivesForAI > 1); // FIX: ook met dualship upgrades pakken - dual blokkeert beamer niet meer
                     if (wantsToCapture) { aiIsCurrentlyTargetingCaptureBoss = true; isMovingToCapture = true; const beamCenterX = capturingBossObject.x + (capturingBossObject.width / 2); desiredTargetX = beamCenterX - effectiveShipWidth / 2; shouldTryShoot_AI = false; targetEnemyForAI = null; }
                 }
             }
@@ -3952,7 +3960,7 @@ function calculateAIDesiredState(currentShip, currentSmoothedX, isShipDual, game
     const canvasHeight = gameCanvas.height; const effectiveShipWidth = currentShip.width + (isShipDual ? DUAL_SHIP_OFFSET_X : 0);
     const shipCenterX = currentShip.x + effectiveShipWidth / 2; const shipTopY = currentShip.y;
     const livesOfThisAIShip = (shipIdentifier === 'p1') ? player1Lives : ((shipIdentifier === 'ai_p2' || shipIdentifier === 'player2') ? player2Lives : 0);
-    const canThisAIShipBeCapturedPhysically = livesOfThisAIShip > 1 && !isShipDual && !isThisShipCaptured;
+    const canThisAIShipBeCapturedPhysically = livesOfThisAIShip > 1 && !isThisShipCaptured; // FIX: ook met dualship upgrades pakken - dual blokkeert beamer niet meer
     let laneCenterX = gameCanvas.width / 2;
     const generalIntroIsActive = (isShowingIntro || isShowingCoopPlayersReady);
     const isCoopAIAndGeneralIntroActive = isThisACoopAIMode && generalIntroIsActive && !(isChallengingStage && isEntrancePhaseActive);

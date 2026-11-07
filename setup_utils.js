@@ -1774,7 +1774,8 @@ function triggerGameOver() { triggerFinalGameOverSequence(); }
       alpha: ROOK_ALPHA * (0.6+Math.random()*0.4) // hangt aan de knop hierboven
     };
   }
-  var plumes = [makePlume(-1), makePlume(1)];
+  // Alleen de linker pluim wordt gesimuleerd; de rechter is een exacte gespiegelde kopie ervan (zie frame()).
+  var plumes = [makePlume(-1)];
 
   function frame(now){
     raf = requestAnimationFrame(frame);
@@ -1801,6 +1802,11 @@ function triggerGameOver() { triggerFinalGameOverSequence(); }
         var s = p.size + p.grow*t;
         ctx.globalAlpha = Math.max(0, p.alpha * fade);
         ctx.save(); ctx.translate(p.x,p.y); ctx.rotate(p.rot);
+        ctx.drawImage(p.sprite, -s/2, -s/2, s, s);
+        ctx.restore();
+        // Exacte gespiegelde kopie van de linker pluim aan de rechterkant: zelfde deeltje,
+        // gespiegeld om de verticale middenas (x -> W - x, rotatie omgekeerd). Geen eigen toeval.
+        ctx.save(); ctx.translate(W - p.x, p.y); ctx.rotate(-p.rot);
         ctx.drawImage(p.sprite, -s/2, -s/2, s, s);
         ctx.restore();
       }
