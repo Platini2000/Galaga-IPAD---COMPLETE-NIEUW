@@ -1983,7 +1983,8 @@ function triggerBossStageDefeat() {
             if (typeof createExplosion === 'function') {
                 createExplosion(rx, ry, BOSS_STAGE_BOSS_WIDTH*2.0, BOSS_STAGE_BOSS_HEIGHT*2.0);
             }
-            playSound('explosionSound', false, 0.7);
+            stopSound('bossExplosionSound');
+            playSound('bossExplosionSound', false, 0.7);
         }, i*120);
     }
 

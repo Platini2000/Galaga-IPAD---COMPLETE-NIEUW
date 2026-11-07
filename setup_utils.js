@@ -91,7 +91,7 @@ window.highScoreHolderId = null; // << GEWIJZIGD: Expliciet aan window toevoegen
 
 // Zet hier het level waar je wilt starten. De game start direct in dat level.
 
-let START_LEVEL = 1; // <-- VERANDER DIT NAAR GEWENST LEVEL
+let START_LEVEL = 6; // <-- VERANDER DIT NAAR GEWENST LEVEL
 window.START_LEVEL = START_LEVEL;
 
 function getConfiguredStartLevel() {
@@ -619,6 +619,7 @@ const soundPaths = {
     dualShipSound: "Geluiden/coin.mp3",
     playerShootSound: "Geluiden/firing.mp3",
     explosionSound: "Geluiden/kill.mp3",
+    bossExplosionSound: "Geluiden/explosion.mp3",
     gameOverSound: "Geluiden/gameover.mp3",
     lostLifeSound: "Geluiden/lost-live.mp3",
     entranceSound: "Geluiden/Entree.mp3",
@@ -946,6 +947,7 @@ function initializeDOMElements() {
             }
             setVolume('playerShootSound', 0.4);
             setVolume('explosionSound', 0.4);
+            setVolume('bossExplosionSound', 0.7);
             setVolume('gameOverSound', 0.4);
             setVolume('lostLifeSound', 0.6);
             setVolume('entranceSound', 0.4);
