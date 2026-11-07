@@ -150,9 +150,40 @@ function refillBeamerShuffleBag() {
         window.beamerUpgradeBagIndex = beamerUpgradeBagIndex;
     } catch(e) {}
 }
+// Levens van ALLE meespelende spelers in een AI-mode (alleen in zo'n mode geldt de regel):
+// - 1P AI-demo: de ene AI-speler (playerLives)
+// - COOP AI-demo: beide AI-spelers (player1Lives, player2Lives)
+// - 1P vs AI COOP: P1 (mens) + AI-P2 -> een mens met < 3 levens mag de 1UP dus ook triggeren,
+//   en de bestaande beamer-targeting geeft hem dan aan de speler met de minste levens.
+// - 1P vs AI NORMAL, AI-beurt: AI-P2 (playerLives, beurt-pool)
+// Anders (pure mensen-modes): geen AI-mode -> lege lijst, regel geldt niet.
+function getAILivesForBeamer1UP() {
+    try {
+        if (typeof isCoopAIDemoActive !== 'undefined' && isCoopAIDemoActive) return [player1Lives, player2Lives];
+        if (typeof isPlayerTwoAI !== 'undefined' && isPlayerTwoAI) {
+            if (typeof selectedOnePlayerGameVariant !== 'undefined' && selectedOnePlayerGameVariant === '1P_VS_AI_COOP') return [player1Lives, player2Lives];
+            if (typeof selectedOnePlayerGameVariant !== 'undefined' && selectedOnePlayerGameVariant === '1P_VS_AI_NORMAL' && typeof currentPlayer !== 'undefined' && currentPlayer === 2) return [playerLives];
+            return [];
+        }
+        if (typeof isManualControl !== 'undefined' && !isManualControl) return [playerLives];
+    } catch(e) {}
+    return [];
+}
+window.getAILivesForBeamer1UP = getAILivesForBeamer1UP;
 function getNextBeamerUpgradeType() {
     try {
         const types = ['DUAL', 'SHIELD', 'RAPID', 'SPREAD', 'CLEAR', '1UP'];
+        // 1UP-REGEL VOOR AI-MODES: 1UP mag alleen als minimaal 1 meespelende speler < 3 levens heeft.
+        // Dus: alle spelers >= 3 (en zeker >= 5) -> geen 1UP meer, ook niet via pity/bag.
+        // Gewicht 0 hieronder geldt DUS ALLEEN in dat geblokkeerde geval.
+        // Zodra er 1 speler < 3 zit, is block1UPForAI=false en loopt de oude
+        // gewichten-code hieronder gewoon door: 1 leven -> 5.0, 2 levens -> 3.5, 3 levens -> 2.2.
+        const aiLives = getAILivesForBeamer1UP();
+        const isAIBeamerMode = aiLives.length > 0;
+        const aiNeeds1UP = isAIBeamerMode && aiLives.some(l => l < 3); // 1 speler < 3 -> NIET blokkeren
+        const block1UPForAI = isAIBeamerMode && !aiNeeds1UP;
+        const non1UPTypes = ['DUAL', 'SHIELD', 'RAPID', 'SPREAD', 'CLEAR'];
+        const pickNon1UP = () => non1UPTypes[Math.floor(Math.random() * non1UPTypes.length)];
         let p1L = 99, p2L = 99, singleL = 99;
         try {
             if (typeof player1Lives !== 'undefined') p1L = player1Lives;
@@ -175,8 +206,9 @@ function getNextBeamerUpgradeType() {
             'CLEAR': 1.0,
             '1UP': 1.0
         };
+        if (block1UPForAI) weights['1UP'] = 0;
         // Lives gebaseerd: sneller 1UP bij lage levens
-        if (minLives <= 1) weights['1UP'] = 5.0;
+        else if (minLives <= 1) weights['1UP'] = 5.0;
         else if (minLives <= 2) weights['1UP'] = 3.5;
         else if (minLives <= 3) weights['1UP'] = 2.2;
 
@@ -194,7 +226,12 @@ function getNextBeamerUpgradeType() {
         if (minLives <= 2) pityThreshold = 4;
         else if (minLives <= 3) pityThreshold = 6;
         else pityThreshold = 9;
-        if (_beamer1UPPityCounter >= pityThreshold) {
+        if (block1UPForAI) {
+            // Geen pity-1UP voor AI met genoeg levens: teller vasthouden zodat hij
+            // niet alsnog een 1UP forceert zodra de regel weer zou gelden.
+            _beamer1UPPityCounter = Math.min(_beamer1UPPityCounter, pityThreshold - 1);
+            window._beamer1UPPityCounter = _beamer1UPPityCounter;
+        } else if (_beamer1UPPityCounter >= pityThreshold) {
             _beamer1UPPityCounter = 0;
             lastBeamerUpgradeType = '1UP';
             console.log("[BEAMER PITY] "+pityThreshold+" zonder 1UP -> FORCE 1UP (minLives="+minLives+")");
@@ -210,6 +247,7 @@ function getNextBeamerUpgradeType() {
             // bouw nieuwe bag: elk type minimaal 1x, plus extra gewicht voor 1UP en SHIELD bij lage lives
             beamerUpgradeShuffleBag = [];
             for (let t of types) {
+                if (block1UPForAI && t === '1UP') continue; // geen 1UP in de bag voor AI met >= 3 levens
                 let count = 1;
                 if (t === '1UP' && minLives <= 2) count = 2;
                 if (t === '1UP' && minLives <= 3) count = Math.max(count, 2);
@@ -237,6 +275,13 @@ function getNextBeamerUpgradeType() {
             window.beamerUpgradeShuffleBag = beamerUpgradeShuffleBag;
         }
         let next = beamerUpgradeShuffleBag.shift();
+        // Bag kan nog een oude 1UP bevatten van toen een AI-speler nog < 3 levens had:
+        // die mag nu niet meer vallen -> vervang door een willekeurige andere upgrade.
+        if (block1UPForAI && next === '1UP') {
+            console.log("[BEAMER 1UP] Geblokkeerd voor AI (alle AI >= 3 levens, min=" + Math.min(...aiLives) + ") -> 1UP uit bag vervangen");
+            beamerUpgradeShuffleBag = beamerUpgradeShuffleBag.filter(t => t !== '1UP');
+            next = pickNon1UP();
+        }
         window.beamerUpgradeShuffleBag = beamerUpgradeShuffleBag;
         if (!next) {
             // fallback weighted random
@@ -258,6 +303,8 @@ function getNextBeamerUpgradeType() {
     } catch(e){
         console.error("beamer randomizer fallback", e);
         const fallback = ['DUAL','SHIELD','RAPID','SPREAD','CLEAR','1UP'];
+        // Ook in de fallback mag een geblokkeerde 1UP er nooit uit komen.
+        try { if (typeof getAILivesForBeamer1UP === 'function') { const _ai = getAILivesForBeamer1UP(); if (_ai.length > 0 && !_ai.some(l => l < 3)) return (function(){ const f2 = ['DUAL','SHIELD','RAPID','SPREAD','CLEAR'][Math.floor(Math.random()*5)]; lastBeamerUpgradeType = f2; window._beamer1UPPityCounter = _beamer1UPPityCounter; return f2; })(); } } catch(e2) {}
         let f = fallback[Math.floor(Math.random()*fallback.length)];
         if (f === '1UP') _beamer1UPPityCounter = 0;
         lastBeamerUpgradeType = f;
