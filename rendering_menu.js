@@ -1235,6 +1235,7 @@ function getActiveUpgradesForPlayer(pNum) {
     return _activeUpgradeDisplay[pNum];
 }
 function drawActiveUpgradesUnderScore(pNum, label, labelAlign, labelX) {
+    return; // Alleen weergave uit: icoon + benaming onder de score niet meer tonen. Upgrade zelf blijft gewoon werken.
     // Niet in portrait mode: alleen in landscape onder de score.
     if (!isInGameState || (typeof isShowingPortraitMessage !== 'undefined' && isShowingPortraitMessage) || (typeof gameCanvas !== 'undefined' && gameCanvas && gameCanvas.height > gameCanvas.width)) { _activeUpgradeDisplay = { 1: [], 2: [] }; return; }
     const list = getActiveUpgradesForPlayer(pNum);
@@ -1277,6 +1278,7 @@ function drawActiveUpgradesUnderScore(pNum, label, labelAlign, labelX) {
             return String(h).toUpperCase();
         };
         const drawHighScoreHolderName=()=>{
+            return; // Alleen weergave uit: speler onder HIGH SCORE niet meer tonen. Score zelf blijft staan.
             const name = getHighScoreHolderName();
             if(!name || !(sessionHighScore > 0)) return;
             gameCtx.save();
