@@ -208,6 +208,7 @@ let spreadActiveUntil = 0;
 let spreadActivePlayer = null;
 let clearActiveUntil = 0;
 let isClearNoBulletsActive = false;
+let clearActivePlayer = null; // wie CLEAR gepakt heeft, anders weten we niet onder welke score hij hoort
 // --- NIEUWE BEAMER UPGRADES: TRIPLE / PIERCING / BOUNCE / SCORE-UP / LUCKY 7 ---
 // Zelfde patroon als RAPID/SPREAD: Active + Until + Player + StagesRemaining (2 stages).
 // Alleen DUAL (dualship) heeft 3 stages. Upgrades stapelen: ze werken naast elkaar
@@ -342,7 +343,7 @@ function resetAllUpgradesForCleanStartFromMenu() {
         if (typeof spreadActive !== 'undefined') spreadActive = false;
         if (typeof spreadActiveUntil !== 'undefined') spreadActiveUntil = 0;
         if (typeof spreadActivePlayer !== 'undefined') spreadActivePlayer = null;
-        if (typeof isClearNoBulletsActive !== 'undefined') isClearNoBulletsActive = false;
+        if (typeof isClearNoBulletsActive !== 'undefined') isClearNoBulletsActive = false; if (typeof clearActivePlayer !== 'undefined') clearActivePlayer = null;
         if (typeof clearActiveUntil !== 'undefined') clearActiveUntil = 0;
         if (typeof tripleActive !== 'undefined') tripleActive = false;
         if (typeof tripleActiveUntil !== 'undefined') tripleActiveUntil = 0;
@@ -1772,6 +1773,16 @@ function triggerFinalGameOverSequence() {
         isDualShipActiveExpireLevel = 0; player1DualShipExpireLevel = 0; player2DualShipExpireLevel = 0;
         isDualShipActiveExpireLevel = 0; player1DualShipExpireLevel = 0; player2DualShipExpireLevel = 0;
         isShowingResultsScreen = false;
+        // FIX COOP-AI-DEMO: laatste AI dood na stage 50+ -> ook de boss(-stage) zelf wissen.
+        // bossStageBoss staat NIET in `enemies`, dus bleef hij hangen / werd hij opnieuw getekend
+        // terwijl de finale game-over al liep. Idem voor lopende capture-/beamer-state.
+        if (typeof bossStageBoss !== 'undefined') bossStageBoss = null;
+        if (typeof capturingBossId !== 'undefined') capturingBossId = null;
+        if (typeof capturedBossIdWithMessage !== 'undefined') capturedBossIdWithMessage = null;
+        if (typeof aiPlayerActivelySeekingCaptureById !== 'undefined') aiPlayerActivelySeekingCaptureById = null;
+        if (typeof beamerClearDesignation === 'function') beamerClearDesignation();
+        isShowingCaptureMessage = false;
+        isShowingCoopPlayersReady = false;
         isShipCaptured = false;
         isPlayer1ShipCaptured = false;
         isPlayer2ShipCaptured = false;

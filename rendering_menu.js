@@ -1173,7 +1173,7 @@ function renderGame() {
             gameCtx.textAlign = "center";
             gameCtx.fillText("HI SCORE", midX, topUiY);
             gameCtx.fillStyle = PORTRAIT_SCORE_COLOR;
-            gameCtx.fillText(String(highScore || 20000), midX, topUiScoreY);
+            gameCtx.fillText("20000", midX, topUiScoreY); // Portrait: HI SCORE altijd vast 20000
 
             gameCtx.fillStyle = PORTRAIT_LABEL_COLOR;
             gameCtx.textAlign = "right";
@@ -1207,6 +1207,57 @@ function renderGame() {
         }
 
 
+
+// --- Actieve beamer-upgrades onder de score ---
+// 1UP zit hier bewust NIET bij: die is meteen weg.
+// Volgorde = pak-volgorde. Verdwijnt vanzelf als de upgrade verloopt:
+// 2 stages voor alles, 3 stages voor DUALSHIP (dat regelt de bestaande stages-logica al).
+let _activeUpgradeDisplay = { 1: [], 2: [] };
+function getActiveUpgradesForPlayer(pNum) {
+    const isDual = (isTwoPlayerMode && selectedGameMode === 'coop')
+        ? (pNum === 1 ? !!player1IsDualShipActive : !!player2IsDualShipActive)
+        : (isTwoPlayerMode && selectedGameMode === 'normal')
+            ? (!!isDualShipActive && currentPlayer === pNum) || (pNum === 1 ? !!player1IsDualShipActive : !!player2IsDualShipActive)
+            : !!isDualShipActive;
+    const nowActive = [];
+    if (typeof shieldActive !== 'undefined' && shieldActive && shieldActivePlayer === pNum) nowActive.push('SHIELD');
+    if (typeof rapidActive !== 'undefined' && rapidActive && rapidActivePlayer === pNum) nowActive.push('RAPID');
+    if (typeof spreadActive !== 'undefined' && spreadActive && spreadActivePlayer === pNum) nowActive.push('SPREAD');
+    if (typeof isClearNoBulletsActive !== 'undefined' && isClearNoBulletsActive && typeof clearActivePlayer !== 'undefined' && clearActivePlayer === pNum) nowActive.push('CLEAR');
+    if (typeof tripleActive !== 'undefined' && tripleActive && tripleActivePlayer === pNum) nowActive.push('TRIPLE');
+    if (typeof piercingActive !== 'undefined' && piercingActive && piercingActivePlayer === pNum) nowActive.push('PIERCING');
+    if (typeof bounceActive !== 'undefined' && bounceActive && bounceActivePlayer === pNum) nowActive.push('BOUNCE');
+    if (typeof scoreUpActive !== 'undefined' && scoreUpActive && scoreUpActivePlayer === pNum) nowActive.push('SCORE-UP');
+    if (typeof lucky7Active !== 'undefined' && lucky7Active && lucky7ActivePlayer === pNum) nowActive.push('LUCKY 7');
+    if (isDual) nowActive.push('DUALSHIP');
+    _activeUpgradeDisplay[pNum] = _activeUpgradeDisplay[pNum].filter(x => nowActive.includes(x));
+    nowActive.forEach(x => { if (!_activeUpgradeDisplay[pNum].includes(x)) _activeUpgradeDisplay[pNum].push(x); });
+    return _activeUpgradeDisplay[pNum];
+}
+function drawActiveUpgradesUnderScore(pNum, label, labelAlign, labelX) {
+    // Niet in portrait mode: alleen in landscape onder de score.
+    if (!isInGameState || (typeof isShowingPortraitMessage !== 'undefined' && isShowingPortraitMessage) || (typeof gameCanvas !== 'undefined' && gameCanvas && gameCanvas.height > gameCanvas.width)) { _activeUpgradeDisplay = { 1: [], 2: [] }; return; }
+    const list = getActiveUpgradesForPlayer(pNum);
+    if (!list.length) return;
+    const icons = { 'SHIELD': shieldIconImage, 'CLEAR': clearIconImage, 'RAPID': rapidIconImage, 'SPREAD': spreadIconImage, 'TRIPLE': tripleIconImage, 'PIERCING': piercingIconImage, 'BOUNCE': bounceIconImage, 'SCORE-UP': scoreUpIconImage, 'LUCKY 7': lucky7IconImage, 'DUALSHIP': dualIconImage };
+    gameCtx.save();
+    gameCtx.font = UI_FONT;
+    const labelWidth = gameCtx.measureText(label).width;
+    const centerX = labelAlign === 'left' ? labelX + labelWidth / 2 : labelAlign === 'right' ? labelX - labelWidth / 2 : labelX;
+    const iconSize = 54, nameGap = 3, blockGap = 10;
+    let y = MARGIN_TOP + SCORE_OFFSET_Y + 5 + 26;
+    list.forEach(type => {
+        const img = icons[type];
+        if (img && img.complete && img.naturalHeight !== 0) gameCtx.drawImage(img, Math.round(centerX - iconSize / 2), Math.round(y), iconSize, iconSize);
+        y += iconSize + nameGap;
+        gameCtx.font = "11px 'Press Start 2P'"; // zelfde font als de score, maar kleiner
+        gameCtx.fillStyle = "yellow"; gameCtx.textAlign = 'center'; gameCtx.textBaseline = 'top';
+        gameCtx.fillText(type, centerX, y);
+        y += 15 + blockGap;
+    });
+    gameCtx.restore();
+}
+
         // --- STAP 1: Teken UI (Score, Levens, Level) ---
         gameCtx.save();
         const UI_FONT="20px 'Press Start 2P'"; const LABEL_COLOR="red"; const SCORE_COLOR="white";
@@ -1214,21 +1265,28 @@ function renderGame() {
         const defaultReserveLives = 2;
         gameCtx.font=UI_FONT; gameCtx.textBaseline="top";
 
-        const drawTopUiElement=(label, scoreValue, labelAlign, labelX, shouldBlink = false)=>{
-             let showLabel=true; let blinkOnDuration = UI_1UP_BLINK_ON_MS * 1.5; let blinkCycleDuration = UI_1UP_BLINK_CYCLE_MS * 1.5;
-             if (label === "AI P1" || label === "AI P2") {
-                 blinkOnDuration = DEMO_TEXT_BLINK_ON_MS * 0.7; blinkCycleDuration = DEMO_TEXT_BLINK_CYCLE_MS;
-             }
-             else if (label === "HIGH SCORE") {
-                 blinkOnDuration = UI_1UP_BLINK_ON_MS * 1.5; blinkCycleDuration = UI_1UP_BLINK_CYCLE_MS * 1.5;
-                 if (isInGameState && (!isManualControl || isCoopAIDemoActive || (isPlayerTwoAI && selectedGameMode === 'coop'))) {
-                      blinkOnDuration = DEMO_TEXT_BLINK_ON_MS * 0.7; blinkCycleDuration = DEMO_TEXT_BLINK_CYCLE_MS;
-                 }
-             }
-             let isAnyPlayerGameOverMsgShowing = isShowingPlayerGameOverMessage || (isTwoPlayerMode && selectedGameMode === 'coop' && (isPlayer1ShowingGameOverMessage || isPlayer2ShowingGameOverMessage));
-             if(shouldBlink){ if(isPaused || gameOverSequenceStartTime > 0 || isAnyPlayerGameOverMsgShowing || !((now % blinkCycleDuration) < blinkOnDuration)){ showLabel=false; } }
-
-             if(showLabel){ gameCtx.fillStyle=LABEL_COLOR; gameCtx.textAlign=labelAlign; gameCtx.fillText(label, labelX, MARGIN_TOP); }
+        // Naam van de HI-SCORE houder: zelfde naam als bovenin (1UP / 2UP),
+        // met AI- ervoor als de AI die speler bestuurt, bv. AI-1UP.
+        const getHighScoreHolderName=()=>{
+            const h = (typeof highScoreHolderId !== 'undefined' ? highScoreHolderId : (typeof window !== 'undefined' ? window.highScoreHolderId : null));
+            if(!h) return '';
+            if(h==='ai_p2' || h==='ai2' || h==='AI P2') return 'AI-2UP';
+            if(h==='player2' || h==='2' || h==='2UP') return (typeof label2P !== 'undefined' && String(label2P).indexOf('AI')>=0) ? 'AI-2UP' : '2UP';
+            if(h==='player1' || h==='1' || h==='1UP') return (typeof label1P !== 'undefined' && String(label1P).indexOf('AI')>=0) ? 'AI-1UP' : '1UP';
+            if(h==='ai' || h==='ai_p1' || h==='AI P1') return 'AI-1UP';
+            return String(h).toUpperCase();
+        };
+        const drawHighScoreHolderName=()=>{
+            const name = getHighScoreHolderName();
+            if(!name || !(sessionHighScore > 0)) return;
+            gameCtx.save();
+            gameCtx.font=UI_FONT; gameCtx.textBaseline='top'; gameCtx.textAlign='center'; gameCtx.fillStyle='red';
+            gameCtx.fillText(name, gameCanvas.width/2, MARGIN_TOP+SCORE_OFFSET_Y+5+28);
+            gameCtx.restore();
+        };
+        const drawTopUiElement=(label, scoreValue, labelAlign, labelX)=>{
+             // Namen knipperen niet meer: altijd rustig in beeld.
+             gameCtx.fillStyle=LABEL_COLOR; gameCtx.textAlign=labelAlign; gameCtx.fillText(label, labelX, MARGIN_TOP);
              const labelWidth=gameCtx.measureText(label).width;
              let scoreCenterX;
              if(labelAlign==='left')scoreCenterX=labelX+labelWidth/2;
@@ -1242,7 +1300,7 @@ function renderGame() {
         };
 
         let score1PValue, score2PValue, sessionHighScore, label1P, label2P = "2UP";
-        let show1UPBlink = false, show2UPBlink = false, highScoreConditionMet = false;
+        let show1UPBlink = false;
         let isAnyCoopPlayerGameOver = isTwoPlayerMode && selectedGameMode === 'coop' && (isPlayer1ShowingGameOverMessage || isPlayer2ShowingGameOverMessage);
 
 
@@ -1316,65 +1374,54 @@ function renderGame() {
         }
         else { // In game
             sessionHighScore = highScore || 0;
-            const baseBlinkCondition = !isPaused && !isShowingCoopPlayersReady;
+            const baseBlinkCondition = false; // namen knipperen niet meer
 
             if (isCoopAIDemoActive) {
                 score1PValue = player1Score;
                 sessionHighScore = Math.max(highScore, player1Score, player2Score);
                 label1P = "AI P1";
-                show1UPBlink = baseBlinkCondition && !isShowingIntro && player1Lives > 0 && ship1 && !isPlayer1ShipCaptured && !isPlayer1WaitingForRespawn && !isPlayer1ShowingGameOverMessage;
-                show2UPBlink = baseBlinkCondition && !isShowingIntro && player2Lives > 0 && ship2 && !isPlayer2ShipCaptured && !isPlayer2WaitingForRespawn && !isPlayer2ShowingGameOverMessage;
-                if (player1Score >= sessionHighScore && player1Score > 0 && !isPlayer1ShowingGameOverMessage) highScoreConditionMet = show1UPBlink;
-                if (player2Score >= sessionHighScore && player2Score > 0 && player2Score >= player1Score && !isPlayer2ShowingGameOverMessage) highScoreConditionMet = show2UPBlink;
+                show1UPBlink = false;
+                show2UPBlink = false;
+                if (player1Score >= sessionHighScore && player1Score > 0 && !isPlayer1ShowingGameOverMessage) highScoreConditionMet = false;
+                if (player2Score >= sessionHighScore && player2Score > 0 && player2Score >= player1Score && !isPlayer2ShowingGameOverMessage) highScoreConditionMet = false;
 
             } else if (!isManualControl) { // Normale 1P AI Demo
                 score1PValue = score; sessionHighScore = Math.max(sessionHighScore, score);
                 label1P = "AI P1";
-                show1UPBlink = baseBlinkCondition && !isShowingIntro && !isShipCaptured && playerLives > 0 && !isAnyCoopPlayerGameOver;
-                highScoreConditionMet = baseBlinkCondition && !isShowingIntro && score > 0 && sessionHighScore > 0 && score >= sessionHighScore && !isAnyCoopPlayerGameOver;
+                show1UPBlink = false;
+                highScoreConditionMet = false;
             } else {
                 label1P = "1UP";
                 if (isTwoPlayerMode && selectedGameMode === 'coop') {
                     score1PValue = player1Score; sessionHighScore = Math.max(highScore, player1Score, player2Score);
-                    show1UPBlink = baseBlinkCondition && !isShowingIntro && player1Lives > 0 && ship1 && !isPlayer1ShipCaptured && !isPlayer1WaitingForRespawn && !isPlayer1ShowingGameOverMessage;
-                    show2UPBlink = baseBlinkCondition && !isShowingIntro && player2Lives > 0 && ship2 && !isPlayer2ShipCaptured && !isPlayer2WaitingForRespawn && !isPlayer2ShowingGameOverMessage && (isPlayerTwoAI ? player2Lives > 0 : true) ;
-                    if (player1Score >= sessionHighScore && player1Score > 0 && !isPlayer1ShowingGameOverMessage) highScoreConditionMet = show1UPBlink;
-                    if (player2Score >= sessionHighScore && player2Score > 0 && player2Score >= player1Score && !isPlayer2ShowingGameOverMessage && (isPlayerTwoAI ? player2Lives > 0 : true)) highScoreConditionMet = show2UPBlink;
+                    show1UPBlink = false;
+                    show2UPBlink = false;
+                    if (player1Score >= sessionHighScore && player1Score > 0 && !isPlayer1ShowingGameOverMessage) highScoreConditionMet = false;
+                    if (player2Score >= sessionHighScore && player2Score > 0 && player2Score >= player1Score && !isPlayer2ShowingGameOverMessage && (isPlayerTwoAI ? player2Lives > 0 : true)) highScoreConditionMet = false;
                 } else if (isTwoPlayerMode && selectedGameMode === 'normal') {
                     score1PValue = (currentPlayer === 1) ? score : player1Score; sessionHighScore = Math.max(highScore, player1Score, player2Score, score);
-                    show1UPBlink = baseBlinkCondition && !isShowingIntro && currentPlayer === 1 && playerLives > 0 && !isShipCaptured && !isWaitingForRespawn && !isShowingPlayerGameOverMessage;
-                    show2UPBlink = baseBlinkCondition && !isShowingIntro && currentPlayer === 2 && playerLives > 0 && !isShipCaptured && !isWaitingForRespawn && !isShowingPlayerGameOverMessage && (isPlayerTwoAI ? playerLives > 0 : true);
-                    highScoreConditionMet = baseBlinkCondition && !isShowingIntro && score > 0 && sessionHighScore > 0 && score >= sessionHighScore && !isShowingPlayerGameOverMessage;
+                    show1UPBlink = false;
+                    show2UPBlink = false;
+                    highScoreConditionMet = false;
                 } else {
                     score1PValue = score; sessionHighScore = Math.max(sessionHighScore, score);
-                    show1UPBlink = baseBlinkCondition && !isShowingIntro && playerLives > 0 && !isShipCaptured && !isWaitingForRespawn && !isShowingPlayerGameOverMessage;
-                    highScoreConditionMet = baseBlinkCondition && !isShowingIntro && score > 0 && sessionHighScore > 0 && score >= sessionHighScore && !isShowingPlayerGameOverMessage;
+                    show1UPBlink = false;
+                    highScoreConditionMet = false;
                 }
             }
         }
 
 
-        isHighScoreBlinkingNow = false;
-        if (highScoreConditionMet) {
-            if (!isManualControl || isCoopAIDemoActive || (isPlayerTwoAI && selectedGameMode === 'coop') ) {
-                 isHighScoreBlinkingNow = (player1Score >= sessionHighScore && player1Score > 0 && show1UPBlink && !isPlayer1ShowingGameOverMessage) ||
-                                       ((isCoopAIDemoActive || (isPlayerTwoAI && selectedGameMode === 'coop')) && player2Score >= sessionHighScore && player2Score > 0 && show2UPBlink && !isPlayer2ShowingGameOverMessage);
-                 if (!isCoopAIDemoActive && !isManualControl && !isPlayerTwoAI) isHighScoreBlinkingNow = show1UPBlink;
-            }
-            else if (isTwoPlayerMode && selectedGameMode === 'coop') {
-                 isHighScoreBlinkingNow = (player1Score >= sessionHighScore && player1Score > 0 && show1UPBlink && !isPlayer1ShowingGameOverMessage) || (player2Score >= sessionHighScore && player2Score > 0 && show2UPBlink && !isPlayer2ShowingGameOverMessage);
-            }
-            else if (isTwoPlayerMode && selectedGameMode === 'normal') {
-                isHighScoreBlinkingNow = (score >= sessionHighScore && score > 0 && ((currentPlayer === 1 && show1UPBlink) || (currentPlayer === 2 && show2UPBlink && (!isPlayerTwoAI || (isPlayerTwoAI && playerLives > 0)) )) && !isShowingPlayerGameOverMessage);
-            }
-            else { isHighScoreBlinkingNow = show1UPBlink; }
-        }
-
+        const isHighScoreBlinkingNow = false; // HIGH SCORE naam knippert niet meer
 
         if(typeof MARGIN_SIDE!=='undefined' && typeof MARGIN_TOP!=='undefined' && typeof SCORE_OFFSET_Y!=='undefined'){
-            drawTopUiElement(label1P, score1PValue, 'left', MARGIN_SIDE, show1UPBlink);
-            drawTopUiElement("HIGH SCORE", sessionHighScore, 'center', gameCanvas.width / 2, isHighScoreBlinkingNow);
-            drawTopUiElement(label2P, score2PValue, 'right', gameCanvas.width - MARGIN_SIDE, show2UPBlink);
+            drawTopUiElement(label1P, score1PValue, 'left', MARGIN_SIDE);
+            drawTopUiElement("HIGH SCORE", sessionHighScore, 'center', gameCanvas.width / 2);
+            drawHighScoreHolderName();
+            drawTopUiElement(label2P, score2PValue, 'right', gameCanvas.width - MARGIN_SIDE);
+            // Actieve upgrades onder de eigen score: P1 links, P2/AI rechts
+            drawActiveUpgradesUnderScore(1, label1P, 'left', MARGIN_SIDE);
+            drawActiveUpgradesUnderScore(2, label2P, 'right', gameCanvas.width - MARGIN_SIDE);
         }
 
         const inNormal2PResults = isShowingResultsScreen && isTwoPlayerMode && selectedGameMode === 'normal';
