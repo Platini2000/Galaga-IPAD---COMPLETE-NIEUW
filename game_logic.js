@@ -431,7 +431,9 @@ function generateAttackPathInternal(enemy) { // Hernoemd naar Internal
         const loopHeightBase = canvasH * 0.28;
         const controlTightnessX = 0.5;
         const controlTightnessY = 0.6;
-        const bottomAvoidAttackY = canvasH * 0.85;
+        // BOSSFIGHT: duikers trekken veel eerder op, zodat ze de schepen niet
+        // meer vol raken. Normale waves blijven op 0.85, bossfight op 0.60.
+        const bottomAvoidAttackY = canvasH * 0.85; // minions duiken weer helemaal naar beneden, scherm uit
         const attackPatternType = Math.floor(Math.random() * 3);
         let diveSegments = [];
 
@@ -1521,6 +1523,35 @@ function fireBossMinionShots(minion) {
 function startBossMinionDive(minion) {
     try {
         fireBossMinionShots(minion);
+        // MINION-UITWIJK, DEEL 1 (bij de start): kies NU al een vaste kant en
+        // verschuif het hele duikpad daarheen. Zo hoeft de minion tijdens de
+        // duik niet meer op het laatste moment weg te komen: hij vliegt vanaf
+        // het begin al ruim naast het schip waar hij anders op zou klappen.
+        // De richting wordt 1x vastgelegd (bossMinionDodgeDir) en verandert
+        // daarna niet meer, zodat hij niet heen-en-weer gaat slingeren.
+        try {
+            if (minion && gameCanvas) {
+                const _shipsD = [];
+                if (typeof ship1 !== 'undefined' && ship1) _shipsD.push(ship1);
+                if (typeof ship2 !== 'undefined' && ship2) _shipsD.push(ship2);
+                if (typeof ship !== 'undefined' && ship && !_shipsD.includes(ship)) _shipsD.push(ship);
+                let _nearest = null, _bestD = Infinity;
+                _shipsD.forEach(function(_s){ if (!_s) return; const _d = Math.abs((minion.x + minion.width / 2) - (_s.x + (_s.width || 0) / 2)); if (_d < _bestD) { _bestD = _d; _nearest = _s; } });
+                if (_nearest) {
+                    const _mcx = minion.x + minion.width / 2;
+                    const _scx = _nearest.x + (_nearest.width || 0) / 2;
+                    // Kant met de meeste ruimte: weg van het schip, richting
+                    // de verste schermrand. Bij exact midden: naar rechts.
+                    const _leftSpace = _scx, _rightSpace = gameCanvas.width - _scx;
+                    minion.bossMinionDodgeDir = (_mcx < _scx) ? -1 : 1;
+                    if (_mcx === _scx) minion.bossMinionDodgeDir = (_leftSpace > _rightSpace) ? -1 : 1;
+                    // Pad in 1x 110px opzij schuiven (aan de kant van de uitwijk).
+                    // Dat is al ruim meer dan een halve schipbreedte.
+                    minion.attackFormationOffsetX = minion.bossMinionDodgeDir * 110;
+                    minion.bossMinionDodgeDone = false;
+                }
+            }
+        } catch(e) {}
         let path = [];
         if (typeof generateAttackPathInternal === 'function') path = generateAttackPathInternal(minion) || [];
         if (path && path.length > 0) {
@@ -2740,7 +2771,7 @@ function handleEnemyHit(enemy, shootingPlayerId = null) {
         // --- SCORE-UP + LUCKY 7 (alleen bij een kill, dus destroyed) ---
         // SCORE-UP = VASTE punten per kill (geen verdubbeling meer):
         //   vijand die VLIEGT = 1000, vijand die STILSTAAT in het grid = 500
-        // LUCKY 7: elke 7e kill = +10000 erbij, daarna teller weer op 0.
+        // LUCKY 7: elke 7e kill = +5000 erbij, daarna teller weer op 0.
         // Vliegende score van deze 2 upgrades: GEEL + 1 seconde in beeld.
         let scoreUpBonusThisHit = false;
         let lucky7BonusThisHit = false;
@@ -2757,10 +2788,10 @@ function handleEnemyHit(enemy, shootingPlayerId = null) {
                     lucky7KillCounts[_sp] = (lucky7KillCounts[_sp] || 0) + 1;
                     if (lucky7KillCounts[_sp] >= 7) {
                         lucky7KillCounts[_sp] = 0;
-                        points += 10000;
+                        points += 5000;
                         lucky7BonusThisHit = true;
                         if (typeof createExplosion === 'function') createExplosion(enemy.x + enemyWidthForCalc / 2, enemy.y + enemyHeightForCalc / 2);
-                        console.log("[UPGRADE] LUCKY 7 - 7e kill speler " + _sp + " -> +10000 + explosie");
+                        console.log("[UPGRADE] LUCKY 7 - 7e kill speler " + _sp + " -> +5000 + explosie");
                     }
                 }
             }
@@ -2910,9 +2941,14 @@ function handleEnemyHit(enemy, shootingPlayerId = null) {
 
             const isUpgradeScore = scoreUpBonusThisHit || lucky7BonusThisHit;
             const scoreColor = isUpgradeScore ? "#FFD700" : ((enemy.state === 'in_grid' || isChallengingStage) ? FLOATING_SCORE_COLOR_GRID : FLOATING_SCORE_COLOR_ACTIVE);
-            floatingScores.push({ text: points.toString(), x: enemy.x + enemyWidthForCalc / 2, y: enemy.y, color: scoreColor, creationTime: now, displayStartTime: now + FLOATING_SCORE_APPEAR_DELAY, durationMs: isUpgradeScore ? 1000 : undefined });
+            // LUCKY 7: geen totaal meer tonen. Alleen "LUCKY 7" met "5000" eronder.
+            // (De 5000 + de normale kill-punten worden wel gewoon bij de score opgeteld.)
+            if (!lucky7BonusThisHit) {
+                floatingScores.push({ text: points.toString(), x: enemy.x + enemyWidthForCalc / 2, y: enemy.y, color: scoreColor, creationTime: now, displayStartTime: now + FLOATING_SCORE_APPEAR_DELAY, durationMs: isUpgradeScore ? 1000 : undefined });
+            }
             if (lucky7BonusThisHit) {
-                floatingScores.push({ text: "LUCKY 7 +10000", x: enemy.x + enemyWidthForCalc / 2, y: enemy.y - 20, color: "#FFD700", creationTime: now, displayStartTime: now + FLOATING_SCORE_APPEAR_DELAY, durationMs: 1000 });
+                floatingScores.push({ text: "LUCKY 7", x: enemy.x + enemyWidthForCalc / 2, y: enemy.y - 20, color: "#FFD700", creationTime: now, displayStartTime: now + FLOATING_SCORE_APPEAR_DELAY, durationMs: 1000 });
+                floatingScores.push({ text: "5000", x: enemy.x + enemyWidthForCalc / 2, y: enemy.y + 4, color: "#FFD700", creationTime: now, displayStartTime: now + FLOATING_SCORE_APPEAR_DELAY, durationMs: 1000 });
             }
         }
 
@@ -5932,7 +5968,51 @@ function moveEntities(overrideP1Left = null, overrideP1Right = null) {
                     break;
                  }
                  case 'showing_capture_message': { enemy.velocityX = 0; enemy.velocityY = 0; if (enemy.hasCapturedShip && enemy.capturedShipDimensions && typeof enemy.initialCaptureAnimationY === 'number') { const elapsedMessageTime = now - captureMessageStartTime; const animationProgress = Math.min(1.0, elapsedMessageTime / CAPTURE_MESSAGE_DURATION); const finalCapturedShipY = enemy.y + CAPTURED_SHIP_OFFSET_Y; const startY = enemy.initialCaptureAnimationY; enemy.capturedShipY = startY + (finalCapturedShipY - startY) * animationProgress; enemy.capturedShipX = enemy.x + CAPTURED_SHIP_OFFSET_X; } else { enemy.capturedShipX = enemy.x + CAPTURED_SHIP_OFFSET_X; enemy.capturedShipY = enemy.y + CAPTURED_SHIP_OFFSET_Y; } break; }
-                 case 'attacking': { if (isEntrancePhaseActive) break; const attackSegments = enemy.attackPathSegments; const attackPathSpeedFactor = 3.8; if (!attackSegments || attackSegments.length === 0) { console.error(`Enemy ${enemyId} attacking without path! Returning.`); enemy.state = 'returning'; try { const { x: tgtX, y: tgtY } = getCurrentGridSlotPosition(enemy.gridRow, enemy.gridCol, currentEnemyWidthCorrected); enemy.targetGridX = tgtX; enemy.targetGridY = tgtY; } catch (err) { console.error(`Error getting grid pos for returning enemy ${enemyId} (no attack path):`, err); enemy.targetGridX = gameCanvas.width / 2; enemy.targetGridY = ENEMY_TOP_MARGIN; } if (isCoopAIDemoActive) coopAICaptureDiveAnticipationActive = false; break; } if (enemy.attackPathSegmentIndex >= attackSegments.length) { console.warn(`Enemy ${enemyId} attacking, index ${enemy.attackPathSegmentIndex} out of bounds (${attackSegments.length})! Returning.`); enemy.state = 'returning'; try { const { x: tgtX, y: tgtY } = getCurrentGridSlotPosition(enemy.gridRow, enemy.gridCol, currentEnemyWidthCorrected); enemy.targetGridX = tgtX; enemy.targetGridY = tgtY; } catch (err) { console.error(`Error getting grid pos for returning enemy ${enemyId} (invalid attack index):`, err); enemy.targetGridX = gameCanvas.width / 2; enemy.targetGridY = ENEMY_TOP_MARGIN; } if (isCoopAIDemoActive) coopAICaptureDiveAnticipationActive = false; break; } const attackSegment = attackSegments[enemy.attackPathSegmentIndex]; if (!attackSegment || !attackSegment.p0 || !attackSegment.p1 || !attackSegment.p2 || !attackSegment.p3) { console.error(`Enemy ${enemyId} attacking, invalid segment ${enemy.attackPathSegmentIndex}! Returning.`); enemy.state = 'returning'; try { const { x: tgtX, y: tgtY } = getCurrentGridSlotPosition(enemy.gridRow, enemy.gridCol, currentEnemyWidthCorrected); enemy.targetGridX = tgtX; enemy.targetGridY = tgtY; } catch (err) { console.error(`Error getting grid pos for returning enemy ${enemyId} (invalid attack segment):`, err); enemy.targetGridX = gameCanvas.width / 2; enemy.targetGridY = ENEMY_TOP_MARGIN; } if (isCoopAIDemoActive) coopAICaptureDiveAnticipationActive = false; break; } const tIncrement = (enemy.speed / 1000) * attackPathSpeedFactor; enemy.attackPathT += tIncrement; let pathX, pathY; const oldFinalX = enemy.x; const oldFinalY = enemy.y; if (enemy.attackPathT >= 1.0) { try { pathX = calculateBezierPoint(1.0, attackSegment.p0.x, attackSegment.p1.x, attackSegment.p2.x, attackSegment.p3.x); pathY = calculateBezierPoint(1.0, attackSegment.p0.y, attackSegment.p1.y, attackSegment.p2.y, attackSegment.p3.y); } catch(bezierError) { console.error(`Error calculating FINAL bezier point for attack ${enemy.id}:`, bezierError); pathX = enemy.x; pathY = enemy.y; enemy.state = 'returning'; try { const { x: tgtX, y: tgtY } = getCurrentGridSlotPosition(enemy.gridRow, enemy.gridCol, currentEnemyWidthCorrected); enemy.targetGridX = tgtX; enemy.targetGridY = tgtY; } catch(err){ console.error(`Error getting grid pos after FINAL bezier error for ${enemy.id}:`, err); enemy.targetGridX = gameCanvas.width/2; enemy.targetGridY = ENEMY_TOP_MARGIN; } if (isCoopAIDemoActive) coopAICaptureDiveAnticipationActive = false; break; } enemy.attackPathT = 0; enemy.attackPathSegmentIndex++; if (enemy.attackPathSegmentIndex >= attackSegments.length) { enemy.state = 'returning'; enemy.lastFiredTime = 0; enemy.attackFormationOffsetX = 0; enemy.attackGroupId = null; try { const { x: tgtX, y: tgtY } = getCurrentGridSlotPosition(enemy.gridRow, enemy.gridCol, currentEnemyWidthCorrected); enemy.targetGridX = tgtX; enemy.targetGridY = tgtY; } catch(err){ console.error(`Error getting grid pos for returning enemy ${enemyId} after attack:`, err); enemy.targetGridX = gameCanvas.width / 2; enemy.targetGridY = ENEMY_TOP_MARGIN; } if (isCoopAIDemoActive) coopAICaptureDiveAnticipationActive = false; } else { const nextAttackSegment = attackSegments[enemy.attackPathSegmentIndex]; if (!nextAttackSegment?.p0) { console.error(`Enemy ${enemyId} attacking, invalid NEXT segment ${enemy.attackPathSegmentIndex}! Returning.`); pathX = enemy.x; pathY = enemy.y; enemy.state = 'returning'; try { const { x: tgtX, y: tgtY } = getCurrentGridSlotPosition(enemy.gridRow, enemy.gridCol, currentEnemyWidthCorrected); enemy.targetGridX = tgtX; enemy.targetGridY = tgtY; } catch(err){ console.error(`Error getting grid pos after invalid NEXT attack segment for ${enemy.id}:`, err); enemy.targetGridX = gameCanvas.width/2; enemy.targetGridY = ENEMY_TOP_MARGIN; } if (isCoopAIDemoActive) coopAICaptureDiveAnticipationActive = false; break; } } } else { try { pathX = calculateBezierPoint(enemy.attackPathT, attackSegment.p0.x, attackSegment.p1.x, attackSegment.p2.x, attackSegment.p3.x); pathY = calculateBezierPoint(enemy.attackPathT, attackSegment.p0.y, attackSegment.p1.y, attackSegment.p2.y, attackSegment.p3.y); } catch (bezierError) { console.error(`Error calculating bezier point during attack for ${enemy.id}:`, bezierError); pathX = enemy.x; pathY = enemy.y; enemy.state = 'returning'; try { const { x: tgtX, y: tgtY } = getCurrentGridSlotPosition(enemy.gridRow, enemy.gridCol, currentEnemyWidthCorrected); enemy.targetGridX = tgtX; enemy.targetGridY = tgtY; } catch(err){ console.error(`Error getting grid pos after bezier error for ${enemy.id}:`, err); enemy.targetGridX = gameCanvas.width/2; enemy.targetGridY = ENEMY_TOP_MARGIN; } if (isCoopAIDemoActive) coopAICaptureDiveAnticipationActive = false; break; } } if (enemy && enemy.state === 'attacking') { const formationOffset = enemy.attackFormationOffsetX || 0; const finalX = pathX + formationOffset; const finalY = pathY; enemy.velocityX = finalX - oldFinalX; enemy.velocityY = finalY - oldFinalY; enemy.x = finalX; enemy.y = finalY; if (enemy.y > gameCanvas.height + currentEnemyHeightCorrected * 1.5) { enemy.state = 'returning'; enemy.attackPathSegmentIndex = 0; enemy.attackPathT = 0; enemy.lastFiredTime = 0; enemy.attackFormationOffsetX = 0; enemy.attackGroupId = null; enemy.y = -currentEnemyHeightCorrected * (1.1 + Math.random() * 0.4); enemy.x = Math.random() * (gameCanvas.width - currentEnemyWidthCorrected); enemy.velocityX = 0; enemy.velocityY = 0; try { const { x: tgtX, y: tgtY } = getCurrentGridSlotPosition(enemy.gridRow, enemy.gridCol, currentEnemyWidthCorrected); enemy.targetGridX = tgtX; enemy.targetGridY = tgtY; } catch (err) { console.error(`Error getting grid pos for returning enemy ${enemyId} off screen:`, err); enemy.targetGridX = gameCanvas.width/2; enemy.targetGridY = ENEMY_TOP_MARGIN; } if (isCoopAIDemoActive) coopAICaptureDiveAnticipationActive = false; } } break; }
+                 case 'attacking': { if (isEntrancePhaseActive) break; const attackSegments = enemy.attackPathSegments; const attackPathSpeedFactor = 3.8; if (!attackSegments || attackSegments.length === 0) { console.error(`Enemy ${enemyId} attacking without path! Returning.`); enemy.state = 'returning'; try { const { x: tgtX, y: tgtY } = getCurrentGridSlotPosition(enemy.gridRow, enemy.gridCol, currentEnemyWidthCorrected); enemy.targetGridX = tgtX; enemy.targetGridY = tgtY; } catch (err) { console.error(`Error getting grid pos for returning enemy ${enemyId} (no attack path):`, err); enemy.targetGridX = gameCanvas.width / 2; enemy.targetGridY = ENEMY_TOP_MARGIN; } if (isCoopAIDemoActive) coopAICaptureDiveAnticipationActive = false; break; } if (enemy.attackPathSegmentIndex >= attackSegments.length) { console.warn(`Enemy ${enemyId} attacking, index ${enemy.attackPathSegmentIndex} out of bounds (${attackSegments.length})! Returning.`); enemy.state = 'returning'; try { const { x: tgtX, y: tgtY } = getCurrentGridSlotPosition(enemy.gridRow, enemy.gridCol, currentEnemyWidthCorrected); enemy.targetGridX = tgtX; enemy.targetGridY = tgtY; } catch (err) { console.error(`Error getting grid pos for returning enemy ${enemyId} (invalid attack index):`, err); enemy.targetGridX = gameCanvas.width / 2; enemy.targetGridY = ENEMY_TOP_MARGIN; } if (isCoopAIDemoActive) coopAICaptureDiveAnticipationActive = false; break; } const attackSegment = attackSegments[enemy.attackPathSegmentIndex]; if (!attackSegment || !attackSegment.p0 || !attackSegment.p1 || !attackSegment.p2 || !attackSegment.p3) { console.error(`Enemy ${enemyId} attacking, invalid segment ${enemy.attackPathSegmentIndex}! Returning.`); enemy.state = 'returning'; try { const { x: tgtX, y: tgtY } = getCurrentGridSlotPosition(enemy.gridRow, enemy.gridCol, currentEnemyWidthCorrected); enemy.targetGridX = tgtX; enemy.targetGridY = tgtY; } catch (err) { console.error(`Error getting grid pos for returning enemy ${enemyId} (invalid attack segment):`, err); enemy.targetGridX = gameCanvas.width / 2; enemy.targetGridY = ENEMY_TOP_MARGIN; } if (isCoopAIDemoActive) coopAICaptureDiveAnticipationActive = false; break; } const tIncrement = (enemy.speed / 1000) * attackPathSpeedFactor; enemy.attackPathT += tIncrement; let pathX, pathY; const oldFinalX = enemy.x; const oldFinalY = enemy.y; if (enemy.attackPathT >= 1.0) { try { pathX = calculateBezierPoint(1.0, attackSegment.p0.x, attackSegment.p1.x, attackSegment.p2.x, attackSegment.p3.x); pathY = calculateBezierPoint(1.0, attackSegment.p0.y, attackSegment.p1.y, attackSegment.p2.y, attackSegment.p3.y); } catch(bezierError) { console.error(`Error calculating FINAL bezier point for attack ${enemy.id}:`, bezierError); pathX = enemy.x; pathY = enemy.y; enemy.state = 'returning'; try { const { x: tgtX, y: tgtY } = getCurrentGridSlotPosition(enemy.gridRow, enemy.gridCol, currentEnemyWidthCorrected); enemy.targetGridX = tgtX; enemy.targetGridY = tgtY; } catch(err){ console.error(`Error getting grid pos after FINAL bezier error for ${enemy.id}:`, err); enemy.targetGridX = gameCanvas.width/2; enemy.targetGridY = ENEMY_TOP_MARGIN; } if (isCoopAIDemoActive) coopAICaptureDiveAnticipationActive = false; break; } enemy.attackPathT = 0; enemy.attackPathSegmentIndex++; if (enemy.attackPathSegmentIndex >= attackSegments.length) { enemy.state = 'returning'; enemy.lastFiredTime = 0; enemy.attackFormationOffsetX = 0; enemy.attackGroupId = null; try { const { x: tgtX, y: tgtY } = getCurrentGridSlotPosition(enemy.gridRow, enemy.gridCol, currentEnemyWidthCorrected); enemy.targetGridX = tgtX; enemy.targetGridY = tgtY; } catch(err){ console.error(`Error getting grid pos for returning enemy ${enemyId} after attack:`, err); enemy.targetGridX = gameCanvas.width / 2; enemy.targetGridY = ENEMY_TOP_MARGIN; } if (isCoopAIDemoActive) coopAICaptureDiveAnticipationActive = false; } else { const nextAttackSegment = attackSegments[enemy.attackPathSegmentIndex]; if (!nextAttackSegment?.p0) { console.error(`Enemy ${enemyId} attacking, invalid NEXT segment ${enemy.attackPathSegmentIndex}! Returning.`); pathX = enemy.x; pathY = enemy.y; enemy.state = 'returning'; try { const { x: tgtX, y: tgtY } = getCurrentGridSlotPosition(enemy.gridRow, enemy.gridCol, currentEnemyWidthCorrected); enemy.targetGridX = tgtX; enemy.targetGridY = tgtY; } catch(err){ console.error(`Error getting grid pos after invalid NEXT attack segment for ${enemy.id}:`, err); enemy.targetGridX = gameCanvas.width/2; enemy.targetGridY = ENEMY_TOP_MARGIN; } if (isCoopAIDemoActive) coopAICaptureDiveAnticipationActive = false; break; } } } else { try { pathX = calculateBezierPoint(enemy.attackPathT, attackSegment.p0.x, attackSegment.p1.x, attackSegment.p2.x, attackSegment.p3.x); pathY = calculateBezierPoint(enemy.attackPathT, attackSegment.p0.y, attackSegment.p1.y, attackSegment.p2.y, attackSegment.p3.y); } catch (bezierError) { console.error(`Error calculating bezier point during attack for ${enemy.id}:`, bezierError); pathX = enemy.x; pathY = enemy.y; enemy.state = 'returning'; try { const { x: tgtX, y: tgtY } = getCurrentGridSlotPosition(enemy.gridRow, enemy.gridCol, currentEnemyWidthCorrected); enemy.targetGridX = tgtX; enemy.targetGridY = tgtY; } catch(err){ console.error(`Error getting grid pos after bezier error for ${enemy.id}:`, err); enemy.targetGridX = gameCanvas.width/2; enemy.targetGridY = ENEMY_TOP_MARGIN; } if (isCoopAIDemoActive) coopAICaptureDiveAnticipationActive = false; break; } } if (enemy && enemy.state === 'attacking') { const formationOffset = enemy.attackFormationOffsetX || 0; let finalX = pathX + formationOffset; let finalY = pathY;
+                // ALLEEN BOSS-MINIONS, GEEN PLAFOND: Y wordt NIET afgekapt,
+                // de minion duikt helemaal naar beneden, scherm uit.
+                // Uitwijk gebeurt WEL, maar vroeg en hard: vanaf 380px boven
+                // een schip al, met een vaste richting (gekozen bij de start),
+                // en met een ruime veiligheidsmarge van 75px naast het schip.
+                // Zo gaat hij ECHT ruim naast de schepen langs, in plaats van
+                // er op het laatste moment nog net tegenaan te schampen.
+                // Grid-vijanden worden hier NIET geraakt.
+                if (enemy && enemy.isBossMinion && gameCanvas) {
+                    const _ships = [];
+                    try {
+                        if (typeof ship1 !== 'undefined' && ship1) _ships.push(ship1);
+                        if (typeof ship2 !== 'undefined' && ship2) _ships.push(ship2);
+                        if (typeof ship !== 'undefined' && ship && !_ships.includes(ship)) _ships.push(ship);
+                    } catch(e) {}
+                    for (let _si = 0; _si < _ships.length; _si++) {
+                        const _s = _ships[_si];
+                        if (!_s || typeof _s.x !== 'number' || typeof _s.y !== 'number') continue;
+                        // Zone: van 380px boven het schip tot eronder (het passeren).
+                        if (finalY + currentEnemyHeightCorrected < _s.y - 380 || finalY > _s.y + (_s.height || 0) + 40) continue;
+                        const _minCX = finalX + currentEnemyWidthCorrected / 2;
+                        const _shipCX = _s.x + (_s.width || 0) / 2;
+                        // Ruime marge: halve schipbreedte + halve minionbreedte + 75px.
+                        // 75px is bewust fors: liever duidelijk ernaast dan net niet.
+                        const _safeGap = ((_s.width || 0) + currentEnemyWidthCorrected) / 2 + 75;
+                        const _dx = _minCX - _shipCX;
+                        if (Math.abs(_dx) < _safeGap) {
+                            // Vaste richting: die van bij de duik-start. Nog geen
+                            // richting? Kies hem nu en houd hem vast tot de duik klaar is.
+                            if (!enemy.bossMinionDodgeDir) {
+                                enemy.bossMinionDodgeDir = (_dx <= 0) ? -1 : 1;
+                            }
+                            const _dir = enemy.bossMinionDodgeDir;
+                            // Hoe dichterbij, hoe harder: 8px + tot 10px extra.
+                            // Dat is ~3x zo hard als de oude 3,5px en begint 380px
+                            // van tevoren, dus hij is er op tijd naast.
+                            const _closeness = 1 - (Math.abs(_dx) / _safeGap);
+                            finalX += _dir * (8 + _closeness * 10);
+                            finalX = Math.max(0, Math.min(gameCanvas.width - currentEnemyWidthCorrected, finalX));
+                            break;
+                        }
+                    }
+                }
+                 enemy.velocityX = finalX - oldFinalX; enemy.velocityY = finalY - oldFinalY; enemy.x = finalX; enemy.y = finalY; if (enemy.y > gameCanvas.height + currentEnemyHeightCorrected * 1.5) { enemy.state = 'returning'; enemy.attackPathSegmentIndex = 0; enemy.attackPathT = 0; enemy.lastFiredTime = 0; enemy.attackFormationOffsetX = 0; enemy.attackGroupId = null; enemy.y = -currentEnemyHeightCorrected * (1.1 + Math.random() * 0.4); enemy.x = Math.random() * (gameCanvas.width - currentEnemyWidthCorrected); enemy.velocityX = 0; enemy.velocityY = 0; try { const { x: tgtX, y: tgtY } = getCurrentGridSlotPosition(enemy.gridRow, enemy.gridCol, currentEnemyWidthCorrected); enemy.targetGridX = tgtX; enemy.targetGridY = tgtY; } catch (err) { console.error(`Error getting grid pos for returning enemy ${enemyId} off screen:`, err); enemy.targetGridX = gameCanvas.width/2; enemy.targetGridY = ENEMY_TOP_MARGIN; } if (isCoopAIDemoActive) coopAICaptureDiveAnticipationActive = false; } } break; }
                  case 'returning': { if (isEntrancePhaseActive) break; if (enemy.targetGridX == null || enemy.targetGridY == null) { console.warn(`Enemy ${enemyId} returning without target coords. Recalculating.`); try { const { x: finalTargetX, y: finalTargetY } = getCurrentGridSlotPosition(enemy.gridRow, enemy.gridCol, currentEnemyWidthCorrected); enemy.targetGridX = finalTargetX; enemy.targetGridY = finalTargetY; } catch(err){ console.error(`Error getting grid pos for ${enemyId} in returning`, err); enemy.state = 'in_grid'; enemy.x = gameCanvas.width/2; enemy.y = ENEMY_TOP_MARGIN; break; } } const targetReturnX = enemy.targetGridX; const targetReturnY = enemy.targetGridY; const dxReturn = targetReturnX - enemy.x; const dyReturn = targetReturnY - enemy.y; const distReturn = Math.sqrt(dxReturn * dxReturn + dyReturn * dyReturn); const scaledReturnSpeedFactor = scaleValue(level, BASE_RETURN_SPEED_FACTOR, MAX_RETURN_SPEED_FACTOR); const returnSpeed = BASE_RETURN_SPEED * scaledReturnSpeedFactor; const returnArrivalThreshold = returnSpeed * 0.5; if (distReturn > returnArrivalThreshold) { enemy.velocityX = (dxReturn / distReturn) * returnSpeed; enemy.velocityY = (dyReturn / distReturn) * returnSpeed; enemy.x += enemy.velocityX; enemy.y += enemy.velocityY; } else { enemy.x = targetReturnX; enemy.y = targetReturnY; enemy.velocityX = 0; enemy.velocityY = 0; enemy.state = 'in_grid'; enemy.justReturned = true; enemy.attackFormationOffsetX = 0; enemy.attackGroupId = null; if (enemy.hasOwnProperty('returnLogDone')) { delete enemy.returnLogDone; } if (!isGridSoundPlaying && !isChallengingStage) { isGridSoundPlaying = true; playSound('gridBackgroundSound', true, 0.1); } if (isCoopAIDemoActive) coopAICaptureDiveAnticipationActive = false; } break; }
              }
 
@@ -5952,7 +6032,15 @@ function moveEntities(overrideP1Left = null, overrideP1Right = null) {
 
                     for (const shipData of shipsToCollideWith) {
                         const currentShip = shipData.shipObj;
-                        const enemyRectCollision = { x: enemy.x, y: enemy.y, width: currentEnemyWidthCorrected, height: currentEnemyHeightCorrected };
+                        // ALLEEN BOSS-MINIONS: kleinere hitbox voor een duikende minion, zodat een
+                        // graze / net-niet-raak ook echt geen leven kost. Alleen de
+                        // kern van de minion raakt het schip nog. Grid-vijanden: volledige hitbox.
+                        let _hitW = currentEnemyWidthCorrected, _hitH = currentEnemyHeightCorrected, _hitX = enemy.x, _hitY = enemy.y;
+                        if (enemy && enemy.isBossMinion && enemy.state === 'attacking') {
+                            _hitW = currentEnemyWidthCorrected * 0.55; _hitH = currentEnemyHeightCorrected * 0.55;
+                            _hitX = enemy.x + (currentEnemyWidthCorrected - _hitW) / 2; _hitY = enemy.y + (currentEnemyHeightCorrected - _hitH) / 2;
+                        }
+                        const enemyRectCollision = { x: _hitX, y: _hitY, width: _hitW, height: _hitH };
                         const mainShipRect = { x: currentShip.x, y: currentShip.y, width: currentShip.width, height: currentShip.height };
                         const dualShipPartRect = shipData.dual ? { x: currentShip.x + DUAL_SHIP_OFFSET_X, y: currentShip.y, width: currentShip.width, height: currentShip.height } : null;
                         let collided = false; let hitDual = false;

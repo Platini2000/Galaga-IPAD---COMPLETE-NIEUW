@@ -349,8 +349,6 @@ function stopAutoDemoTimer() {
 
 
 
-
-
 // --- START OF FILE rendering_menu.js ---
 // --- DEEL 2 van 4 dit code blok    ---
 
@@ -930,8 +928,6 @@ function createExplosion(x, y, w, h) {
 
 // --- EINDE deel 2      van 4 dit codeblok ---
 // --- END OF rendering_menu.js ---
-
-
 
 
 
@@ -1640,10 +1636,6 @@ function renderGame() {
 
 
 
-
-
-
-
 // --- START OF FILE rendering_menu.js ---
 // --- DEEL 4 van 4 dit code blok    ---
 
@@ -2063,7 +2055,7 @@ function renderGame() {
                                  gameCtx.fillRect(drawX, drawY, drawW, drawH);
                              }
                              // Small green health bar directly above boss when on 30% position
-                             if (bossStagePhase === 'entering' || bossStagePhase === 'bouncing' || bossStagePhase === 'spawning' || bossStagePhase === 'returning' || bossStagePhase === 'fighting') {
+                             if (bossStagePhase !== 'defeated' && bossStagePhase !== 'none') {
                                  const barW = drawW * 0.8;
                                  const barH = 8;
                                  const barX = drawX + (drawW - barW)/2;
