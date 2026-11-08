@@ -221,6 +221,171 @@ window.beamerClearDesignation = beamerClearDesignation;
 window.beamerSetDesignation = beamerSetDesignation;
 window.beamerPickFairPlayerNum = beamerPickFairPlayerNum;
 window.beamerIsAIPlayer = beamerIsAIPlayer;
+// --- BOSS-ZONDER-CAPTURE: AI MAG ER NIET OP / IN DIE RICHTING OP VUREN ---
+// Bescherming zit ALLEEN in: nooit als doelwit kiezen + nooit vuren als de
+// boss in de vuurlijn staat. GEEN kogels die door de boss heen vliegen:
+// een kogel die hem toch raakt, raakt hem GEWOON (1x geraakt = blauw,
+// met 4 bossen is 1 weggevallen boss geen ramp - geen cheaten).
+// Boss = ENEMY3, nog geen schip gevangen, nog een capture te doen.
+// - Full grid (zoals level 1): bosses capturen NOOIT -> GEEN bescherming,
+//   de AI mag altijd vuren (capture-duik wordt daar nooit getriggerd).
+// - Invliegend: wel beschermen, zodat er bij het einde van de entree nog
+//   minstens 1 boss over is om als capture-boss te kiezen.
+// - In de grid na de entree: alleen de AANGEWEZEN capture-boss is
+//   beschermd; alle andere grid-bosses capturen nooit en zijn vogelvrij.
+// - Op weg naar capture: altijd beschermen (hij IS de capture-boss).
+// Na de capture van dit level: vogelvrij. Mens raakt hem gewoon.
+// Niet in boss-stages, niet in Challenging Stages.
+function isProtectedBossForAI(enemy) {
+    try {
+        if (!enemy || enemy.type !== ENEMY3_TYPE || enemy.hasCapturedShip) return false;
+        if (typeof isBossStage !== 'undefined' && isBossStage) return false;
+        if (typeof isChallengingStage !== 'undefined' && isChallengingStage) return false;
+        if (typeof isFullGridWave !== 'undefined' && isFullGridWave) return false;
+        if (typeof captureAttemptMadeThisLevel !== 'undefined' && captureAttemptMadeThisLevel) {
+            try {
+                if (typeof beamerUpgradeAttemptsThisLevel !== 'undefined' && typeof maxBeamerAttemptsPerLevel !== 'undefined' && beamerUpgradeAttemptsThisLevel < maxBeamerAttemptsPerLevel) { }
+                else return false;
+            } catch(e) { return false; }
+        }
+        if (enemy.state === 'preparing_capture' || enemy.state === 'diving_to_capture_position' || enemy.state === 'capturing') return true;
+        if (enemy.state === 'in_grid') {
+            if (typeof isEntrancePhaseActive !== 'undefined' && isEntrancePhaseActive) return true;
+            return !!(enemy.isPreparingForImmediateCapture || (enemy.captureDiveInitiationTime && enemy.captureDiveInitiationTime > 0) || (typeof enemy.beamerTargetPlayerNum === 'number'));
+        }
+        return !!(enemy.isEntering || enemy.state === 'following_entrance_path' || enemy.state === 'moving_to_grid');
+    } catch(e) { return false; }
+}
+function isEnteringBossForAINoHit(enemy) {
+    try {
+        if (!enemy || !isProtectedBossForAI(enemy)) return false;
+        return !!(enemy.isEntering || enemy.state === 'following_entrance_path' || enemy.state === 'moving_to_grid');
+    } catch(e) { return false; }
+}
+// Is deze schutter een AI? In de COOP AI-DEMO schieten beide AI-schepen met
+// playerId 'player1' / 'player2' (niet 'ai') - mode-bewust.
+function isAIShooterId(playerId) {
+    try {
+        if (playerId === 'ai' || playerId === 'ai_p2') return true;
+        if (typeof isCoopAIDemoActive !== 'undefined' && isCoopAIDemoActive) return true;
+        if (typeof isManualControl !== 'undefined' && !isManualControl && !isTwoPlayerMode) return true;
+        if (typeof isPlayerTwoAI !== 'undefined' && isPlayerTwoAI && typeof selectedOnePlayerGameVariant !== 'undefined' && selectedOnePlayerGameVariant === '1P_VS_AI_NORMAL' && typeof currentPlayer !== 'undefined' && currentPlayer === 2) return true;
+    } catch(e) {}
+    return false;
+}
+// BREDE SPREIDING (SPREAD / TRIPLE): zijkogels vliegen tot ~24px naast het
+// midden + drift/bounce verder uit. De oude smalle corridor (30px) liet die
+// zijkogels dus alsnog DOOR / LANGS een invliegende boss heen, en de
+// "vijand-onder-boss" uitzondering hieronder ging uit van 1 rechte kogel.
+// Zodra EEN AI-speler SPREAD of TRIPLE heeft, geldt voor ALLE AI-schoten de
+// brede corridor en vervalt die uitzondering: nooit richting een invliegende
+// boss schieten, zodat die - als alles in de grid staat - in de grid gewoon
+// zijn capture kan doen. Pas na de capture (captureAttemptMadeThisLevel)
+// is de boss weer vogelvrij (zie isProtectedBossForAI). Level 1 / full-grid
+// stages blijven altijd vogelvrij: isProtectedBossForAI geeft daar false.
+function aiHasWideSpreadUpgrade() {
+    try {
+        if (typeof isUpgradeActiveForPlayer === 'function') {
+            if (isUpgradeActiveForPlayer('SPREAD', 1) || isUpgradeActiveForPlayer('TRIPLE', 1)) return true;
+            if (isUpgradeActiveForPlayer('SPREAD', 2) || isUpgradeActiveForPlayer('TRIPLE', 2)) return true;
+        }
+        // Fallback op de losse globals (zelfde patroon als firePlayerBullet)
+        if (typeof spreadActive !== 'undefined' && spreadActive && Date.now() < spreadActiveUntil) return true;
+        if (typeof tripleActive !== 'undefined' && tripleActive && Date.now() < tripleActiveUntil) return true;
+        // DUALSHIP: net zo breed als SPREAD/TRIPLE - het dual-schip vuurt
+        // met 2 lopen naast elkaar, dus ook die kogels vallen buiten de
+        // smalle 30px-corridor en raken een invliegende boss. Zelfde regel:
+        // nooit richting een invliegende boss schieten, tot de capture gedaan
+        // is (daarna vogelvrij, level 1 / full-grid altijd vogelvrij).
+        if (typeof player1IsDualShipActive !== 'undefined' && player1IsDualShipActive) return true;
+        if (typeof player2IsDualShipActive !== 'undefined' && player2IsDualShipActive) return true;
+        if (typeof isDualShipActive !== 'undefined' && isDualShipActive && typeof isTwoPlayerMode !== 'undefined' && !isTwoPlayerMode) return true;
+    } catch(e) {}
+    return false;
+}
+window.aiHasWideSpreadUpgrade = aiHasWideSpreadUpgrade;
+// LEVEL 2-GAT: een boss in een lus (boss_loop_left/right) beweegt tijdens
+// het invliegen over de HELE breedte. Een kogel die op het vuurmoment nog
+// NET naast de boss zat, wordt dus alsnog door de boss opgevangen als die
+// er 200ms later doorheen vliegt. Een corridor-check op het vuurmoment kan
+// dat nooit uitsluiten. Daarom: zolang ERGENS een boss aan het invliegen is,
+// houdt de AI ALLE vuur in (niet alleen richting die boss), tot elke vijand
+// in de grid staat. Dan pas mag de grid-boss zijn capture doen.
+// Uitzonderingen lopen via isProtectedBossForAI: full-grid (level 1) en
+// boss-/challenging-stages zijn altijd vogelvrij, en na de capture-poging
+// (captureAttemptMadeThisLevel) is de boss ook weer vogelvrij.
+function aiAnyEnteringBoss() {
+    try {
+        if (typeof enemies === 'undefined' || !enemies) return false;
+        for (var i = 0; i < enemies.length; i++) {
+            var e = enemies[i];
+            if (e && typeof isEnteringBossForAINoHit === 'function' && isEnteringBossForAINoHit(e)) return true;
+        }
+    } catch(e) {}
+    return false;
+}
+window.aiAnyEnteringBoss = aiAnyEnteringBoss;
+// Staat een beschermde boss IN DE VUURLIJN (doelwit bekend)?
+function aiProtectedBossBlocksShot(shipCenterX, shipTopY, targetEnemy) {
+    try {
+        if (typeof enemies === 'undefined' || !enemies) return false;
+        var top = (typeof shipTopY === 'number' && isFinite(shipTopY)) ? shipTopY : 1e9;
+        var _wide = aiHasWideSpreadUpgrade();
+        // Smal = 30px (1 rechte kogel). Breed = 110px: dekt SPREAD/TRIPLE
+        // 5-kogel patroon ([-24..24]) + drift + bounce-uitwaaiering af.
+        var _margin = _wide ? 110 : 30;
+        for (var i = 0; i < enemies.length; i++) {
+            var boss = enemies[i];
+            if (!boss || boss === targetEnemy) continue;
+            if (!isProtectedBossForAI(boss)) continue;
+            var bossCX = boss.x + (boss.width || BOSS_WIDTH) / 2;
+            if (Math.abs(bossCX - shipCenterX) > (boss.width || BOSS_WIDTH) / 2 + _margin) continue;
+            if (!(boss.y < top)) continue;
+            if (!targetEnemy) return true;
+            if ((boss.y + (boss.height || BOSS_HEIGHT)) > targetEnemy.y) return true;
+        }
+    } catch(e) {}
+    return false;
+}
+// Ongerichte variant voor firePlayerBullet: blokkeer alleen als er geen
+// gewone vijand ONDER de boss staat die de kogel eerst zou raken.
+// In een volle grid is zo'n vijand er bijna altijd -> AI blijft gewoon vuren.
+function aiProtectedBossBlocksUntargetedShot(shipCenterX, shipTopY) {
+    try {
+        if (typeof enemies === 'undefined' || !enemies) return false;
+        var top = (typeof shipTopY === 'number' && isFinite(shipTopY)) ? shipTopY : 1e9;
+        var _wideU = aiHasWideSpreadUpgrade();
+        var _marginU = _wideU ? 110 : 30;
+        for (var i = 0; i < enemies.length; i++) {
+            var boss = enemies[i];
+            if (!boss || !isProtectedBossForAI(boss)) continue;
+            var bossCX = boss.x + (boss.width || BOSS_WIDTH) / 2;
+            if (Math.abs(bossCX - shipCenterX) > (boss.width || BOSS_WIDTH) / 2 + _marginU) continue;
+            if (!(boss.y < top)) continue;
+            var bossBottom = boss.y + (boss.height || BOSS_HEIGHT);
+            // BREDE SPREIDING: geen schild-uitzondering - zijkogels gaan
+            // om de vijand onder de boss heen en raken de invliegende boss.
+            if (_wideU) return true;
+            var shielded = false;
+            for (var j = 0; j < enemies.length; j++) {
+                var other = enemies[j];
+                if (!other || other === boss) continue;
+                if (other.isVisible === false) continue;
+                if (typeof isProtectedBossForAI === 'function' && isProtectedBossForAI(other)) continue;
+                if (!(other.y > bossBottom && other.y < top)) continue;
+                var otherCX = other.x + (other.width || 40) / 2;
+                if (Math.abs(otherCX - shipCenterX) <= (other.width || 40) / 2 + _marginU) { shielded = true; break; }
+            }
+            if (!shielded) return true;
+        }
+    } catch(e) {}
+    return false;
+}
+window.isProtectedBossForAI = isProtectedBossForAI;
+window.isEnteringBossForAINoHit = isEnteringBossForAINoHit;
+window.isAIShooterId = isAIShooterId;
+window.aiProtectedBossBlocksShot = aiProtectedBossBlocksShot;
+window.aiProtectedBossBlocksUntargetedShot = aiProtectedBossBlocksUntargetedShot;
 function getNextBeamerUpgradeType() {
     try {
         const types = ['DUAL', 'SHIELD', 'RAPID', 'SPREAD', 'CLEAR', '1UP', 'TRIPLE', 'PIERCING', 'BOUNCE', 'SCORE-UP', 'LUCKY 7'];
@@ -505,6 +670,30 @@ function generateAttackPathInternal(enemy) { // Hernoemd naar Internal
             diveSegments = [ {p0: startPoint, p1: p1_L1_1, p2: p2_L1_1, p3: p3_L1_1}, {p0: p3_L1_1, p1: p1_L1_2, p2: p2_L1_2, p3: p3_L1_2}, {p0: p3_L1_2, p1: p1_L2_1, p2: p2_L2_1, p3: p3_L2_1}, {p0: p3_L2_1, p1: p1_L2_2, p2: p2_L2_2, p3: p3_L2_2}, {p0: p3_L2_2, p1: p1_EXIT, p2: p2_EXIT, p3: p3_EXIT}, ];
         }
         generatedSegments.push(...diveSegments);
+        // LEVEL 1, BIJEN: wel duiken, maar NOOIT naar / op het schip toe.
+        // Duik wordt afgekapt vlak BOVEN het schip: bij duikt, maakt lus/bocht,
+        // keert terug - komt nooit in de schip-zone, vliegt niet DOOR het schip.
+        // Vanaf level 2 gelden de normale duikpaden weer.
+        try {
+            if (typeof level !== 'undefined' && level === 1 && enemy && enemy.type === ENEMY1_TYPE) {
+                var _shipTops = [];
+                try {
+                    if (typeof ship !== 'undefined' && ship && playerLives > 0) _shipTops.push(ship.y);
+                    if (typeof ship1 !== 'undefined' && ship1 && typeof player1Lives !== 'undefined' && player1Lives > 0) _shipTops.push(ship1.y);
+                    if (typeof ship2 !== 'undefined' && ship2 && typeof player2Lives !== 'undefined' && player2Lives > 0) _shipTops.push(ship2.y);
+                } catch(e) {}
+                var _safeY = _shipTops.length ? (Math.min.apply(null, _shipTops) - enemyHeight - 40) : (canvasH * 0.72);
+                _safeY = Math.max(enemy.y + 10, _safeY);
+                for (var _s = 0; _s < generatedSegments.length; _s++) {
+                    var _seg = generatedSegments[_s];
+                    if (!_seg) continue;
+                    for (var _k = 0; _k < 4; _k++) {
+                        var _pt = _seg[['p0','p1','p2','p3'][_k]];
+                        if (_pt && _pt.y > _safeY) _pt.y = _safeY;
+                    }
+                }
+            }
+        } catch(e) {}
         return generatedSegments;
     } catch (e) {
          console.error(`[DEBUG] Error generating attack path for enemy ${enemy?.id}:`, e);
@@ -3224,6 +3413,23 @@ function firePlayerBullet(shooterId = null, isTapEvent = false) {
 
     if (!canShootLogic || !shootingShipObject) return false;
 
+    // CENTRALE AI-POORT: AI vuurt NOOIT als een boss zonder capture in zijn
+    // vuurlijn staat EN er geen gewone vijand onder die boss staat die de
+    // kogel eerst raakt. In een volle grid mag de AI dus gewoon vuren.
+    try {
+        if (typeof isAIShooterId === 'function' && isAIShooterId(currentShooterPlayerId)) {
+            // HARDE STOP: er vliegt nog een boss in -> AI vuurt helemaal niet.
+            // Corridor-check alleen is niet genoeg: de boss-lus vliegt door
+            // elke kogelbaan heen (level 2). Pas als alles in de grid staat
+            // mag de AI weer vuren (full-grid / na capture = vogelvrij).
+            if (typeof aiAnyEnteringBoss === 'function' && aiAnyEnteringBoss()) return false;
+            if (typeof aiProtectedBossBlocksUntargetedShot === 'function') {
+                var _aiShipCX = shootingShipObject.x + (shootingShipObject.width || 0) / 2;
+                if (aiProtectedBossBlocksUntargetedShot(_aiShipCX, shootingShipObject.y)) return false;
+            }
+        }
+    } catch(e) {}
+
     // FIX: per speler checken wie upgrade heeft
     let _shooterPlayerNum = null;
     try {
@@ -3238,10 +3444,9 @@ function firePlayerBullet(shooterId = null, isTapEvent = false) {
     const _isTripleForThisShooter = (typeof isUpgradeActiveForPlayer === 'function') ? isUpgradeActiveForPlayer('TRIPLE', _shooterPlayerNum) : (typeof tripleActive !== 'undefined' && tripleActive && tripleActivePlayer === _shooterPlayerNum && Date.now() < tripleActiveUntil);
     const _isPiercingForThisShooter = (typeof isUpgradeActiveForPlayer === 'function') ? isUpgradeActiveForPlayer('PIERCING', _shooterPlayerNum) : (typeof piercingActive !== 'undefined' && piercingActive && piercingActivePlayer === _shooterPlayerNum && Date.now() < piercingActiveUntil);
     const _isBounceForThisShooter = (typeof isUpgradeActiveForPlayer === 'function') ? isUpgradeActiveForPlayer('BOUNCE', _shooterPlayerNum) : (typeof bounceActive !== 'undefined' && bounceActive && bounceActivePlayer === _shooterPlayerNum && Date.now() < bounceActiveUntil);
-    // BOSS-RESPECT (kogel-upgrades): AI mag WEL vuren op andere vijanden.
-    // Geen schiet-stop hier: de botsing in moveEntities laat AI-kogels
-    // door de te-respecteren boss heen vliegen, zodat geen enkele
-    // SPREAD/TRIPLE/RAPID/DUAL-kogel hem raakt. Na de capture: vogelvrij.
+    // BOSS-RESPECT: AI mag WEL vuren op andere vijanden.
+    // GEEN kogels die door de boss heen vliegen: een kogel die de boss
+    // raakt, raakt hem gewoon. Bescherming = niet vuren in die richting.
 
     // RAPID UPGRADE FIX: kleine beetje sneller, niet elke frame
     const RAPID_SHOOT_COOLDOWN = 90; // normaal 140, rapid 90 = ~35% sneller
@@ -3609,6 +3814,7 @@ function aiPickHuntTarget(list, shipCenterX) {
     for (var i = 0; i < arr.length; i++) {
         var e = arr[i];
         if (!e || e.isVisible === false) continue;
+        if (typeof isProtectedBossForAI === 'function' && isProtectedBossForAI(e)) continue; // boss zonder capture: nooit doelwit
         var score = (e.state === 'attacking' || e.state === 'diving_to_capture_position') ? 1000 : 0;
         score += (typeof ENEMY3_TYPE !== 'undefined' && e.type === ENEMY3_TYPE && e.hasCapturedShip) ? 2000 : 0;
         score -= Math.abs((e.x + e.width / 2) - shipCenterX);
@@ -4105,6 +4311,8 @@ function aiControl() {
                     targetEnemyForAI = null; let bestTargetScore = -Infinity;
                     for (const enemy of enemies) {
                         if (!enemy) continue;
+                        if (typeof isProtectedBossForAI === 'function' && isProtectedBossForAI(enemy)) continue;
+                        if (typeof aiProtectedBossBlocksShot === 'function' && aiProtectedBossBlocksShot(shipCenterX, shipTopY, enemy)) continue; // doelwit achter boss zonder capture -> ander doelwit
                         let currentScore = 0; const enemyCenterX = enemy.x + enemy.width / 2; const dx = enemyCenterX - shipCenterX; const dy = shipTopY - (enemy.y + enemy.height);
                         if (dy < 0 && enemy.state !== 'attacking' && enemy.state !== 'diving_to_capture_position' && enemy.state !== 'following_bezier_path') continue;
                         currentScore = (canvasHeight - enemy.y) * 2 - Math.abs(dx) * 3 - dy;
@@ -4215,6 +4423,8 @@ function aiControl() {
                     canActuallyShootTarget = false;
                 }
                 if (targetEnemyForAI) {
+                    if (typeof isProtectedBossForAI === 'function' && isProtectedBossForAI(targetEnemyForAI)) canActuallyShootTarget = false;
+                    else if (typeof aiProtectedBossBlocksShot === 'function' && aiProtectedBossBlocksShot(shipCenterX, shipTopY, targetEnemyForAI)) canActuallyShootTarget = false; // boss in vuurlijn -> niet in die richting vuren
                     const isBossEnemy3ModeForShoot = (typeof isBossStage !== 'undefined' && isBossStage && typeof bossStageVariant !== 'undefined' && bossStageVariant === 'enemy3');
                     // BOSS-GRID-Fase: gridbijtjes zijn hier GEEN capture-boss, dus geen respect-regel.
                     // Zonder dit mikte de AI wel op de gridbijtjes maar mocht hij nooit vuren.
@@ -4702,6 +4912,8 @@ function calculateAIDesiredState(currentShip, currentSmoothedX, isShipDual, game
                 let bestScore=-Infinity;
                 for(const enemy of gameEnemies){
                     if(!enemy)continue; if(ignoreBossId_passed && enemy.id === ignoreBossId_passed) continue;
+                    if(typeof isProtectedBossForAI === 'function' && isProtectedBossForAI(enemy)) continue;
+                    if(typeof aiProtectedBossBlocksShot === 'function' && aiProtectedBossBlocksShot(shipCenterX, shipTopY, enemy)) continue; // doelwit achter boss zonder capture -> ander doelwit
                     if(activeCapturingBoss&&enemy.id===activeCapturingBoss.id&& (activeCapturingBoss.state==='preparing_capture'||activeCapturingBoss.state==='diving_to_capture_position'||activeCapturingBoss.state==='capturing'))continue;
                     if(isCoopAIDemoActive&&aiPlayerActivelySeekingCaptureById&&aiPlayerActivelySeekingCaptureById!==shipIdentifier&&activeCapturingBoss&&enemy.id===activeCapturingBoss.id)continue;
 
@@ -4787,6 +4999,8 @@ function calculateAIDesiredState(currentShip, currentSmoothedX, isShipDual, game
         }
 
         if(targetEnemyForAI){
+            if (typeof isProtectedBossForAI === 'function' && isProtectedBossForAI(targetEnemyForAI)) shouldTryShoot_AI_Calc = false;
+            else if (typeof aiProtectedBossBlocksShot === 'function' && aiProtectedBossBlocksShot(shipCenterX, shipTopY, targetEnemyForAI)) shouldTryShoot_AI_Calc = false; // boss in vuurlijn -> niet in die richting vuren
             const isBossEnemy3ModeForCoopShoot = (typeof isBossStage !== 'undefined' && isBossStage && typeof bossStageVariant !== 'undefined' && bossStageVariant === 'enemy3');
             if(isBossEnemy3ModeForCoopShoot && targetEnemyForAI.type===ENEMY3_TYPE && !targetEnemyForAI.hasCapturedShip){
                 // BOSS STAGE enemy3: altijd vuren op kleine vijanden in grid, geen respect
@@ -5018,16 +5232,16 @@ function triggerImmediateCaptureDive() {
         let potentialTargets = [];
         if (isTwoPlayerMode && selectedGameMode === 'coop') {
             // FIX: dual mag ook captured worden
-            if (ship1 && player1Lives > 1 && !isPlayer1ShipCaptured && !isPlayer1WaitingForRespawn && !player1NeedsRespawnAfterCapture) {
+            if (ship1 && player1Lives >= 1 && !isPlayer1ShipCaptured && !isPlayer1WaitingForRespawn && !player1NeedsRespawnAfterCapture) {
                 potentialTargets.push({ playerShip: ship1, playerNum: 1 });
             }
             // FIX: dual mag ook captured worden
-            if (ship2 && player2Lives > 1 && !isPlayer2ShipCaptured && !isPlayer2WaitingForRespawn && !player2NeedsRespawnAfterCapture) {
+            if (ship2 && player2Lives >= 1 && !isPlayer2ShipCaptured && !isPlayer2WaitingForRespawn && !player2NeedsRespawnAfterCapture) {
                 potentialTargets.push({ playerShip: ship2, playerNum: 2 });
             }
         } else { // 1P Classic, 1P_VS_AI_NORMAL, 2P_NORMAL
             // FIX: dual mag ook captured worden
-            if (ship && playerLives > 1 && !isShipCaptured && !isWaitingForRespawn) {
+            if (ship && playerLives >= 1 && !isShipCaptured && !isWaitingForRespawn) {
                 potentialTargets.push({ playerShip: ship, playerNum: currentPlayer });
             }
         }
@@ -5036,13 +5250,50 @@ function triggerImmediateCaptureDive() {
             return;
         }
 
-        // --- NIEUW: Bepaal upgrade VOOR keuze, voor 1UP regel ---
-        let pendingBeamerUpgradeType = null;
+        // --- NIEUW: NOOD-1UP REGEL ---
+        // Heeft een (AI- of gewone) speler MEER punten maar MINDER dan 2 levens (dus 1 leven),
+        // dan krijgt DIE speler de beamer aan ZIJN kant, mét een 1UP die hij kan pakken,
+        // zodat hij langer kan doorspelen. Dit gaat VOOR op de normale
+        // "minste punten pakt de beamer"-regel en vóór de random trekking:
+        // de 1UP wordt geforceerd, er wordt geen willekeurige upgrade verspild.
+        // Is er niemand met < 2 levens, dan geldt gewoon de oude regel:
+        // de speler met de minste punten aan die kant pakt de beamer-upgrade.
+        let forced1UPTargetNum = null;
         try {
-            if (typeof getNextBeamerUpgradeType === 'function') {
-                pendingBeamerUpgradeType = getNextBeamerUpgradeType();
+            const _low = potentialTargets.filter(function(t) {
+                const _lives = (isTwoPlayerMode && selectedGameMode === 'coop')
+                    ? (t.playerNum === 1 ? player1Lives : player2Lives)
+                    : playerLives;
+                return _lives < 2 && _lives > 0;
+            });
+            if (_low.length === 1) {
+                forced1UPTargetNum = _low[0].playerNum;
+            } else if (_low.length > 1) {
+                // Beiden 1 leven: eerst minste levens, dan minste punten, dan langst geen upgrade.
+                _low.sort(function(a, b) {
+                    const _la = (a.playerNum === 1 ? player1Lives : player2Lives);
+                    const _lb = (b.playerNum === 1 ? player1Lives : player2Lives);
+                    if (_la !== _lb) return _la - _lb;
+                    const _sa = (a.playerNum === 1 ? player1Score : player2Score) || 0;
+                    const _sb = (b.playerNum === 1 ? player1Score : player2Score) || 0;
+                    if (_sa !== _sb) return _sa - _sb;
+                    return 0;
+                });
+                forced1UPTargetNum = _low[0].playerNum;
             }
         } catch(e) {}
+        // --- NIEUW: Bepaal upgrade VOOR keuze, voor 1UP regel ---
+        let pendingBeamerUpgradeType = null;
+        if (forced1UPTargetNum !== null) {
+            pendingBeamerUpgradeType = '1UP';
+            console.log(`[BEAMER NOOD-1UP] P${forced1UPTargetNum} heeft meer punten maar < 2 levens -> beamer + 1UP naar P${forced1UPTargetNum}`);
+        } else {
+            try {
+                if (typeof getNextBeamerUpgradeType === 'function') {
+                    pendingBeamerUpgradeType = getNextBeamerUpgradeType();
+                }
+            } catch(e) {}
+        }
         if (!pendingBeamerUpgradeType) pendingBeamerUpgradeType = 'DUAL';
 
         // --- FAIR BEAMER LOGICA ---
@@ -5051,7 +5302,11 @@ function triggerImmediateCaptureDive() {
         // BOUNCE, SCORE-UP, LUCKY 7): naar de (AI-)speler met de MINSTE PUNTEN.
         // Bij gelijke stand (levens bij 1UP / punten bij de rest): om en om.
         let targetInfo;
-        if (isTwoPlayerMode && selectedGameMode === 'coop' && potentialTargets.length === 2) {
+        if (forced1UPTargetNum !== null) {
+            // Nood-1UP: ongeacht wie meer punten heeft, de speler met < 2 levens pakt hem,
+            // aan zijn eigen kant (zijn schip bepaalt de duikkant hieronder).
+            targetInfo = potentialTargets.find(function(t) { return t.playerNum === forced1UPTargetNum; }) || potentialTargets[0];
+        } else if (isTwoPlayerMode && selectedGameMode === 'coop' && potentialTargets.length === 2) {
             const p1Target = potentialTargets.find(t => t.playerNum === 1);
             const p2Target = potentialTargets.find(t => t.playerNum === 2);
             if (p1Target && p2Target) {
@@ -5086,6 +5341,8 @@ function triggerImmediateCaptureDive() {
             } else {
                 targetInfo = potentialTargets[Math.floor(Math.random() * potentialTargets.length)];
             }
+        } else if (forced1UPTargetNum !== null) {
+            targetInfo = potentialTargets.find(function(t) { return t.playerNum === forced1UPTargetNum; }) || potentialTargets[0];
         } else {
             targetInfo = potentialTargets[Math.floor(Math.random() * potentialTargets.length)];
         }
@@ -5402,26 +5659,28 @@ function moveEntities(overrideP1Left = null, overrideP1Right = null) {
                 const enemy = enemies[j]; if (!enemy) { enemies.splice(j,1); continue; }
                 // BOSS-MINION: 1 sec onkwetsbaar na het uitploppen, kogel vliegt er gewoon doorheen
                 if (enemy.isBossMinion && enemy.bossMinionInvulnerableUntil && Date.now() < enemy.bossMinionInvulnerableUntil) continue;
+                // INVLIEGENDE BOSS: AI-kogel vliegt er DOORHEEN, raakt hem niet.
+                // Dekt ook kogels die al in de lucht waren toen deze boss
+                // begon met invliegen (volgende squadron in level 2). Mens-
+                // kogels raken hem wel gewoon (speler kiest dat zelf).
+                // Full-grid / na capture = vogelvrij, via isEnteringBossForAINoHit.
+                if (enemy.type === ENEMY3_TYPE && typeof isEnteringBossForAINoHit === 'function' && isEnteringBossForAINoHit(enemy)) {
+                    try {
+                        if (typeof isAIShooterId === 'function' && isAIShooterId(b.playerId)) continue;
+                        // 1P AI-demo vuurt met playerId null: dat is ook AI.
+                        if ((b.playerId === null || typeof b.playerId === 'undefined') && typeof isManualControl !== 'undefined' && !isManualControl) continue;
+                    } catch(e) {}
+                }
                 // FIX beamer: enemy3 onkwetsbaar zolang beamer actief is EN zolang hij net gecaptured heeft en weggaat met schip
                 // Pas weer kwetsbaar als hij terug in grid staat (in_grid) of aanvalt met schip
                 if (enemy.type === ENEMY3_TYPE) {
                     if (enemy.state === 'capturing' || enemy.state === 'preparing_capture' || enemy.state === 'diving_to_capture_position') {
                         continue;
                     }
-                    // BOSS-RESPECT VOOR AI-KOGELS: schutter is AI (ai / ai_p2) EN heeft
-                    // SPREAD/TRIPLE/RAPID/DUAL EN boss moet nog een capture doen ->
-                    // deze kogel raakt de boss NIET, hij vliegt erdoorheen en kan
-                    // een vijand erachter nog raken. Zo kan de AI gewoon op andere
-                    // vijanden blijven vuren zonder de boss te raken.
-                    // Menselijke kogels: niet gefilterd. Na de capture: vogelvrij
-                    // (isBulletUpgradeBossRespectActiveForPlayer geeft dan false).
-                    try {
-                        const _shooterIsAI = (b.playerId === 'ai' || b.playerId === 'ai_p2');
-                        if (_shooterIsAI && typeof isBulletUpgradeBossRespectActiveForPlayer === 'function') {
-                            const _pnB = (typeof playerNumFromShooterId === 'function') ? playerNumFromShooterId(b.playerId) : 1;
-                            if (isBulletUpgradeBossRespectActiveForPlayer(_pnB)) continue;
-                        }
-                    } catch(e) {}
+                    // GEEN door-vliegen meer: een kogel die deze boss raakt,
+                    // raakt hem GEWOON (1x geraakt = blauw, 4 bossen = geen ramp).
+                    // Bescherming zit in niet-vuren in die richting, niet in
+                    // kogels die door de boss heen vliegen (cheaten).
                     if (enemy.hasCapturedShip && (enemy.state === 'showing_capture_message' || enemy.state === 'returning')) {
                         continue;
                     }
@@ -5447,13 +5706,8 @@ function moveEntities(overrideP1Left = null, overrideP1Right = null) {
                             for (let k = 0; k < enemies.length; k++) {
                                 const other = enemies[k];
                                 if (!other || other.id === enemy.id || (b.hitEnemyIds && b.hitEnemyIds.indexOf(other.id) !== -1)) continue;
-                                // BOUNCE: kaats niet naar een boss die nog gerespecteerd moet worden
-                                try {
-                                    if (other.type === ENEMY3_TYPE && (b.playerId === 'ai' || b.playerId === 'ai_p2') && typeof isBulletUpgradeBossRespectActiveForPlayer === 'function') {
-                                        const _pnBounce = (typeof playerNumFromShooterId === 'function') ? playerNumFromShooterId(b.playerId) : 1;
-                                        if (isBulletUpgradeBossRespectActiveForPlayer(_pnBounce)) continue;
-                                    }
-                                } catch(e) {}
+                                // BOUNCE: kaats gewoon ook naar een boss - een kogel die
+                                // hem raakt, raakt hem gewoon. Geen door-vliegen meer.
                                 const d = Math.abs((other.x + 20) - (b.x + b.width / 2)) + Math.abs(other.y - b.y);
                                 if (d < nearestDist) { nearestDist = d; nearest = other; }
                             }
@@ -6031,6 +6285,12 @@ function moveEntities(overrideP1Left = null, overrideP1Right = null) {
                     }
 
                     for (const shipData of shipsToCollideWith) {
+                        // BOSS ZONDER CAPTURE: AI-schip raakt hem niet - vliegt erdoorheen.
+                        // (Dit is schip-botsing, geen kogel: anders gaat het schip dood
+                        // en de boss ook. Kogels vliegen dus NIET meer door hem heen.)
+                        try {
+                            if (typeof isProtectedBossForAI === 'function' && isProtectedBossForAI(enemy) && typeof beamerIsAIPlayer === 'function' && beamerIsAIPlayer(shipData.playerNum)) continue;
+                        } catch(e) {}
                         const currentShip = shipData.shipObj;
                         // ALLEEN BOSS-MINIONS: kleinere hitbox voor een duikende minion, zodat een
                         // graze / net-niet-raak ook echt geen leven kost. Alleen de
@@ -7617,7 +7877,7 @@ function runSingleGameUpdate(timestamp) {
                                      if (attackType === 'normal') {
                                          const sharedPath = generateAttackPathInternal(leaderEnemy);
                                          if (sharedPath && sharedPath.length > 0) { if (validAttackers.length === 3 && leaderEnemy.type === ENEMY3_TYPE && level !== 1) playSound('tripleAttackSound', false, 0.3); let sortedAttackers = [...validAttackers]; const groupSize = sortedAttackers.length; if (groupSize > 1) { let bossInGroup = null; let nonBossAttackers = []; sortedAttackers.forEach(attacker => { if (attacker.type === ENEMY3_TYPE) bossInGroup = attacker; else nonBossAttackers.push(attacker); }); if (bossInGroup && level !== 1 && groupSize === 3 && nonBossAttackers.length === 2) sortedAttackers = [nonBossAttackers[0], bossInGroup, nonBossAttackers[1]]; else sortedAttackers.sort((a, b) => (a?.gridCol ?? 0) - (b?.gridCol ?? 0)); const MINIMAL_GAP_BETWEEN_ATTACKERS = 5; let totalFormationWidth = 0; sortedAttackers = sortedAttackers.filter(attacker => attacker && typeof attacker.width === 'number'); const currentGroupSize = sortedAttackers.length; for (let k = 0; k < currentGroupSize; k++) { totalFormationWidth += sortedAttackers[k].width; if (k < currentGroupSize - 1) totalFormationWidth += MINIMAL_GAP_BETWEEN_ATTACKERS; } const formationStartOffsetX = -totalFormationWidth / 2; let currentOffsetX = formationStartOffsetX; for (let k = 0; k < currentGroupSize; k++) { const attacker = sortedAttackers[k]; attacker.attackFormationOffsetX = currentOffsetX + attacker.width / 2; currentOffsetX += attacker.width + MINIMAL_GAP_BETWEEN_ATTACKERS; } } else sortedAttackers.forEach(att => att.attackFormationOffsetX = 0); const attackGroupId = `attack-${leaderEnemy.id}-${now}`; sortedAttackers.forEach(attacker => { if(attacker) attacker.attackGroupId = attackGroupId });
-                                             let shouldFire = false; let fireDelay = GROUP_FIRE_BURST_DELAY; if (leaderEnemy.type === ENEMY2_TYPE || leaderEnemy.type === ENEMY3_TYPE) { shouldFire = true; if(leaderEnemy.type === ENEMY2_TYPE && groupSize === 1) fireDelay = SOLO_BUTTERFLY_FIRE_DELAY; } else if (leaderEnemy.type === ENEMY1_TYPE) shouldFire = true; if (isLastFewEnemies && level > 1) shouldFire = false; if (shouldFire) { sortedAttackers.forEach(attacker => { const canAttackerFire = attacker && !(attacker.type === ENEMY3_TYPE && attacker.hasCapturedShip); if (canAttackerFire) fireEnemyBurst(attacker.id, 'attacking', fireDelay); }); }
+                                             let shouldFire = false; let fireDelay = GROUP_FIRE_BURST_DELAY; if (leaderEnemy.type === ENEMY2_TYPE || leaderEnemy.type === ENEMY3_TYPE) { shouldFire = true; if(leaderEnemy.type === ENEMY2_TYPE && groupSize === 1) fireDelay = SOLO_BUTTERFLY_FIRE_DELAY; } else if (leaderEnemy.type === ENEMY1_TYPE) shouldFire = true; if (isLastFewEnemies && level > 1) shouldFire = false; if (typeof level !== 'undefined' && level === 1 && leaderEnemy.type === ENEMY1_TYPE) shouldFire = false; // level 1: bijen-duik is show, geen schoten op het schip if (shouldFire) { sortedAttackers.forEach(attacker => { const canAttackerFire = attacker && !(attacker.type === ENEMY3_TYPE && attacker.hasCapturedShip); if (canAttackerFire) fireEnemyBurst(attacker.id, 'attacking', fireDelay); }); }
                                              sortedAttackers.forEach((enemyToAttack, delayIndex) => {
                                                   if (enemyToAttack && enemyToAttack.state === 'in_grid') {
                                                      enemyToAttack.state = 'preparing_attack'; enemyToAttack.justReturned = false; enemyToAttack.velocityX = 0; enemyToAttack.velocityY = 0; enemyToAttack.canFireThisDive = false;
