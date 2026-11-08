@@ -1199,8 +1199,84 @@ function createStar() { /* ... ongewijzigd ... */ if (!starrySkyCanvas || starry
 /** Populates the stars array. */
 function createStars() { /* ... ongewijzigd ... */ stars = []; if (starrySkyCanvas?.width > 0 && starrySkyCanvas?.height > 0) { for (let i = 0; i < NUM_STARS; i++) { const star = createStar(); if (star) stars.push(star); } } }
 
+// --- VALLENDE STERREN: state (1x, buiten drawStars) ---
+let vallendeSter = null;
+let vallendeSterVolgendeOm = 0;
+let vallendeSterVorigeFrame = 0;
+const VALLENDE_STER_MIN_PAUZE_MS = 8000;
+const VALLENDE_STER_MAX_PAUZE_MS = 15000;
+const VALLENDE_STER_LEVEN_MS = 1000; // 1 seconde zichtbaar per ster
+
 /** Draws the starry background, handling movement, twinkle, and fade near horizon. */
-function drawStars() { /* ... ongewijzigd ... */ try { if (!starryCtx || !starrySkyCanvas || starrySkyCanvas.width === 0 || starrySkyCanvas.height === 0) return; const currentCanvasWidth = starrySkyCanvas.width; const currentCanvasHeight = starrySkyCanvas.height; starryCtx.clearRect(0, 0, currentCanvasWidth, currentCanvasHeight); const horizonY = Math.round(currentCanvasHeight * GRID_HORIZON_Y_FACTOR); const perspectiveHeight = currentCanvasHeight - horizonY; const fadeStartY = Math.max(0, horizonY - perspectiveHeight * STAR_FADE_START_FACTOR_ABOVE_HORIZON); const fadeEndY = horizonY; const fadeRange = Math.max(1, fadeEndY - fadeStartY); stars.forEach(star => { const normalizedRadius = (star.radius - MIN_STAR_RADIUS) / (MAX_STAR_RADIUS - MIN_STAR_RADIUS); const speed = BASE_PARALLAX_SPEED + (normalizedRadius * PARALLAX_SPEED_FACTOR); if (!isPaused || isShowingPortraitMessage) { star.y += speed; } if (star.y > currentCanvasHeight + star.radius) { star.y = -star.radius * 2; star.x = Math.random() * currentCanvasWidth; } if (!isPaused || isShowingPortraitMessage) { star.alpha += star.alphaChange; if (star.alpha <= 0.1 || star.alpha >= 1.0) { star.alphaChange *= -1; star.alpha = Math.max(0.1, Math.min(1.0, star.alpha)); } } let finalAlpha = star.alpha; if (fadeStartY >= 0 && star.y > fadeStartY) { if (star.y >= horizonY) { finalAlpha = 0; } else { finalAlpha *= (1.0 - Math.min(1.0, Math.max(0, (star.y - fadeStartY) / fadeRange))); } } finalAlpha = Math.max(0, Math.min(1.0, finalAlpha)); if (finalAlpha > 0.01) { starryCtx.beginPath(); starryCtx.arc(Math.round(star.x), Math.round(star.y), star.radius, 0, Math.PI * 2); starryCtx.fillStyle = `rgba(255, 255, 255, ${finalAlpha.toFixed(3)})`; starryCtx.fill(); } }); } catch (e) { console.error("Error in drawStars:", e); if (mainLoopId) cancelAnimationFrame(mainLoopId); mainLoopId = null; } }
+function drawStars() { /* ... ongewijzigd ... */ try { if (!starryCtx || !starrySkyCanvas || starrySkyCanvas.width === 0 || starrySkyCanvas.height === 0) return; const currentCanvasWidth = starrySkyCanvas.width; const currentCanvasHeight = starrySkyCanvas.height; starryCtx.clearRect(0, 0, currentCanvasWidth, currentCanvasHeight); const horizonY = Math.round(currentCanvasHeight * GRID_HORIZON_Y_FACTOR); const perspectiveHeight = currentCanvasHeight - horizonY; const fadeStartY = Math.max(0, horizonY - perspectiveHeight * STAR_FADE_START_FACTOR_ABOVE_HORIZON); const fadeEndY = horizonY; const fadeRange = Math.max(1, fadeEndY - fadeStartY); stars.forEach(star => { const normalizedRadius = (star.radius - MIN_STAR_RADIUS) / (MAX_STAR_RADIUS - MIN_STAR_RADIUS); const speed = BASE_PARALLAX_SPEED + (normalizedRadius * PARALLAX_SPEED_FACTOR); if (!isPaused || isShowingPortraitMessage) { star.y += speed; } if (star.y > currentCanvasHeight + star.radius) { star.y = -star.radius * 2; star.x = Math.random() * currentCanvasWidth; } if (!isPaused || isShowingPortraitMessage) { star.alpha += star.alphaChange; if (star.alpha <= 0.1 || star.alpha >= 1.0) { star.alphaChange *= -1; star.alpha = Math.max(0.1, Math.min(1.0, star.alpha)); } } let finalAlpha = star.alpha; if (fadeStartY >= 0 && star.y > fadeStartY) { if (star.y >= horizonY) { finalAlpha = 0; } else { finalAlpha *= (1.0 - Math.min(1.0, Math.max(0, (star.y - fadeStartY) / fadeRange))); } } finalAlpha = Math.max(0, Math.min(1.0, finalAlpha)); if (finalAlpha > 0.01) { starryCtx.beginPath(); starryCtx.arc(Math.round(star.x), Math.round(star.y), star.radius, 0, Math.PI * 2); starryCtx.fillStyle = `rgba(255, 255, 255, ${finalAlpha.toFixed(3)})`; starryCtx.fill(); } });
+
+      // ===== VALLENDE STER (in drawStars zelf) - VAAG, KORT, KORTE AFSTAND =====
+      try {
+        var _vsNu = Date.now();
+        if (!vallendeSterVolgendeOm) vallendeSterVolgendeOm = _vsNu + 1500;
+        var _vsGepauzeerd = (typeof isPaused !== 'undefined' && isPaused)
+          && !(typeof isShowingPortraitMessage !== 'undefined' && isShowingPortraitMessage);
+        var _vsNow = (typeof performance !== 'undefined' && performance.now) ? performance.now() : _vsNu;
+        var _vsDt = vallendeSterVorigeFrame ? Math.min(_vsNow - vallendeSterVorigeFrame, 33) : 16;
+        vallendeSterVorigeFrame = _vsNow;
+        if (!_vsGepauzeerd) {
+          if (!vallendeSter && _vsNu >= vallendeSterVolgendeOm) {
+            var _vsW = currentCanvasWidth, _vsH = currentCanvasHeight;
+            var _vsX = 0.05 * _vsW + Math.random() * 0.90 * _vsW;
+            var _vsY = 0.05 * _vsH + Math.random() * 0.50 * _vsH;
+            var _vsRechts = Math.random() < 0.5;
+            var _vsHoek = (_vsRechts ? 28 + Math.random() * 20 : 132 + Math.random() * 20) * Math.PI / 180;
+            var _vsSnelheid = 260 + Math.random() * 100; // LANGZAMER: 260-360 px/s = korte afstand in 1 sec
+            vallendeSter = { x: _vsX, y: _vsY, vx: Math.cos(_vsHoek) * _vsSnelheid, vy: Math.sin(_vsHoek) * _vsSnelheid, lengte: 40 + Math.random() * 30, leeftijd: 0 }; // KORTER: 40-70 px
+          }
+          if (vallendeSter) {
+            vallendeSter.leeftijd += _vsDt;
+            if (vallendeSter.leeftijd >= VALLENDE_STER_LEVEN_MS) {
+              vallendeSter = null;
+              vallendeSterVolgendeOm = _vsNu + VALLENDE_STER_MIN_PAUZE_MS + Math.random() * (VALLENDE_STER_MAX_PAUZE_MS - VALLENDE_STER_MIN_PAUZE_MS);
+            } else {
+              vallendeSter.x += vallendeSter.vx * _vsDt / 1000;
+              vallendeSter.y += vallendeSter.vy * _vsDt / 1000;
+              var _vsT = vallendeSter.leeftijd / VALLENDE_STER_LEVEN_MS;
+              var _vsFade = _vsT < 0.15 ? _vsT / 0.15 : _vsT > 0.75 ? 1 - (_vsT - 0.75) / 0.25 : 1;
+              var _vsLen = Math.hypot(vallendeSter.vx, vallendeSter.vy) || 1;
+              var _vsTx = vallendeSter.x - (vallendeSter.vx / _vsLen) * vallendeSter.lengte;
+              var _vsTy = vallendeSter.y - (vallendeSter.vy / _vsLen) * vallendeSter.lengte;
+              starryCtx.save();
+              starryCtx.lineCap = 'round';
+              starryCtx.globalCompositeOperation = 'lighter';
+              var _vsGloed = starryCtx.createLinearGradient(vallendeSter.x, vallendeSter.y, _vsTx, _vsTy);
+              _vsGloed.addColorStop(0, 'rgba(255,255,255,' + (0.05 * _vsFade).toFixed(3) + ')');
+              _vsGloed.addColorStop(0.4, 'rgba(255,255,255,' + (0.02 * _vsFade).toFixed(3) + ')');
+              _vsGloed.addColorStop(1, 'rgba(255,255,255,0)');
+              starryCtx.strokeStyle = _vsGloed;
+              starryCtx.lineWidth = 8;
+              starryCtx.beginPath(); starryCtx.moveTo(vallendeSter.x, vallendeSter.y); starryCtx.lineTo(_vsTx, _vsTy); starryCtx.stroke();
+              var _vsWaas = starryCtx.createLinearGradient(vallendeSter.x, vallendeSter.y, _vsTx, _vsTy);
+              _vsWaas.addColorStop(0, 'rgba(255,255,255,' + (0.10 * _vsFade).toFixed(3) + ')');
+              _vsWaas.addColorStop(0.4, 'rgba(255,255,255,' + (0.04 * _vsFade).toFixed(3) + ')');
+              _vsWaas.addColorStop(1, 'rgba(255,255,255,0)');
+              starryCtx.strokeStyle = _vsWaas;
+              starryCtx.lineWidth = 4;
+              starryCtx.beginPath(); starryCtx.moveTo(vallendeSter.x, vallendeSter.y); starryCtx.lineTo(_vsTx, _vsTy); starryCtx.stroke();
+              var _vsGrad = starryCtx.createLinearGradient(vallendeSter.x, vallendeSter.y, _vsTx, _vsTy);
+              _vsGrad.addColorStop(0, 'rgba(255,255,255,' + (0.45 * _vsFade).toFixed(3) + ')');
+              _vsGrad.addColorStop(0.25, 'rgba(255,255,255,' + (0.20 * _vsFade).toFixed(3) + ')');
+              _vsGrad.addColorStop(1, 'rgba(255,255,255,0)');
+              starryCtx.strokeStyle = _vsGrad;
+              starryCtx.lineWidth = 1;
+              starryCtx.beginPath(); starryCtx.moveTo(vallendeSter.x, vallendeSter.y); starryCtx.lineTo(_vsTx, _vsTy); starryCtx.stroke();
+              starryCtx.fillStyle = 'rgba(255,255,255,' + (0.08 * _vsFade).toFixed(3) + ')';
+              starryCtx.beginPath(); starryCtx.arc(vallendeSter.x, vallendeSter.y, 5, 0, 6.2832); starryCtx.fill();
+              starryCtx.fillStyle = 'rgba(255,255,255,' + (0.5 * _vsFade).toFixed(3) + ')';
+              starryCtx.beginPath(); starryCtx.arc(vallendeSter.x, vallendeSter.y, 2, 0, 6.2832); starryCtx.fill();
+              starryCtx.restore();
+            }
+          }
+        }
+      } catch (_vsErr) { }
+      // ===== EINDE VALLENDE STER =====
+    } catch (e) { console.error("Error in drawStars:", e); if (mainLoopId) cancelAnimationFrame(mainLoopId); mainLoopId = null; } }
 
 /** Draws the retro perspective grid. */
 function drawRetroGrid() { /* ... ongewijzigd ... */ try { if (!retroGridCtx || !retroGridCanvas || retroGridCanvas.width === 0 || retroGridCanvas.height === 0) return; if (!isPaused || isShowingPortraitMessage) { gridOffsetY -= GRID_SPEED; } const width = retroGridCanvas.width; const height = retroGridCanvas.height; retroGridCtx.clearRect(0, 0, width, height); const horizonY = Math.round(height * GRID_HORIZON_Y_FACTOR); const vanishingPointX = width / 2; const perspectiveHeight = height - horizonY; retroGridCtx.lineWidth = GRID_LINE_WIDTH; const fixedLineWidth = width * GRID_HORIZONTAL_LINE_WIDTH_FACTOR; const fixedLineStartX = vanishingPointX - fixedLineWidth / 2; const fixedLineEndX = vanishingPointX + fixedLineWidth / 2; const fadeStartY = horizonY + perspectiveHeight * 0.1; const fadeEndY = height; const fadeRange = Math.max(1, fadeEndY - fadeStartY); retroGridCtx.strokeStyle = GRID_LINE_COLOR_FIXED; retroGridCtx.beginPath(); retroGridCtx.moveTo(fixedLineStartX, horizonY); retroGridCtx.lineTo(fixedLineEndX, horizonY); retroGridCtx.stroke(); let normalizedOffset = gridOffsetY % GRID_BASE_SPACING; if (normalizedOffset > 0) { normalizedOffset -= GRID_BASE_SPACING; } let currentDrawY = horizonY - normalizedOffset; if (currentDrawY <= horizonY) currentDrawY += GRID_BASE_SPACING; while (currentDrawY < height + GRID_BASE_SPACING) { let progress = Math.max(0, Math.min(1, (currentDrawY - horizonY) / perspectiveHeight)); if (currentDrawY > horizonY && currentDrawY <= height + GRID_LINE_WIDTH*2) { let currentAlpha; if (currentDrawY <= fadeStartY) { currentAlpha = GRID_MIN_ALPHA; } else if (currentDrawY >= fadeEndY) { currentAlpha = GRID_BASE_ALPHA; } else { const fadeProgress = (currentDrawY - fadeStartY) / fadeRange; currentAlpha = GRID_MIN_ALPHA + (GRID_BASE_ALPHA - GRID_MIN_ALPHA) * fadeProgress; } currentAlpha = Math.max(0, Math.min(GRID_BASE_ALPHA, currentAlpha)); if (currentAlpha > 0.01) { retroGridCtx.strokeStyle = `rgba(${GRID_RGB_PART}, ${currentAlpha.toFixed(3)})`; retroGridCtx.beginPath(); retroGridCtx.moveTo(fixedLineStartX, Math.round(currentDrawY)); retroGridCtx.lineTo(fixedLineEndX, Math.round(currentDrawY)); retroGridCtx.stroke(); } } let nextSpacing = GRID_BASE_SPACING * Math.pow(1 + progress * 1.5, GRID_SPACING_POWER); currentDrawY += Math.max(1, nextSpacing); } retroGridCtx.strokeStyle = GRID_LINE_COLOR_FIXED; retroGridCtx.beginPath(); const numLinesHalf = Math.floor(GRID_NUM_PERSPECTIVE_LINES / 2); const horizonSpreadWidth = width * GRID_HORIZON_SPREAD_FACTOR; const maxSpreadAtBottom = width * GRID_BOTTOM_SPREAD_FACTOR; for (let i = 0; i <= numLinesHalf; i++) { let spreadProgress = Math.pow(i / numLinesHalf, GRID_PERSPECTIVE_POWER); let startX_R = vanishingPointX + spreadProgress * (horizonSpreadWidth / 2); let startX_L = vanishingPointX - spreadProgress * (horizonSpreadWidth / 2); let bottomX_R = vanishingPointX + spreadProgress * (maxSpreadAtBottom / 2); let bottomX_L = vanishingPointX - spreadProgress * (maxSpreadAtBottom / 2); retroGridCtx.moveTo(startX_R, horizonY); retroGridCtx.lineTo(bottomX_R, height); if (i > 0) { retroGridCtx.moveTo(startX_L, horizonY); retroGridCtx.lineTo(bottomX_L, height); } } retroGridCtx.stroke(); } catch (e) { console.error("Error in drawRetroGrid:", e); } }
