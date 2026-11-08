@@ -4259,8 +4259,8 @@ function aiControl() {
         try {
             const _cb = enemies.find(e => e.id === capturingBossId && e.type === ENEMY3_TYPE);
             let _ready = true;
-            if (_cb && _cb.beamerUpgradeAvailableAt && Date.now() < _cb.beamerUpgradeAvailableAt && _cb.beamerUpgradeType && _cb.beamerUpgradeType !== 'DUAL') _ready = false;
-            singleAIBeamActiveForCapture = captureBeamActive && !!_cb && _cb.state === 'capturing' && !isShipCapturedForAI && _ready && aiLivesForAI > 1;
+            if (_cb && _cb.beamerUpgradeAvailableAt && Date.now() < _cb.beamerUpgradeAvailableAt && _cb.beamerUpgradeType && _cb.beamerUpgradeType !== 'DUAL' && _cb.beamerUpgradeType !== '1UP') _ready = false;
+            singleAIBeamActiveForCapture = captureBeamActive && !!_cb && _cb.state === 'capturing' && !isShipCapturedForAI && _ready && aiLivesForAI >= 1; // elke capture is GRATIS, geen > 1-eis
         } catch(e) {}
         const isBossFightActiveForSingleAI = (typeof isBossStage !== 'undefined' && isBossStage && typeof bossStagePhase !== 'undefined' && bossStagePhase === 'fighting');
         if (isBossFightActiveForSingleAI) {
@@ -4297,10 +4297,10 @@ function aiControl() {
             }
             if (!isMovingForOwnFallingShip) {
                 const capturingBossObject = enemies.find(e => e.id === capturingBossId && e.type === ENEMY3_TYPE);
-                let beamIconReadyForAI = true; try { if (capturingBossObject && capturingBossObject.beamerUpgradeAvailableAt && Date.now() < capturingBossObject.beamerUpgradeAvailableAt && capturingBossObject.beamerUpgradeType && capturingBossObject.beamerUpgradeType !== 'DUAL') beamIconReadyForAI = false; } catch(e) {}
+                let beamIconReadyForAI = true; try { if (capturingBossObject && capturingBossObject.beamerUpgradeAvailableAt && Date.now() < capturingBossObject.beamerUpgradeAvailableAt && capturingBossObject.beamerUpgradeType && capturingBossObject.beamerUpgradeType !== 'DUAL' && capturingBossObject.beamerUpgradeType !== '1UP') beamIconReadyForAI = false; } catch(e) {}
                 const beamIsActiveAndPotentiallyTargeting = captureBeamActive && capturingBossObject && capturingBossObject.state === 'capturing' && !isShipCapturedForAI && beamIconReadyForAI;
                 if (beamIsActiveAndPotentiallyTargeting) {
-                    const wantsToCapture = (aiLivesForAI > 1); // FIX: ook met dualship upgrades pakken - dual blokkeert beamer niet meer
+                    const wantsToCapture = (aiLivesForAI >= 1); // FIX: elke capture is GRATIS, geen > 1-eis
                     if (wantsToCapture) { aiIsCurrentlyTargetingCaptureBoss = true; isMovingToCapture = true; const beamCenterX = capturingBossObject.x + (capturingBossObject.width / 2); desiredTargetX = beamCenterX - effectiveShipWidth / 2; shouldTryShoot_AI = false; targetEnemyForAI = null; }
                 }
             }
@@ -4611,7 +4611,7 @@ function calculateAIDesiredState(currentShip, currentSmoothedX, isShipDual, game
     const canvasHeight = gameCanvas.height; const effectiveShipWidth = currentShip.width + (isShipDual ? DUAL_SHIP_OFFSET_X : 0);
     const shipCenterX = currentShip.x + effectiveShipWidth / 2; const shipTopY = currentShip.y;
     const livesOfThisAIShip = (shipIdentifier === 'p1') ? player1Lives : ((shipIdentifier === 'ai_p2' || shipIdentifier === 'player2') ? player2Lives : 0);
-    const canThisAIShipBeCapturedPhysically = livesOfThisAIShip > 1 && !isThisShipCaptured; // FIX: ook met dualship upgrades pakken - dual blokkeert beamer niet meer
+    const canThisAIShipBeCapturedPhysically = livesOfThisAIShip >= 1 && !isThisShipCaptured; // FIX: elke capture is GRATIS, geen > 1-eis meer
     let laneCenterX = gameCanvas.width / 2;
     const generalIntroIsActive = (isShowingIntro || isShowingCoopPlayersReady);
     const isCoopAIAndGeneralIntroActive = isThisACoopAIMode && generalIntroIsActive && !(isChallengingStage && isEntrancePhaseActive);
@@ -4809,7 +4809,7 @@ function calculateAIDesiredState(currentShip, currentSmoothedX, isShipDual, game
         try {
             var _beamBoss = gameEnemies.find(function(e){ return e && e.id === capturingBossId && e.type === ENEMY3_TYPE; });
             var _myNum2 = (shipIdentifier === 'p1') ? 1 : 2;
-            if (_beamBoss && captureBeamActive && _beamBoss.state === 'capturing' && _beamBoss.beamerUpgradeType && _beamBoss.beamerUpgradeType !== 'DUAL' && beamerGetDesignatedPlayerNum(_beamBoss) === _myNum2 && canThisAIShipBeCapturedPhysically) {
+            if (_beamBoss && captureBeamActive && _beamBoss.state === 'capturing' && _beamBoss.beamerUpgradeType && _beamBoss.beamerUpgradeType !== 'DUAL' && (_beamBoss.beamerUpgradeType === '1UP' || beamerGetDesignatedPlayerNum(_beamBoss) === _myNum2) && canThisAIShipBeCapturedPhysically) {
                 var _beamCX = _beamBoss.x + _beamBoss.width / 2 - effectiveShipWidth / 2;
                 var _shipAtBeam = { x: _beamCX, y: currentShip.y, width: effectiveShipWidth, height: currentShip.height };
                 var _threatOnBeam = allProjectedThreats.some(function(th){ return checkCollision(_shipAtBeam, th); });
@@ -4831,7 +4831,7 @@ function calculateAIDesiredState(currentShip, currentSmoothedX, isShipDual, game
             }
         }
         if (!isMovingForOwnFallingShip) {
-            let beamReadyForShip = true; try { if (activeCapturingBoss && activeCapturingBoss.beamerUpgradeAvailableAt && Date.now() < activeCapturingBoss.beamerUpgradeAvailableAt && activeCapturingBoss.beamerUpgradeType && activeCapturingBoss.beamerUpgradeType !== 'DUAL') beamReadyForShip = false; } catch(e) {}
+            let beamReadyForShip = true; try { if (activeCapturingBoss && activeCapturingBoss.beamerUpgradeAvailableAt && Date.now() < activeCapturingBoss.beamerUpgradeAvailableAt && activeCapturingBoss.beamerUpgradeType && activeCapturingBoss.beamerUpgradeType !== 'DUAL' && activeCapturingBoss.beamerUpgradeType !== '1UP') beamReadyForShip = false; } catch(e) {}
             const beamActiveForThisShip = captureBeamActive && activeCapturingBoss && activeCapturingBoss.state === 'capturing' && !isThisShipCaptured && beamReadyForShip;
             if (canThisAIShipBeCapturedPhysically && beamActiveForThisShip) {
                 let proceedWithCapture = false;
@@ -4857,7 +4857,7 @@ function calculateAIDesiredState(currentShip, currentSmoothedX, isShipDual, game
                                 designated = beamerPickFairPlayerNum(activeCapturingBoss.beamerUpgradeType, (typeof player1Score !== 'undefined' ? player1Score : 0), (typeof player2Score !== 'undefined' ? player2Score : 0));
                                 try { activeCapturingBoss.beamerTargetPlayerNum = designated; beamerSetDesignation(designated, activeCapturingBoss.beamerUpgradeType); } catch(e2) {}
                             }
-                            if (designated !== myNum) {
+                            if (designated !== myNum && activeCapturingBoss.beamerUpgradeType !== '1UP') {
                                 console.log(`[AI BEAMER] ${shipIdentifier} is NIET aangewezen (P${designated} pakt ${activeCapturingBoss.beamerUpgradeType}) - skipt`);
                                 proceedWithCapture = false;
                                 if (aiPlayerActivelySeekingCaptureById === shipIdentifier) aiPlayerActivelySeekingCaptureById = null;
@@ -5454,6 +5454,7 @@ function updateExplosions() { if (isPaused) return; try { const now = Date.now()
 
 // --- Functie moveEntities: Update posities en states van alle entiteiten ---
 function moveEntities(overrideP1Left = null, overrideP1Right = null) {
+    if (typeof gameOverSequenceStartTime !== 'undefined' && gameOverSequenceStartTime > 0) { try { enemies = []; enemyBullets = []; } catch(e) {} return; }
     if (isPaused) return;
     try {
         const now = Date.now();
@@ -6041,7 +6042,7 @@ function moveEntities(overrideP1Left = null, overrideP1Right = null) {
                                 }
                             } catch(e) {}
                             // FIX: 2 sec zichtbaar voordat icoon gepakt mag worden
-                            if (isUpgradeBeam && !beamerIconReady) {
+                            if (isUpgradeBeam && !beamerIconReady && upgradeTypeForBeam !== '1UP') {
                                 shipHitObject = null;
                                 isUpgradeBeam = false;
                                 upgradeTypeForBeam = null;
@@ -6058,7 +6059,7 @@ function moveEntities(overrideP1Left = null, overrideP1Right = null) {
                                                             try {
                                                                 var _hitIsAI = beamerIsAIPlayer(playerHitId);
                                                                 var _designatedHit = beamerGetDesignatedPlayerNum(enemy);
-                                                                if (_hitIsAI && _designatedHit !== null && _designatedHit !== playerHitId) { console.log(`[AI BEAMER] P${playerHitId} niet aangewezen (P${_designatedHit} pakt) - upgrade NIET gegeven, beam blijft actief`); shipHitObject = null; }
+                                                                if (_hitIsAI && _designatedHit !== null && _designatedHit !== playerHitId && upgradeTypeForBeam !== '1UP') { console.log(`[AI BEAMER] P${playerHitId} niet aangewezen (P${_designatedHit} pakt) - upgrade NIET gegeven, beam blijft actief`); shipHitObject = null; }
                                                             } catch(e) {}
                                                         }
                                                         if (shipHitObject && isUpgradeBeam && upgradeTypeForBeam) {
@@ -6508,7 +6509,7 @@ function handlePlayerShipCollision(playerNumber, hitDualPart, collisionTime, was
             if (wasCapturedHit) {
                 isPlayer1ShipCaptured = true;
                 player1IsDualShipActive = false;
-                player1Lives--;
+                // CAPTURE = GRATIS: GEEN player1Lives-- meer bij capture
                 if (isCoopAIDemoActive || (isPlayerTwoAI && selectedOnePlayerGameVariant === '1P_VS_AI_COOP')) coopPartner1CapturedTime = now;
 
 
@@ -6575,7 +6576,7 @@ function handlePlayerShipCollision(playerNumber, hitDualPart, collisionTime, was
             if (wasCapturedHit) {
                 isPlayer2ShipCaptured = true;
                 player2IsDualShipActive = false;
-                player2Lives--;
+                // CAPTURE = GRATIS: GEEN player2Lives-- meer bij capture
                 if (isCoopAIDemoActive || (isPlayerTwoAI && selectedOnePlayerGameVariant === '1P_VS_AI_COOP')) coopPartner2CapturedTime = now;
 
 
@@ -6705,7 +6706,8 @@ function handlePlayerShipCollision(playerNumber, hitDualPart, collisionTime, was
                 if (ship) ship = null;
             }
 
-            playerLives--;
+            // CAPTURE = GRATIS: GEEN playerLives-- meer bij capture, alleen bij een gewone botsing
+            if (!wasCapturedHit) playerLives--;
             if (playerLives <= 0) {
                 playerLives = 0;
                 if (isTwoPlayerMode && selectedGameMode === 'normal') { // Geldt voor Human 2P Normal & 1P_VS_AI_NORMAL
@@ -6858,6 +6860,19 @@ function triggerGridFiring() {
 function runSingleGameUpdate(timestamp) {
     try {
         const now = Date.now();
+        // FIX: finale game over loopt -> vijanden blijven weg, geen enkele update mag ze terugzetten.
+        // Alleen GAME OVER -> RESULTS timing loopt door, daarna gaat de mainLoop naar het menu/eindscores.
+        if (typeof gameOverSequenceStartTime !== 'undefined' && gameOverSequenceStartTime > 0) {
+            try { enemies = []; bullets = []; enemyBullets = []; explosions = []; fallingShips = []; floatingScores = []; captureBeamActive = false; } catch(e) {}
+            try {
+                if (now - gameOverSequenceStartTime >= (typeof GAME_OVER_DURATION !== 'undefined' ? GAME_OVER_DURATION : 0) && !isShowingResultsScreen) {
+                    isShowingResultsScreen = true; try { stopSound('gameOverSound'); } catch(e) {} try { playSound('resultsMusicSound', true, 0.2); } catch(e) {}
+                }
+            } catch(e) {}
+            renderGame(); return;
+        }
+        // FIX: beide spelers dood maar finale sequence nog niet gestart (bv. dood tijdens een message) -> direct final, niet wachten op een message-timer.
+        try { if (typeof forceGameOverIfAllDead === 'function') { if (forceGameOverIfAllDead()) { renderGame(); return; } } } catch(e) {}
         let activePlayersForLogic = false;
         if (isTwoPlayerMode && selectedGameMode === 'coop') {
             activePlayersForLogic = (player1Lives > 0 && !isPlayer1ShipCaptured && !isPlayer1WaitingForRespawn && !isPlayer1ShowingGameOverMessage && !player1NeedsRespawnAfterCapture) ||

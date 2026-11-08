@@ -178,6 +178,9 @@ let isPlayer1ShipCaptured = false;
 let isPlayer2ShipCaptured = false;
 let capturingBossId = null;
 let captureBeamActive = false;
+        try { if (typeof activeBeamerUpgradeType !== 'undefined') activeBeamerUpgradeType = null; } catch(e) {}
+        try { if (typeof beamerClearDesignation === 'function') beamerClearDesignation(); } catch(e) {}
+        try { if (typeof capturingBossId !== 'undefined') capturingBossId = null; } catch(e) {}
 let captureBeamSource = { x: 0, y: 0 };
 let captureBeamTargetY = 0;
 let captureBeamProgress = 0;
