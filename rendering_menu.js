@@ -1062,6 +1062,9 @@ function shouldDrawShieldForPlayer(playerNum) {
 // breder, als de vloerperspectieflijnen. Verander ALLEEN het getalletje achter
 // 'FINE-TUNE'. 0 = uit, 1 = even fel als origineel.
 //   Vijanden       -> 'FINE-TUNE VIJANDEN'        (nu 0.60)
+//   Gecaptuurd schip -> 'FINE-TUNE VIJANDEN'       (nu 0.60, zelfde als vijand waar het aan hangt)
+//   Vallend schip   -> 'FINE-TUNE VIJANDEN'       (nu 0.60, zelfde als vijanden)
+//   Floating scores -> 'FINE-TUNE VIJANDEN'       (nu 0.60, zelfde als vijanden, incl. upgrade-scores, op de kop)
 //   Boss           -> 'FINE-TUNE BOSS'            (nu 0.60)
 //   Kogels speler  -> 'FINE-TUNE KOGELS SPELER'  (nu 0.80)
 //   Kogels vijand  -> 'FINE-TUNE KOGELS VIJAND'  (nu 0.80)
@@ -1104,7 +1107,67 @@ function drawFloorMirrorGame(now) {
         else { gameCtx.fillStyle = col; gameCtx.fillRect(Math.round(_m.x), Math.round(_m.y), _m.w, _m.h); }
       }
     }
-    if (typeof isBossStage !== 'undefined' && isBossStage && typeof bossStageBoss !== 'undefined' && bossStageBoss) {
+    // GECAPTUURD + VALLEND SCHIP: zelfde spiegeling als vijanden (0.60 x fade, zelfde _mirrorRect).
+    // Geen rotatie/tint/shadow/blur/filter, net als de vijanden-mirror - de hoofdtekening
+    // draagt die al. Alleen gecaptuurde schepen van een ENEMY3, dus max een handvol per frame.
+    if (typeof enemies !== 'undefined' && enemies && typeof shipImage !== 'undefined' && shipImage && shipImage.complete) {
+      for (var _ci = 0; _ci < enemies.length; _ci++) {
+        var _ce = enemies[_ci];
+        if (!_ce || _ce.type !== ENEMY3_TYPE || !_ce.hasCapturedShip || !_ce.capturedShipDimensions) continue;
+        var _cw = _ce.capturedShipDimensions.width, _ch = _ce.capturedShipDimensions.height;
+        var _cx2, _cy2;
+        if (_ce.state === 'showing_capture_message' && typeof _ce.capturedShipX === 'number' && typeof _ce.capturedShipY === 'number') { _cx2 = _ce.capturedShipX; _cy2 = _ce.capturedShipY; }
+        else { _cx2 = _ce.x + CAPTURED_SHIP_OFFSET_X; _cy2 = _ce.y + CAPTURED_SHIP_OFFSET_Y; }
+        if (_cy2 >= _hor) continue;
+        var _cm = _mirrorRect(_cx2, _cy2, _cw, _ch);
+        gameCtx.globalAlpha = 0.60 * _cm.fade; // FINE-TUNE VIJANDEN: zelfde sterkte als vijanden
+        if (gameCtx.globalAlpha <= 0.01) continue;
+        gameCtx.drawImage(shipImage, Math.round(_cm.x), Math.round(_cm.y), _cm.w, _cm.h);
+      }
+    }
+    if (typeof fallingShips !== 'undefined' && fallingShips && typeof shipImage !== 'undefined' && shipImage && shipImage.complete) {
+      for (var _fi = 0; _fi < fallingShips.length; _fi++) {
+        var _fs = fallingShips[_fi];
+        if (!_fs || _fs.y >= _hor) continue;
+        var _fm = _mirrorRect(_fs.x, _fs.y, _fs.width, _fs.height);
+        gameCtx.globalAlpha = 0.60 * _fm.fade; // FINE-TUNE VIJANDEN: zelfde sterkte als vijanden
+        if (gameCtx.globalAlpha <= 0.01) continue;
+        gameCtx.drawImage(shipImage, Math.round(_fm.x), Math.round(_fm.y), _fm.w, _fm.h);
+      }
+    }
+        // FLOATING SCORES (vijanden + upgrades, bv. SCORE-UP / LUCKY 7): zelfde spiegeling als vijanden.
+    // Alle floatingScores komen uit vijand/boss-hits, dus één loop dekt vijanden én upgrades.
+    // 60fps: max een handvol scores per frame; geen measureText (tekst is gecentreerd,
+    // dus alleen het middelpunt hoeft gespiegeld te worden), geen blur/filter/shadow.
+    // De tekst wordt met scale(sx, -0.35) getekend: verticaal samengedrukt én op de kop,
+    // zoals een echte vloerspiegel - drawCanvasText respecteert die transform.
+    if (typeof floatingScores !== 'undefined' && floatingScores) {
+      for (var _fsi = 0; _fsi < floatingScores.length; _fsi++) {
+        var _fs2 = floatingScores[_fsi];
+        if (!_fs2 || _fs2.y >= _hor) continue;
+        if (typeof _fs2.displayStartTime === 'number' && now < _fs2.displayStartTime) continue;
+        var _fmy = _hor + (_hor - _fs2.y) * 0.35;
+        var _fpp = Math.max(0, Math.min(1, (_fmy - _hor) / _persp));
+        var _fsx = 1 + _fpp * 0.45;
+        var _ffade = 1 - _fpp * 0.45;
+        gameCtx.globalAlpha = 0.45 * _ffade; // Spiegel flying scores iets vervaagd: 0.45 i.p.v. 0.60 — alleen deze spiegel, verder niks veranderd
+        if (gameCtx.globalAlpha <= 0.01) continue;
+        gameCtx.save();
+        gameCtx.translate(_cx + (_fs2.x - _cx) * _fsx, _fmy);
+        gameCtx.scale(_fsx, -0.35); // -0.35: op de kop, echte spiegeling (geen extra kosten)
+        // Direct fillText i.p.v. drawCanvasText: die helper doet zelf save/restore
+        // en mag de flip nooit meer kunnen verliezen. Zelfde kosten: geen
+        // measureText, geen shadow/blur/filter. Alleen de spiegel-scores gaan
+        // op de kop; de echte scores bovenaan blijven gewoon rechtop.
+        gameCtx.font = FLOATING_SCORE_FONT;
+        gameCtx.fillStyle = _fs2.color;
+        gameCtx.textAlign = 'center';
+        gameCtx.textBaseline = 'middle';
+        gameCtx.fillText(_fs2.text, 0, 0);
+        gameCtx.restore();
+      }
+    }
+if (typeof isBossStage !== 'undefined' && isBossStage && typeof bossStageBoss !== 'undefined' && bossStageBoss) {
       var b = bossStageBoss;
       if (b && b.y < _hor) {
         var _mb = _mirrorRect(b.x, b.y, b.width, b.height);

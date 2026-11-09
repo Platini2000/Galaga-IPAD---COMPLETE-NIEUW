@@ -1480,6 +1480,10 @@ function startBossStageWave() {
     squadronCompletionStatus = {};
     squadronEntranceFiringStatus = {};
     resetBossStageState();
+    // BOSS STAGE: lopende Achtergrond-grid loop uit de vorige wave direct stoppen.
+    // playSound-blokkade hierboven voorkomt dat hij daarna opnieuw start.
+    try { if (typeof stopSound === 'function') stopSound('gridBackgroundSound'); } catch (e) {}
+    try { if (typeof isGridSoundPlaying !== 'undefined') isGridSoundPlaying = false; } catch (e) {}
 
     // Bepaal variant en max hits voor deze level
     try {

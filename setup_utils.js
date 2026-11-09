@@ -1066,6 +1066,11 @@ function playSound(soundId, loop = false, volume = 1) {
 
     if (isPaused && soundId !== 'menuMusicSound') return;
 
+    // BOSS STAGES: geen Achtergrond-grid geluid — geen loop, geen 1x-trigger.
+    // Eén centrale blokkade hier dekt alle aanroepplekken (grid-beweging,
+    // terugkeer naar grid, boss-aanval) zonder per-plek checks / extra kosten.
+    if (soundId === 'gridBackgroundSound' && typeof isBossStage !== 'undefined' && isBossStage) return;
+
 
     // Stop any existing instance of this sound before playing a new one, unless it's music
     if (soundId !== 'menuMusicSound' && soundId !== 'gridBackgroundSound') {
