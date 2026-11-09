@@ -1203,14 +1203,48 @@ function createStars() { /* ... ongewijzigd ... */ stars = []; if (starrySkyCanv
 let vallendeSter = null;
 let vallendeSterVolgendeOm = 0;
 let vallendeSterVorigeFrame = 0;
-const VALLENDE_STER_MIN_PAUZE_MS = 8000;
-const VALLENDE_STER_MAX_PAUZE_MS = 15000;
+const VALLENDE_STER_MIN_PAUZE_MS = 5000; // 5 sec
+const VALLENDE_STER_MAX_PAUZE_MS = 8000; // 8 sec
 const VALLENDE_STER_LEVEN_MS = 1000; // 1 seconde zichtbaar per ster
 
 /** Draws the starry background, handling movement, twinkle, and fade near horizon. */
 function drawStars() { /* ... ongewijzigd ... */ try { if (!starryCtx || !starrySkyCanvas || starrySkyCanvas.width === 0 || starrySkyCanvas.height === 0) return; const currentCanvasWidth = starrySkyCanvas.width; const currentCanvasHeight = starrySkyCanvas.height; starryCtx.clearRect(0, 0, currentCanvasWidth, currentCanvasHeight); const horizonY = Math.round(currentCanvasHeight * GRID_HORIZON_Y_FACTOR); const perspectiveHeight = currentCanvasHeight - horizonY; const fadeStartY = Math.max(0, horizonY - perspectiveHeight * STAR_FADE_START_FACTOR_ABOVE_HORIZON); const fadeEndY = horizonY; const fadeRange = Math.max(1, fadeEndY - fadeStartY); stars.forEach(star => { const normalizedRadius = (star.radius - MIN_STAR_RADIUS) / (MAX_STAR_RADIUS - MIN_STAR_RADIUS); const speed = BASE_PARALLAX_SPEED + (normalizedRadius * PARALLAX_SPEED_FACTOR); if (!isPaused || isShowingPortraitMessage) { star.y += speed; } if (star.y > currentCanvasHeight + star.radius) { star.y = -star.radius * 2; star.x = Math.random() * currentCanvasWidth; } if (!isPaused || isShowingPortraitMessage) { star.alpha += star.alphaChange; if (star.alpha <= 0.1 || star.alpha >= 1.0) { star.alphaChange *= -1; star.alpha = Math.max(0.1, Math.min(1.0, star.alpha)); } } let finalAlpha = star.alpha; if (fadeStartY >= 0 && star.y > fadeStartY) { if (star.y >= horizonY) { finalAlpha = 0; } else { finalAlpha *= (1.0 - Math.min(1.0, Math.max(0, (star.y - fadeStartY) / fadeRange))); } } finalAlpha = Math.max(0, Math.min(1.0, finalAlpha)); if (finalAlpha > 0.01) { starryCtx.beginPath(); starryCtx.arc(Math.round(star.x), Math.round(star.y), star.radius, 0, Math.PI * 2); starryCtx.fillStyle = `rgba(255, 255, 255, ${finalAlpha.toFixed(3)})`; starryCtx.fill(); } });
 
-      // ===== VALLENDE STER (in drawStars zelf) - VAAG, KORT, KORTE AFSTAND =====
+      // ===== SPIEGELING VLOER: alleen sterren (geen achtergrond / UI) =====
+      // STEILE SPIEGELHOEK: hele hemel (0..horizon, ~74%) samengeperst in hele
+      // vloer (horizon..onderkant, ~26%). Factor 0.35 = vloerhoogte / hemelhoogte.
+      // Daardoor past de HELE grid in de vloer: object bovenaan -> onderin de
+      // vloer, object vlak boven horizon -> vlak onder horizon. Met 0.9x viel
+      // alles boven de onderste rij onder het scherm weg.
+      // Verder: mild vervagend (0.45) + naar beneden toe 45% breder, net als de
+      // perspectieflijnen van de vloer. STERKTE: 0.55 (was 0.32) zodat de sterren
+      // in de vloer echt zichtbaar zijn. Geen shadowBlur / filters: 60fps.
+      try {
+        var _spH = currentCanvasHeight, _spHor = horizonY, _spPersp = Math.max(1, _spH - _spHor);
+        var _spCx = currentCanvasWidth / 2;
+        starryCtx.save();
+        starryCtx.beginPath(); starryCtx.rect(0, _spHor, currentCanvasWidth, _spPersp); starryCtx.clip();
+        for (var _si = 0; _si < stars.length; _si++) {
+          var _st = stars[_si];
+          if (!_st || _st.y >= _spHor) continue; // alleen objecten BOVEN de horizon spiegelen
+          var _spMy = _spHor + (_spHor - _st.y) * 0.35; // gespiegelde Y, hele vloer benut
+          var _spP = Math.max(0, Math.min(1, (_spMy - _spHor) / _spPersp)); // 0 aan horizon, 1 onderin
+          var _spFade = 1 - _spP * 0.45; // mild: onderin nog 55% van de sterkte over
+          var _spA = _st.alpha * 0.55 * _spFade;
+          if (_spA <= 0.01) continue;
+          var _spSx = 1 + _spP * 0.45; // naar beneden toe breder, zoals het vloerperspectief
+          var _spMx = _spCx + (_st.x - _spCx) * _spSx;
+          starryCtx.beginPath();
+          // Ellips: in de breedte mee uitgerekt, in de hoogte geplet met de steile hoek.
+          starryCtx.ellipse(Math.round(_spMx), Math.round(_spMy), Math.max(0.4, _st.radius * _spSx), Math.max(0.4, _st.radius * 0.35), 0, 0, Math.PI * 2);
+          starryCtx.fillStyle = 'rgba(255,255,255,' + _spA.toFixed(3) + ')';
+          starryCtx.fill();
+        }
+        starryCtx.restore();
+      } catch (_spE) { try { starryCtx.restore(); } catch (e2) {} }
+      // ===== VALLENDE STER (in drawStars zelf) - ALTIJD BOVEN DE VLOER / HORIZON =====
+      // Harde grens: horizon = 74% van de schermhoogte (GRID_HORIZON_Y_FACTOR).
+      // Spawn + hele valafstand blijven daarboven, met 20px marge. Raakt de vloer dus nooit.
       try {
         var _vsNu = Date.now();
         if (!vallendeSterVolgendeOm) vallendeSterVolgendeOm = _vsNu + 1500;
@@ -1220,17 +1254,27 @@ function drawStars() { /* ... ongewijzigd ... */ try { if (!starryCtx || !starry
         var _vsDt = vallendeSterVorigeFrame ? Math.min(_vsNow - vallendeSterVorigeFrame, 33) : 16;
         vallendeSterVorigeFrame = _vsNow;
         if (!_vsGepauzeerd) {
+          var _vsHorizon = currentCanvasHeight * ((typeof GRID_HORIZON_Y_FACTOR !== 'undefined' && GRID_HORIZON_Y_FACTOR) ? GRID_HORIZON_Y_FACTOR : 0.74);
           if (!vallendeSter && _vsNu >= vallendeSterVolgendeOm) {
             var _vsW = currentCanvasWidth, _vsH = currentCanvasHeight;
             var _vsX = 0.05 * _vsW + Math.random() * 0.90 * _vsW;
-            var _vsY = 0.05 * _vsH + Math.random() * 0.50 * _vsH;
             var _vsRechts = Math.random() < 0.5;
             var _vsHoek = (_vsRechts ? 28 + Math.random() * 20 : 132 + Math.random() * 20) * Math.PI / 180;
-            var _vsSnelheid = 260 + Math.random() * 100; // LANGZAMER: 260-360 px/s = korte afstand in 1 sec
-            vallendeSter = { x: _vsX, y: _vsY, vx: Math.cos(_vsHoek) * _vsSnelheid, vy: Math.sin(_vsHoek) * _vsSnelheid, lengte: 40 + Math.random() * 30, leeftijd: 0 }; // KORTER: 40-70 px
+            var _vsSnelheid = 260 + Math.random() * 100; // 260-360 px/s
+            var _vsVy = Math.sin(_vsHoek) * _vsSnelheid; // hoe ver hij in totaal naar beneden valt
+            var _vsValAfstand = _vsVy * (VALLENDE_STER_LEVEN_MS / 1000);
+            // Hoogste plek waar hij mag starten: horizon - hele valafstand - 20px marge.
+            // Zo kan de kop de horizon nooit halen, ook niet aan het eind van zijn val.
+            var _vsMaxY = _vsHorizon - _vsValAfstand - 20;
+            var _vsMinY = 0.05 * _vsH;
+            if (_vsMaxY < _vsMinY + 20) _vsMaxY = _vsMinY + 20; // heel klein scherm: dan maar helemaal bovenaan
+            var _vsY = _vsMinY + Math.random() * Math.max(0, _vsMaxY - _vsMinY);
+            vallendeSter = { x: _vsX, y: _vsY, vx: Math.cos(_vsHoek) * _vsSnelheid, vy: _vsVy, lengte: 40 + Math.random() * 30, leeftijd: 0 };
           }
           if (vallendeSter) {
             vallendeSter.leeftijd += _vsDt;
+            // Extra veiligheid: mocht de kop toch bij de horizon komen, stop hem meteen (voordat hij de vloer raakt).
+            if (vallendeSter.y >= _vsHorizon - 15) vallendeSter.leeftijd = VALLENDE_STER_LEVEN_MS;
             if (vallendeSter.leeftijd >= VALLENDE_STER_LEVEN_MS) {
               vallendeSter = null;
               vallendeSterVolgendeOm = _vsNu + VALLENDE_STER_MIN_PAUZE_MS + Math.random() * (VALLENDE_STER_MAX_PAUZE_MS - VALLENDE_STER_MIN_PAUZE_MS);
@@ -1252,6 +1296,31 @@ function drawStars() { /* ... ongewijzigd ... */ try { if (!starryCtx || !starry
               starryCtx.strokeStyle = _vsGloed;
               starryCtx.lineWidth = 8;
               starryCtx.beginPath(); starryCtx.moveTo(vallendeSter.x, vallendeSter.y); starryCtx.lineTo(_vsTx, _vsTy); starryCtx.stroke();
+              // SPIEGELING vallende ster: zelfde steile hoek (0.35) + verbreding,
+              // zodat ook een vallende ster hoog in beeld nog in de vloer past.
+              // Kop en staart elk apart spiegelen, zodat de staart mee uitwaaiert.
+              // STERKTE: 0.60 + dubbele gloed (was 0.32 / 0.05), anders blijft
+              // de reflectie van zo'n dunne lijn onzichtbaar vaag.
+              var _vsPersp = Math.max(1, currentCanvasHeight - _vsHorizon);
+              var _vsCx = currentCanvasWidth / 2;
+              var _vsMir = function (_x, _y) {
+                var _my = _vsHorizon + (_vsHorizon - _y) * 0.35;
+                var _pp = Math.max(0, Math.min(1, (_my - _vsHorizon) / _vsPersp));
+                var _sx = 1 + _pp * 0.45;
+                return { x: _vsCx + (_x - _vsCx) * _sx, y: _my, p: _pp };
+              };
+              var _vsKop = _vsMir(vallendeSter.x, vallendeSter.y);
+              var _vsStaart = _vsMir(_vsTx, _vsTy);
+              starryCtx.save();
+              starryCtx.beginPath(); starryCtx.rect(0, _vsHorizon, currentCanvasWidth, _vsPersp); starryCtx.clip();
+              starryCtx.globalAlpha = 0.60 * (1 - _vsKop.p * 0.45); // milde vervaging
+              starryCtx.lineCap = 'round'; starryCtx.globalCompositeOperation = 'lighter';
+              var _vsGloedSp = starryCtx.createLinearGradient(_vsKop.x, _vsKop.y, _vsStaart.x, _vsStaart.y);
+              _vsGloedSp.addColorStop(0, 'rgba(255,255,255,' + (0.10 * _vsFade).toFixed(3) + ')');
+              _vsGloedSp.addColorStop(1, 'rgba(255,255,255,0)');
+              starryCtx.strokeStyle = _vsGloedSp; starryCtx.lineWidth = 8;
+              starryCtx.beginPath(); starryCtx.moveTo(_vsKop.x, _vsKop.y); starryCtx.lineTo(_vsStaart.x, _vsStaart.y); starryCtx.stroke();
+              starryCtx.restore();
               var _vsWaas = starryCtx.createLinearGradient(vallendeSter.x, vallendeSter.y, _vsTx, _vsTy);
               _vsWaas.addColorStop(0, 'rgba(255,255,255,' + (0.10 * _vsFade).toFixed(3) + ')');
               _vsWaas.addColorStop(0.4, 'rgba(255,255,255,' + (0.04 * _vsFade).toFixed(3) + ')');
