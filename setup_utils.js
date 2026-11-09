@@ -91,7 +91,7 @@ window.highScoreHolderId = null; // << GEWIJZIGD: Expliciet aan window toevoegen
 
 // Zet hier het level waar je wilt starten. De game start direct in dat level.
 
-let START_LEVEL = 18; // <-- VERANDER DIT NAAR GEWENST LEVEL
+let START_LEVEL = 1; // <-- VERANDER DIT NAAR GEWENST LEVEL
 window.START_LEVEL = START_LEVEL;
 
 function getConfiguredStartLevel() {
