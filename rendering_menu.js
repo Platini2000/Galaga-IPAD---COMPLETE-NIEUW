@@ -1061,14 +1061,14 @@ function shouldDrawShieldForPlayer(playerNum) {
 // De reflectie is NIET recht naar beneden: steil 0.35 + naar beneden toe 45%
 // breder, als de vloerperspectieflijnen. Verander ALLEEN het getalletje achter
 // 'FINE-TUNE'. 0 = uit, 1 = even fel als origineel.
-//   Vijanden       -> 'FINE-TUNE VIJANDEN'        (nu 0.25)
-//   Gecaptuurd schip -> 'FINE-TUNE VIJANDEN'       (nu 0.25, zelfde als vijand waar het aan hangt)
-//   Vallend schip   -> 'FINE-TUNE VIJANDEN'       (nu 0.25, zelfde als vijanden)
-//   Floating scores -> 'FINE-TUNE VIJANDEN'       (nu 0.25, zelfde als vijanden, incl. upgrade-scores, op de kop)
-//   Boss           -> 'FINE-TUNE BOSS'            (nu 0.25)
-//   Kogels speler  -> 'FINE-TUNE KOGELS SPELER'  (nu 0.80)
-//   Kogels vijand  -> 'FINE-TUNE KOGELS VIJAND'  (nu 0.80)
-//   Explosies      -> 'FINE-TUNE EXPLOSIES'      (nu 0.30 x eigen alpha)
+//   Vijanden       -> 'FINE-TUNE VIJANDEN'        (nu 0.30)
+//   Gecaptuurd schip -> 'FINE-TUNE VIJANDEN'       (nu 0.30, zelfde als vijand waar het aan hangt)
+//   Vallend schip   -> 'FINE-TUNE VIJANDEN'       (nu 0.30, zelfde als vijanden)
+//   Floating scores -> 'FINE-TUNE VIJANDEN'       (nu 0.30, zelfde als vijanden, incl. upgrade-scores, op de kop)
+//   Boss           -> 'FINE-TUNE BOSS'            (nu 0.30)
+//   Kogels speler  -> 'FINE-TUNE KOGELS SPELER'  (nu 0.50)
+//   Kogels vijand  -> 'FINE-TUNE KOGELS VIJAND'  (nu 0.50)
+//   Explosies      -> 'FINE-TUNE EXPLOSIES'      (nu 0.20 x eigen alpha)
 //   Sterren / vallende sterren -> in setup_utils.js, boven de sterren-spiegeling.
 // ===== SPIEGELING VLOER =====
 // de hele grid (0..horizon) wordt steil samengedrukt met factor 0.35 in de
