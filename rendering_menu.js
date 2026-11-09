@@ -1103,8 +1103,14 @@ function drawFloorMirrorGame(now) {
         if (e.type === ENEMY3_TYPE) { img = _use2 ? bossGalagaImage2 : bossGalagaImage; col = 'purple'; }
         else if (e.type === ENEMY2_TYPE) { img = _use2 ? butterflyImage2 : butterflyImage; col = 'cyan'; }
         else { img = _use2 ? beeImage2 : beeImage; col = 'red'; }
-        if (img && img.complete && img.naturalHeight !== 0) { gameCtx.drawImage(img, Math.round(_m.x), Math.round(_m.y), _m.w, _m.h); if (e.type === ENEMY3_TYPE && e.isDamaged) { gameCtx.save(); gameCtx.beginPath(); gameCtx.rect(Math.round(_m.x), Math.round(_m.y), _m.w, _m.h); gameCtx.clip(); gameCtx.globalCompositeOperation = 'source-atop'; gameCtx.globalAlpha = 1; gameCtx.fillStyle = 'rgba(0, 0, 139, 0.5)'; gameCtx.fillRect(Math.round(_m.x), Math.round(_m.y), _m.w, _m.h); gameCtx.restore(); gameCtx.globalAlpha = 0.60 * _m.fade; } }
-        else { gameCtx.fillStyle = (e.type === ENEMY3_TYPE && e.isDamaged) ? 'rgba(0, 0, 139, 1)' : col; gameCtx.fillRect(Math.round(_m.x), Math.round(_m.y), _m.w, _m.h); }
+        // Verticaal geflippt zoals de hoofdboss: translate naar midden + scale(1,-1).
+        // Geldt voor ALLE stages, dus ook voor minions in boss stages: die zitten
+        // gewoon in dezelfde `enemies`-array als normale vijanden.
+        // 60fps: 1x save/restore per vijand, geen extra drawImage, geen blur/filter.
+        gameCtx.save(); gameCtx.translate(Math.round(_m.x) + _m.w / 2, Math.round(_m.y) + _m.h / 2); gameCtx.scale(1, -1);
+        if (img && img.complete && img.naturalHeight !== 0) { gameCtx.drawImage(img, -_m.w / 2, -_m.h / 2, _m.w, _m.h); if (e.type === ENEMY3_TYPE && e.isDamaged) { gameCtx.save(); gameCtx.beginPath(); gameCtx.rect(-_m.w / 2, -_m.h / 2, _m.w, _m.h); gameCtx.clip(); gameCtx.globalCompositeOperation = 'source-atop'; gameCtx.globalAlpha = 1; gameCtx.fillStyle = 'rgba(0, 0, 139, 0.5)'; gameCtx.fillRect(-_m.w / 2, -_m.h / 2, _m.w, _m.h); gameCtx.restore(); gameCtx.globalAlpha = 0.60 * _m.fade; gameCtx.globalCompositeOperation = 'source-over'; } }
+        else { gameCtx.fillStyle = (e.type === ENEMY3_TYPE && e.isDamaged) ? 'rgba(0, 0, 139, 1)' : col; gameCtx.fillRect(-_m.w / 2, -_m.h / 2, _m.w, _m.h); }
+        gameCtx.restore();
       }
     }
     // GECAPTUURD + VALLEND SCHIP: zelfde spiegeling als vijanden (0.60 x fade, zelfde _mirrorRect).
@@ -1132,7 +1138,13 @@ function drawFloorMirrorGame(now) {
         var _fm = _mirrorRect(_fs.x, _fs.y, _fs.width, _fs.height);
         gameCtx.globalAlpha = 0.60 * _fm.fade; // FINE-TUNE VIJANDEN: zelfde sterkte als vijanden
         if (gameCtx.globalAlpha <= 0.01) continue;
-        gameCtx.drawImage(shipImage, Math.round(_fm.x), Math.round(_fm.y), _fm.w, _fm.h);
+        // Vallend schip: zelfde rotatie als het origineel + verticaal geflippt.
+        // Volgorde translate -> scale(1,-1) -> rotate(rotation): de spiegeling keert
+        // de draairichting om, precies zoals een echte vloerspiegel. Zelfde tekening
+        // als het origineel (translate naar midden, rotate(fs.rotation || 0)), dus
+        // het schip draait in de spiegel synchroon in het rond.
+        // 60fps: 1x save/restore per vallend schip (max een handvol), geen extra drawImage.
+        gameCtx.save(); gameCtx.translate(Math.round(_fm.x) + _fm.w / 2, Math.round(_fm.y) + _fm.h / 2); gameCtx.scale(1, -1); gameCtx.rotate(_fs.rotation || 0); gameCtx.drawImage(shipImage, -_fm.w / 2, -_fm.h / 2, _fm.w, _fm.h); gameCtx.restore();
       }
     }
         // FLOATING SCORES (vijanden + upgrades, bv. SCORE-UP / LUCKY 7): zelfde spiegeling als vijanden.
