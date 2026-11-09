@@ -1871,6 +1871,18 @@ function drawActiveUpgradesUnderScore(pNum, label, labelAlign, labelX) {
 // --- START OF FILE rendering_menu.js ---
 // --- DEEL 4 van 4 dit code blok    ---
 
+        // Z-INDEX / LAAGVOLGORDE (60fps): alles op gameCanvas is tekenvolgorde, geen CSS z-index.
+        // De vloerspiegeling is een vloerlaag en MOET dus VOOR de schepen: schepen
+        // (speler + AI, incl. dual-ship, shield-bubble en vallende schepen) staan in de
+        // vloerzone (onder de horizon) en werden anders door hun eigen spiegeling
+        // overgeschilderd. 1x per frame hier, nergens anders: geen dubbele draw-kosten.
+        // Zelfde conditie als het gameplay-blok verderop, zodat menu / score /
+        // game-over / results exact hetzelfde blijven als voor deze fix.
+        if (isInGameState && !isShowingPortraitMessage &&
+            ((gameOverSequenceStartTime === 0 && !isShowingPlayerGameOverMessage && !isShowingResultsScreen) ||
+             (isTwoPlayerMode && selectedGameMode === 'coop' && (isPlayer1ShowingGameOverMessage || isPlayer2ShowingGameOverMessage)))) {
+            drawFloorMirrorGame(now);
+        }
         gameCtx.save(); // Save context before drawing ships
         let drawMenuShip = false;
         let gameIsEffectivelyOverOrInMenu = !isInGameState || isShowingScoreScreen || isShowingResultsScreen || gameOverSequenceStartTime > 0 || isShowingPlayerGameOverMessage || isPlayer1ShowingGameOverMessage || isPlayer2ShowingGameOverMessage;
@@ -2311,8 +2323,9 @@ function drawActiveUpgradesUnderScore(pNum, label, labelAlign, labelX) {
                          gameCtx.restore();
                      }
                  }
-                 // SPIEGELING VLOER: vijanden + kogels (geen schip / UI / logo)
-                 drawFloorMirrorGame(now);
+                 // SPIEGELING VLOER: staat nu VOOR de schepen (zie boven bij het schepen-blok),
+                 // zodat speler- en AI-schepen altijd VOOR / boven de vloerspiegeling staan.
+                 // Hier NIET nog een keer aanroepen: dat zou de spiegeling dubbel tekenen.
                  if (captureBeamActive && capturingBossId && captureBeamProgress > 0 && !isShowingCoopPlayersReady) { 
                      gameCtx.save(); 
                      const pulseAlpha = 0.4 + (Math.sin(now * CAPTURE_BEAM_PULSE_SPEED) + 1) / 2 * 0.6; 
