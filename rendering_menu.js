@@ -1057,21 +1057,21 @@ function shouldDrawShieldForPlayer(playerNum) {
 }
 
 
-// ===== SPIEGELING VLOER (alleen vijanden + kogels + explosies) =====
-// Wordt in renderGame() aangeroepen direct NA vijanden/kogels en VOOR het schip,
-// zodat het schip (geen spiegeling) de reflectie netjes overlapt waar nodig.
-// STEILE SPIEGELHOEK: de hele grid (0..horizon, ~74%) wordt samengeperst in de
-// hele vloer (horizon..onderkant, ~26%). Factor 0.35 = vloerhoogte / gridhoogte.
-// Daardoor is de HELE grid in de vloer zichtbaar: bovenste rij -> helemaal
-// onderin de vloer, onderste rij -> vlak onder de horizon. Met 0.9x viel alles
-// boven de onderste rij onder het scherm weg en werd weggeclipt.
-// Verder: mild vervagend (0.45) + naar beneden toe 45% breder, net als de
-// perspectieflijnen van de vloer. STERKTES: vijanden 0.42 (ietsje duidelijker),
-// kogels 0.60 (flink zichtbaarder), explosies 0.55 x hun eigen alpha.
-// Geen shadowBlur / filters / offscreen canvas: alleen simpele drawImage/fillRect/
-// arc, dus 60fps blijft behouden. Buttons / teksten / logo / achtergrond raken
-// we niet: die staan op andere canvassen of worden na deze call getekend.
-// Floating scores / hit sparks spiegelen bewust NIET mee (tekst / losse vonkjes).
+// ===== FINE-TUNE OVERZICHT - STERKTE VAN ELKE SPIEGELING (alleen dit aanpassen) =====
+// De reflectie is NIET recht naar beneden: steil 0.35 + naar beneden toe 45%
+// breder, als de vloerperspectieflijnen. Verander ALLEEN het getalletje achter
+// 'FINE-TUNE'. 0 = uit, 1 = even fel als origineel.
+//   Vijanden       -> 'FINE-TUNE VIJANDEN'        (nu 0.42)
+//   Boss           -> 'FINE-TUNE BOSS'            (nu 0.42)
+//   Kogels speler  -> 'FINE-TUNE KOGELS SPELER'  (nu 0.60)
+//   Kogels vijand  -> 'FINE-TUNE KOGELS VIJAND'  (nu 0.60)
+//   Explosies      -> 'FINE-TUNE EXPLOSIES'      (nu 0.55 x eigen alpha)
+//   Sterren / vallende sterren -> in setup_utils.js, boven de sterren-spiegeling.
+// ===== SPIEGELING VLOER =====
+// de hele grid (0..horizon) wordt steil samengedrukt met factor 0.35 in de
+// hele vloer (horizon..onderkant), en waaiert naar beneden toe 45% breder
+// uit, net als de perspectieflijnen van de vloer. Mild vervagend (0.45).
+// Geen blur / filters / offscreen canvas: 60fps.
 function drawFloorMirrorGame(now) {
   try {
     if (!gameCtx || !gameCanvas || !gameCanvas.width || !gameCanvas.height) return;
@@ -1079,25 +1079,22 @@ function drawFloorMirrorGame(now) {
     var _hor = _h * ((typeof GRID_HORIZON_Y_FACTOR !== 'undefined' && GRID_HORIZON_Y_FACTOR) ? GRID_HORIZON_Y_FACTOR : 0.74);
     var _persp = Math.max(1, _h - _hor);
     var _cx = _w / 2;
-    // Eén gedeelde berekening voor elk object: gespiegelde positie + breedte +
-    // hoogte + fade. Per object uitgerekend, dus geen dure transform per sprite.
     var _mirrorRect = function (x, y, wgt, hgt) {
-      var _my = _hor + (_hor - (y + hgt)) * 0.35; // gespiegelde BOVENkant (na spiegeling omgedraaid)
-      var _pp = Math.max(0, Math.min(1, (_my - _hor) / _persp)); // 0 aan horizon, 1 onderin
-      var _sx = 1 + _pp * 0.45; // naar beneden toe breder, zoals het vloerperspectief
+      var _my = _hor + (_hor - (y + hgt)) * 0.35;
+      var _pp = Math.max(0, Math.min(1, (_my - _hor) / _persp));
+      var _sx = 1 + _pp * 0.45;
       return { x: _cx + (x - _cx) * _sx, y: _my, w: wgt * _sx, h: hgt * 0.35, fade: 1 - _pp * 0.45 };
     };
     gameCtx.save();
     gameCtx.beginPath(); gameCtx.rect(0, _hor, _w, _persp); gameCtx.clip();
     gameCtx.globalAlpha = 1;
-    // --- Vijanden (simpel: zelfde sprite/frame, geen rotatie/tint/captured ship in spiegel) ---
     if (typeof enemies !== 'undefined' && enemies) {
       var _use2 = !isPaused && (now % (ENEMY_ANIMATION_INTERVAL_MS * 2)) >= ENEMY_ANIMATION_INTERVAL_MS;
       for (var i = 0; i < enemies.length; i++) {
         var e = enemies[i];
         if (!e || e.y >= _hor) continue;
         var _m = _mirrorRect(e.x, e.y, e.width, e.height);
-        gameCtx.globalAlpha = 0.42 * _m.fade;
+        gameCtx.globalAlpha = 0.45 * _m.fade; // FINE-TUNE VIJANDEN: sterkte spiegeling
         if (gameCtx.globalAlpha <= 0.01) continue;
         var img = null, col = 'grey';
         if (e.type === ENEMY3_TYPE) { img = _use2 ? bossGalagaImage2 : bossGalagaImage; col = 'purple'; }
@@ -1107,12 +1104,11 @@ function drawFloorMirrorGame(now) {
         else { gameCtx.fillStyle = col; gameCtx.fillRect(Math.round(_m.x), Math.round(_m.y), _m.w, _m.h); }
       }
     }
-    // --- Boss-stage boss ---
     if (typeof isBossStage !== 'undefined' && isBossStage && typeof bossStageBoss !== 'undefined' && bossStageBoss) {
       var b = bossStageBoss;
       if (b && b.y < _hor) {
         var _mb = _mirrorRect(b.x, b.y, b.width, b.height);
-        gameCtx.globalAlpha = 0.42 * _mb.fade;
+        gameCtx.globalAlpha = 0.45 * _mb.fade; // FINE-TUNE BOSS: sterkte spiegeling
         var bimg = null;
         var _use2b = !isPaused && (now % 400) >= 200;
         if (typeof bossStageVariant !== 'undefined' && bossStageVariant === 'enemy3') bimg = _use2b ? bossGalagaImage2 : bossGalagaImage;
@@ -1122,13 +1118,12 @@ function drawFloorMirrorGame(now) {
         else { gameCtx.fillStyle = 'green'; gameCtx.fillRect(Math.round(_mb.x), Math.round(_mb.y), _mb.w, _mb.h); }
       }
     }
-    // --- Kogels: speler + vijand (simpel: sprite/rect, geen glow/trails/shadow) ---
     if (typeof bullets !== 'undefined' && bullets) {
       for (var j = 0; j < bullets.length; j++) {
         var bl = bullets[j];
         if (!bl || bl.y >= _hor) continue;
         var _mbl = _mirrorRect(bl.x, bl.y, bl.width, bl.height);
-        gameCtx.globalAlpha = 0.60 * _mbl.fade;
+        gameCtx.globalAlpha = 0.70 * _mbl.fade; // FINE-TUNE KOGELS SPELER: sterkte spiegeling
         if (gameCtx.globalAlpha <= 0.01) continue;
         if (typeof bulletImage !== 'undefined' && bulletImage.complete) gameCtx.drawImage(bulletImage, Math.round(_mbl.x), Math.round(_mbl.y), _mbl.w, _mbl.h);
         else { gameCtx.fillStyle = 'yellow'; gameCtx.fillRect(Math.round(_mbl.x), Math.round(_mbl.y), _mbl.w, _mbl.h); }
@@ -1139,16 +1134,12 @@ function drawFloorMirrorGame(now) {
         var eb = enemyBullets[k];
         if (!eb || eb.y >= _hor) continue;
         var _meb = _mirrorRect(eb.x, eb.y, eb.width, eb.height);
-        gameCtx.globalAlpha = 0.60 * _meb.fade;
+        gameCtx.globalAlpha = 0.70 * _meb.fade; // FINE-TUNE KOGELS VIJAND: sterkte spiegeling
         if (gameCtx.globalAlpha <= 0.01) continue;
         if (typeof enemyBulletImage !== 'undefined' && enemyBulletImage.complete && enemyBulletImage.naturalWidth > 0) gameCtx.drawImage(enemyBulletImage, Math.round(_meb.x), Math.round(_meb.y), _meb.w, _meb.h);
         else { gameCtx.fillStyle = 'white'; gameCtx.fillRect(Math.round(_meb.x), Math.round(_meb.y), _meb.w, _meb.h); }
       }
     }
-    // --- Explosies: zelfde deeltjes als renderExplosions(), gespiegeld ---
-    // Explosies bestaan uit losse cirkels (x, y, radius, alpha) en hebben geen
-    // sprite: per deeltje een meegeplette ellips. 'lighter' zoals het origineel,
-    // zodat een explosie in de vloer ook echt gloeit i.p.v. een doffe vlek.
     if (typeof explosions !== 'undefined' && explosions) {
       gameCtx.globalCompositeOperation = 'lighter';
       for (var _ei = 0; _ei < explosions.length; _ei++) {
@@ -1156,9 +1147,9 @@ function drawFloorMirrorGame(now) {
         if (!_ex || !_ex.particles) continue;
         for (var _pi = 0; _pi < _ex.particles.length; _pi++) {
           var _pt = _ex.particles[_pi];
-          if (!_pt || _pt.y >= _hor) continue; // alleen deeltjes BOVEN de horizon spiegelen
+          if (!_pt || _pt.y >= _hor) continue;
           var _mp = _mirrorRect(_pt.x - _pt.radius, _pt.y - _pt.radius, _pt.radius * 2, _pt.radius * 2);
-          var _pa = _pt.alpha * (typeof EXPLOSION_MAX_OPACITY !== 'undefined' ? EXPLOSION_MAX_OPACITY : 1) * 0.55 * _mp.fade;
+          var _pa = _pt.alpha * (typeof EXPLOSION_MAX_OPACITY !== 'undefined' ? EXPLOSION_MAX_OPACITY : 1) * 0.55 * _mp.fade; // FINE-TUNE EXPLOSIES: 0.55 = sterkte spiegeling
           if (_pa <= 0.01) continue;
           gameCtx.beginPath();
           gameCtx.ellipse(Math.round(_mp.x + _mp.w / 2), Math.round(_mp.y + _mp.h / 2), Math.max(0.4, _mp.w / 2), Math.max(0.4, _mp.h / 2), 0, 0, Math.PI * 2);

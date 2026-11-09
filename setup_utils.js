@@ -1205,20 +1205,21 @@ let vallendeSterVolgendeOm = 0;
 let vallendeSterVorigeFrame = 0;
 const VALLENDE_STER_MIN_PAUZE_MS = 5000; // 5 sec
 const VALLENDE_STER_MAX_PAUZE_MS = 8000; // 8 sec
-const VALLENDE_STER_LEVEN_MS = 1000; // 1 seconde zichtbaar per ster
+const VALLENDE_STER_LEVEN_MS = 2500; // 2.5 seconde zichtbaar per ster
 
 /** Draws the starry background, handling movement, twinkle, and fade near horizon. */
 function drawStars() { /* ... ongewijzigd ... */ try { if (!starryCtx || !starrySkyCanvas || starrySkyCanvas.width === 0 || starrySkyCanvas.height === 0) return; const currentCanvasWidth = starrySkyCanvas.width; const currentCanvasHeight = starrySkyCanvas.height; starryCtx.clearRect(0, 0, currentCanvasWidth, currentCanvasHeight); const horizonY = Math.round(currentCanvasHeight * GRID_HORIZON_Y_FACTOR); const perspectiveHeight = currentCanvasHeight - horizonY; const fadeStartY = Math.max(0, horizonY - perspectiveHeight * STAR_FADE_START_FACTOR_ABOVE_HORIZON); const fadeEndY = horizonY; const fadeRange = Math.max(1, fadeEndY - fadeStartY); stars.forEach(star => { const normalizedRadius = (star.radius - MIN_STAR_RADIUS) / (MAX_STAR_RADIUS - MIN_STAR_RADIUS); const speed = BASE_PARALLAX_SPEED + (normalizedRadius * PARALLAX_SPEED_FACTOR); if (!isPaused || isShowingPortraitMessage) { star.y += speed; } if (star.y > currentCanvasHeight + star.radius) { star.y = -star.radius * 2; star.x = Math.random() * currentCanvasWidth; } if (!isPaused || isShowingPortraitMessage) { star.alpha += star.alphaChange; if (star.alpha <= 0.1 || star.alpha >= 1.0) { star.alphaChange *= -1; star.alpha = Math.max(0.1, Math.min(1.0, star.alpha)); } } let finalAlpha = star.alpha; if (fadeStartY >= 0 && star.y > fadeStartY) { if (star.y >= horizonY) { finalAlpha = 0; } else { finalAlpha *= (1.0 - Math.min(1.0, Math.max(0, (star.y - fadeStartY) / fadeRange))); } } finalAlpha = Math.max(0, Math.min(1.0, finalAlpha)); if (finalAlpha > 0.01) { starryCtx.beginPath(); starryCtx.arc(Math.round(star.x), Math.round(star.y), star.radius, 0, Math.PI * 2); starryCtx.fillStyle = `rgba(255, 255, 255, ${finalAlpha.toFixed(3)})`; starryCtx.fill(); } });
 
+      // ===== FINE-TUNE OVERZICHT - STERKTE VAN ELKE SPIEGELING (alleen dit aanpassen) =====
+      // De reflectie is NIET recht naar beneden: steil 0.35 + naar beneden toe
+      // 45% breder, als de vloerperspectieflijnen. Verander ALLEEN het getalletje
+      // achter 'FINE-TUNE'. 0 = uit, 1 = even fel als origineel.
+      //   Sterren         -> hieronder, 'FINE-TUNE STERREN'         (nu 1.00)
+      //   Vallende sterren -> verderop, 'FINE-TUNE VALLENDE STER'    (nu 1.00 + gloed 0.40)
+      //   Vijanden / boss / kogels / explosies -> in rendering_menu.js, boven drawFloorMirrorGame().
       // ===== SPIEGELING VLOER: alleen sterren (geen achtergrond / UI) =====
-      // STEILE SPIEGELHOEK: hele hemel (0..horizon, ~74%) samengeperst in hele
-      // vloer (horizon..onderkant, ~26%). Factor 0.35 = vloerhoogte / hemelhoogte.
-      // Daardoor past de HELE grid in de vloer: object bovenaan -> onderin de
-      // vloer, object vlak boven horizon -> vlak onder horizon. Met 0.9x viel
-      // alles boven de onderste rij onder het scherm weg.
-      // Verder: mild vervagend (0.45) + naar beneden toe 45% breder, net als de
-      // perspectieflijnen van de vloer. STERKTE: 0.55 (was 0.32) zodat de sterren
-      // in de vloer echt zichtbaar zijn. Geen shadowBlur / filters: 60fps.
+      // NIET recht naar beneden: steile hoek 0.35 (hele hemel in hele vloer),
+      // mild vervagend (0.45) + naar beneden toe 45% breder. Geen blur / filters: 60fps.
       try {
         var _spH = currentCanvasHeight, _spHor = horizonY, _spPersp = Math.max(1, _spH - _spHor);
         var _spCx = currentCanvasWidth / 2;
@@ -1226,16 +1227,14 @@ function drawStars() { /* ... ongewijzigd ... */ try { if (!starryCtx || !starry
         starryCtx.beginPath(); starryCtx.rect(0, _spHor, currentCanvasWidth, _spPersp); starryCtx.clip();
         for (var _si = 0; _si < stars.length; _si++) {
           var _st = stars[_si];
-          if (!_st || _st.y >= _spHor) continue; // alleen objecten BOVEN de horizon spiegelen
-          var _spMy = _spHor + (_spHor - _st.y) * 0.35; // gespiegelde Y, hele vloer benut
-          var _spP = Math.max(0, Math.min(1, (_spMy - _spHor) / _spPersp)); // 0 aan horizon, 1 onderin
-          var _spFade = 1 - _spP * 0.45; // mild: onderin nog 55% van de sterkte over
-          var _spA = _st.alpha * 0.55 * _spFade;
+          if (!_st || _st.y >= _spHor) continue;
+          var _spMy = _spHor + (_spHor - _st.y) * 0.35;
+          var _spP = Math.max(0, Math.min(1, (_spMy - _spHor) / _spPersp));
+          var _spA = _st.alpha * 1.00 * (1 - _spP * 0.45); // FINE-TUNE STERREN: 0 = uit, 1 = even fel als origineel
           if (_spA <= 0.01) continue;
-          var _spSx = 1 + _spP * 0.45; // naar beneden toe breder, zoals het vloerperspectief
+          var _spSx = 1 + _spP * 0.45; // naar beneden toe breder, als de vloerlijnen
           var _spMx = _spCx + (_st.x - _spCx) * _spSx;
           starryCtx.beginPath();
-          // Ellips: in de breedte mee uitgerekt, in de hoogte geplet met de steile hoek.
           starryCtx.ellipse(Math.round(_spMx), Math.round(_spMy), Math.max(0.4, _st.radius * _spSx), Math.max(0.4, _st.radius * 0.35), 0, 0, Math.PI * 2);
           starryCtx.fillStyle = 'rgba(255,255,255,' + _spA.toFixed(3) + ')';
           starryCtx.fill();
@@ -1296,11 +1295,9 @@ function drawStars() { /* ... ongewijzigd ... */ try { if (!starryCtx || !starry
               starryCtx.strokeStyle = _vsGloed;
               starryCtx.lineWidth = 8;
               starryCtx.beginPath(); starryCtx.moveTo(vallendeSter.x, vallendeSter.y); starryCtx.lineTo(_vsTx, _vsTy); starryCtx.stroke();
-              // SPIEGELING vallende ster: zelfde steile hoek (0.35) + verbreding,
-              // zodat ook een vallende ster hoog in beeld nog in de vloer past.
-              // Kop en staart elk apart spiegelen, zodat de staart mee uitwaaiert.
-              // STERKTE: 0.60 + dubbele gloed (was 0.32 / 0.05), anders blijft
-              // de reflectie van zo'n dunne lijn onzichtbaar vaag.
+              // SPIEGELING vallende ster: NIET recht naar beneden.
+              // Steile hoek 0.35 + naar beneden toe breder, kop en staart elk
+              // apart gespiegeld zodat de staart mee uitwaaiert.
               var _vsPersp = Math.max(1, currentCanvasHeight - _vsHorizon);
               var _vsCx = currentCanvasWidth / 2;
               var _vsMir = function (_x, _y) {
@@ -1313,12 +1310,12 @@ function drawStars() { /* ... ongewijzigd ... */ try { if (!starryCtx || !starry
               var _vsStaart = _vsMir(_vsTx, _vsTy);
               starryCtx.save();
               starryCtx.beginPath(); starryCtx.rect(0, _vsHorizon, currentCanvasWidth, _vsPersp); starryCtx.clip();
-              starryCtx.globalAlpha = 0.60 * (1 - _vsKop.p * 0.45); // milde vervaging
+              starryCtx.globalAlpha = 1.00 * (1 - _vsKop.p * 0.45); // FINE-TUNE VALLENDE STER: sterkte spiegeling
               starryCtx.lineCap = 'round'; starryCtx.globalCompositeOperation = 'lighter';
               var _vsGloedSp = starryCtx.createLinearGradient(_vsKop.x, _vsKop.y, _vsStaart.x, _vsStaart.y);
-              _vsGloedSp.addColorStop(0, 'rgba(255,255,255,' + (0.10 * _vsFade).toFixed(3) + ')');
+              _vsGloedSp.addColorStop(0, 'rgba(255,255,255,' + (0.40 * _vsFade).toFixed(3) + ')'); // FINE-TUNE VALLENDE STER: gloed spiegeling
               _vsGloedSp.addColorStop(1, 'rgba(255,255,255,0)');
-              starryCtx.strokeStyle = _vsGloedSp; starryCtx.lineWidth = 8;
+              starryCtx.strokeStyle = _vsGloedSp; starryCtx.lineWidth = 3;
               starryCtx.beginPath(); starryCtx.moveTo(_vsKop.x, _vsKop.y); starryCtx.lineTo(_vsStaart.x, _vsStaart.y); starryCtx.stroke();
               starryCtx.restore();
               var _vsWaas = starryCtx.createLinearGradient(vallendeSter.x, vallendeSter.y, _vsTx, _vsTy);
