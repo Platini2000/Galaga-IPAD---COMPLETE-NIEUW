@@ -1220,7 +1220,7 @@ function drawStars() { /* ... ongewijzigd ... */ try { if (!starryCtx || !starry
       // 45% breder, als de vloerperspectieflijnen. Verander ALLEEN het getalletje
       // achter 'FINE-TUNE'. 0 = uit, 1 = even fel als origineel.
       //   Sterren         -> hieronder, 'FINE-TUNE STERREN'         (nu 1.25)
-      //   Vallende sterren -> verderop, 'FINE-TUNE VALLENDE STER'    (nu 1.50 + gloed 0.60)
+      //   Vallende sterren -> verderop, 'FINE-TUNE VALLENDE STER'    (nu 1.50 + gloed 0.25)
       //   Vijanden / boss / kogels / explosies -> in rendering_menu.js, boven drawFloorMirrorGame().
       // ===== SPIEGELING VLOER: alleen sterren (geen achtergrond / UI) =====
       // NIET recht naar beneden: steile hoek 0.35 (hele hemel in hele vloer),
@@ -1318,7 +1318,7 @@ function drawStars() { /* ... ongewijzigd ... */ try { if (!starryCtx || !starry
               starryCtx.globalAlpha = 1.50 * (1 - _vsKop.p * 0.45); // FINE-TUNE VALLENDE STER: sterkte spiegeling
               starryCtx.lineCap = 'round'; starryCtx.globalCompositeOperation = 'lighter';
               var _vsGloedSp = starryCtx.createLinearGradient(_vsKop.x, _vsKop.y, _vsStaart.x, _vsStaart.y);
-              _vsGloedSp.addColorStop(0, 'rgba(255,255,255,' + (0.60 * _vsFade).toFixed(3) + ')'); // FINE-TUNE VALLENDE STER: gloed spiegeling
+              _vsGloedSp.addColorStop(0, 'rgba(255,255,255,' + (0.25 * _vsFade).toFixed(3) + ')'); // FINE-TUNE VALLENDE STER: gloed spiegeling
               _vsGloedSp.addColorStop(1, 'rgba(255,255,255,0)');
               starryCtx.strokeStyle = _vsGloedSp; starryCtx.lineWidth = 3;
               starryCtx.beginPath(); starryCtx.moveTo(_vsKop.x, _vsKop.y); starryCtx.lineTo(_vsStaart.x, _vsStaart.y); starryCtx.stroke();
