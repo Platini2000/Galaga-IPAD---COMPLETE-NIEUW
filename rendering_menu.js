@@ -1061,11 +1061,11 @@ function shouldDrawShieldForPlayer(playerNum) {
 // De reflectie is NIET recht naar beneden: steil 0.35 + naar beneden toe 45%
 // breder, als de vloerperspectieflijnen. Verander ALLEEN het getalletje achter
 // 'FINE-TUNE'. 0 = uit, 1 = even fel als origineel.
-//   Vijanden       -> 'FINE-TUNE VIJANDEN'        (nu 0.42)
-//   Boss           -> 'FINE-TUNE BOSS'            (nu 0.42)
-//   Kogels speler  -> 'FINE-TUNE KOGELS SPELER'  (nu 0.60)
-//   Kogels vijand  -> 'FINE-TUNE KOGELS VIJAND'  (nu 0.60)
-//   Explosies      -> 'FINE-TUNE EXPLOSIES'      (nu 0.55 x eigen alpha)
+//   Vijanden       -> 'FINE-TUNE VIJANDEN'        (nu 0.60)
+//   Boss           -> 'FINE-TUNE BOSS'            (nu 0.60)
+//   Kogels speler  -> 'FINE-TUNE KOGELS SPELER'  (nu 0.80)
+//   Kogels vijand  -> 'FINE-TUNE KOGELS VIJAND'  (nu 0.80)
+//   Explosies      -> 'FINE-TUNE EXPLOSIES'      (nu 0.65 x eigen alpha)
 //   Sterren / vallende sterren -> in setup_utils.js, boven de sterren-spiegeling.
 // ===== SPIEGELING VLOER =====
 // de hele grid (0..horizon) wordt steil samengedrukt met factor 0.35 in de
@@ -1094,7 +1094,7 @@ function drawFloorMirrorGame(now) {
         var e = enemies[i];
         if (!e || e.y >= _hor) continue;
         var _m = _mirrorRect(e.x, e.y, e.width, e.height);
-        gameCtx.globalAlpha = 0.45 * _m.fade; // FINE-TUNE VIJANDEN: sterkte spiegeling
+        gameCtx.globalAlpha = 0.60 * _m.fade; // FINE-TUNE VIJANDEN: sterkte spiegeling
         if (gameCtx.globalAlpha <= 0.01) continue;
         var img = null, col = 'grey';
         if (e.type === ENEMY3_TYPE) { img = _use2 ? bossGalagaImage2 : bossGalagaImage; col = 'purple'; }
@@ -1108,7 +1108,7 @@ function drawFloorMirrorGame(now) {
       var b = bossStageBoss;
       if (b && b.y < _hor) {
         var _mb = _mirrorRect(b.x, b.y, b.width, b.height);
-        gameCtx.globalAlpha = 0.45 * _mb.fade; // FINE-TUNE BOSS: sterkte spiegeling
+        gameCtx.globalAlpha = 0.60 * _mb.fade; // FINE-TUNE BOSS: sterkte spiegeling
         var bimg = null;
         var _use2b = !isPaused && (now % 400) >= 200;
         if (typeof bossStageVariant !== 'undefined' && bossStageVariant === 'enemy3') bimg = _use2b ? bossGalagaImage2 : bossGalagaImage;
@@ -1123,7 +1123,7 @@ function drawFloorMirrorGame(now) {
         var bl = bullets[j];
         if (!bl || bl.y >= _hor) continue;
         var _mbl = _mirrorRect(bl.x, bl.y, bl.width, bl.height);
-        gameCtx.globalAlpha = 0.70 * _mbl.fade; // FINE-TUNE KOGELS SPELER: sterkte spiegeling
+        gameCtx.globalAlpha = 0.80 * _mbl.fade; // FINE-TUNE KOGELS SPELER: sterkte spiegeling
         if (gameCtx.globalAlpha <= 0.01) continue;
         if (typeof bulletImage !== 'undefined' && bulletImage.complete) gameCtx.drawImage(bulletImage, Math.round(_mbl.x), Math.round(_mbl.y), _mbl.w, _mbl.h);
         else { gameCtx.fillStyle = 'yellow'; gameCtx.fillRect(Math.round(_mbl.x), Math.round(_mbl.y), _mbl.w, _mbl.h); }
@@ -1134,7 +1134,7 @@ function drawFloorMirrorGame(now) {
         var eb = enemyBullets[k];
         if (!eb || eb.y >= _hor) continue;
         var _meb = _mirrorRect(eb.x, eb.y, eb.width, eb.height);
-        gameCtx.globalAlpha = 0.70 * _meb.fade; // FINE-TUNE KOGELS VIJAND: sterkte spiegeling
+        gameCtx.globalAlpha = 0.80 * _meb.fade; // FINE-TUNE KOGELS VIJAND: sterkte spiegeling
         if (gameCtx.globalAlpha <= 0.01) continue;
         if (typeof enemyBulletImage !== 'undefined' && enemyBulletImage.complete && enemyBulletImage.naturalWidth > 0) gameCtx.drawImage(enemyBulletImage, Math.round(_meb.x), Math.round(_meb.y), _meb.w, _meb.h);
         else { gameCtx.fillStyle = 'white'; gameCtx.fillRect(Math.round(_meb.x), Math.round(_meb.y), _meb.w, _meb.h); }
@@ -1149,7 +1149,7 @@ function drawFloorMirrorGame(now) {
           var _pt = _ex.particles[_pi];
           if (!_pt || _pt.y >= _hor) continue;
           var _mp = _mirrorRect(_pt.x - _pt.radius, _pt.y - _pt.radius, _pt.radius * 2, _pt.radius * 2);
-          var _pa = _pt.alpha * (typeof EXPLOSION_MAX_OPACITY !== 'undefined' ? EXPLOSION_MAX_OPACITY : 1) * 0.55 * _mp.fade; // FINE-TUNE EXPLOSIES: 0.55 = sterkte spiegeling
+          var _pa = _pt.alpha * (typeof EXPLOSION_MAX_OPACITY !== 'undefined' ? EXPLOSION_MAX_OPACITY : 1) * 0.65 * _mp.fade; // FINE-TUNE EXPLOSIES: 0.55 = sterkte spiegeling
           if (_pa <= 0.01) continue;
           gameCtx.beginPath();
           gameCtx.ellipse(Math.round(_mp.x + _mp.w / 2), Math.round(_mp.y + _mp.h / 2), Math.max(0.4, _mp.w / 2), Math.max(0.4, _mp.h / 2), 0, 0, Math.PI * 2);
