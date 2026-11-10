@@ -1083,7 +1083,7 @@ function drawFloorMirrorGame(now) {
     var _persp = Math.max(1, _h - _hor);
     var _cx = _w / 2;
     var _mirrorRect = function (x, y, wgt, hgt) {
-      var _my = _hor + (_hor - (y + hgt)) * 0.28;
+      var _my = _hor + (_hor - (y + hgt)) * 0.22;
       var _pp = Math.max(0, Math.min(1, (_my - _hor) / _persp));
       var _sx = 1 + _pp * 0.45;
       return { x: _cx + (x - _cx) * _sx, y: _my, w: wgt * _sx, h: hgt * 0.35, fade: 1 - _pp * 0.45 };
