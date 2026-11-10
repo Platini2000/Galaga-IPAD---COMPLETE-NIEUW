@@ -1183,7 +1183,7 @@ if (typeof isBossStage !== 'undefined' && isBossStage && typeof bossStageBoss !=
       var b = bossStageBoss;
       // SPIEGEL EINDBAAS: 2 situaties.
       // 1) OMHOOG na 3x bouncen (bossStagePhase === 'exiting_after_spawn'): de spiegel
-      //    zakt door op de NORMALE snelheid (dezelfde 0.28-factor uit _mirrorRect, dus
+      //    + mirror_settling: na exit nog 2 sec doorzakken op NORMALE snelheid (8px/frame @60fps,
       //    GEEN extra versnelling), maar wel LANGER door: hij blijft nog 400px
       //    doorlopen nadat de baas boven uit beeld is, en fadet in die 400px rustig
       //    van vol naar 0 uit. Zo zakt hij helemaal tot onder de vloer weg en is hij
@@ -1194,14 +1194,21 @@ if (typeof isBossStage !== 'undefined' && isBossStage && typeof bossStageBoss !=
       //    komt de spiegel dus ook pas weer terug in beeld. Zo popt er bij het
       //    terugkomen geen oud / vroeg spiegelbeeld meer onder in beeld.
       // 60fps: paar goedkope vergelijkingen, geen allocaties, geen extra drawImage.
-      var _bossExitingUp = (typeof bossStagePhase !== 'undefined' && bossStagePhase === 'exiting_after_spawn');
+      var _bossExitingUp = (typeof bossStagePhase !== 'undefined' && (bossStagePhase === 'exiting_after_spawn' || bossStagePhase === 'mirror_settling'));
       var _bossBottom = b.y + b.height;
-      if (b && b.y < _hor && (_bossExitingUp ? _bossBottom > -400 : _bossBottom > 0) && b.y < _h) {
+      // mirror_settling: boss zakt nog 2s x 8px/frame = 960px verder door, dus
+      // spiegel moet tot -1200 mogen doorlopen (was -400, dan knipte hij te vroeg af).
+      var _bossMirrorLimit = (typeof bossStagePhase !== 'undefined' && bossStagePhase === 'mirror_settling') ? -1200 : -400;
+      if (b && b.y < _hor && (_bossExitingUp ? _bossBottom > _bossMirrorLimit : _bossBottom > 0) && b.y < _h) {
         var _mb = _mirrorRect(b.x, b.y, b.width, b.height);
         var _bossOffTop = -_bossBottom; // > 0 zodra baas helemaal boven uit beeld is
         // GEEN extra _mb.y: alleen de normale _mirrorRect-snelheid (0.28), langer doorlopen.
         if (_bossExitingUp && _bossOffTop > 0) {
-          _mb.fade *= Math.max(0, 1 - _bossOffTop / 400);
+          // Uitfaden over de HELE doorzak-afstand, zodat de spiegel aan het
+          // eind van de 2 sec net op 0 zit en nooit opeens weg flipt.
+          // exiting: 400px | mirror_settling (2s x 8px/frame): 1200px.
+          var _fadeDist = (typeof bossStagePhase !== 'undefined' && bossStagePhase === 'mirror_settling') ? 1200 : 400;
+          _mb.fade *= Math.max(0, 1 - _bossOffTop / _fadeDist);
         }
         gameCtx.globalAlpha = 0.45 * _mb.fade; // FINE-TUNE BOSS: sterkte spiegeling
         var bimg = null;

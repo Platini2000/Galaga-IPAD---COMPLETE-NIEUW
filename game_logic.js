@@ -1444,6 +1444,7 @@ function resetBossStageState() {
     bossStageBounceCount = 0;
     bossStageBounceStartY = 0;
     bossStageBounceLastTime = 0;
+    bossStageMirrorSettleStartTime = 0; // NIEUW: start 2s doorzakken spiegel na exit
     bossStageLastGridBeeShot = 0;
     bossStageMinionCycle = 0;
     bossStageMinionNextPair = null;
@@ -1799,7 +1800,7 @@ function updateBossStageLogic(now) {
             bossStageBoss.y = bossStageBounceStartY + Math.sin((elapsed/600)*Math.PI*2) * 28;
             if (elapsed > 600) {
                 bossStageBounceCount++; bossStageBounceLastTime = now;
-                if (bossStageBounceCount >= 3) { bossStageBoss.y = bossStageBounceStartY; bossStagePhase = 'spawning'; bossStageLastSpawnTime = now; bossStageSpawnIndex = 0; }
+                if (bossStageBounceCount >= 3) { bossStageBoss.y = bossStageBounceStartY; bossStagePhase = 'exiting_after_spawn'; /* NIEUW: eerst boss omhoog + spiegel 2s doorzakken, pas daarna 'spawning' */ }
             }
             break;
         }
@@ -1809,16 +1810,36 @@ function updateBossStageLogic(now) {
             while (bossStageSpawnIndex < bossStageSpawnQueue.length) {
                 spawnOneBossStageBee();
             }
-            bossStagePhase = 'exiting_after_spawn';
+            bossStagePhase = 'waiting_for_grid'; // boss is al weg, NIET terug naar exiting (anders lus)
             break;
         }
         case 'exiting_after_spawn': {
-            // Boss goes up out of screen after grid vol
+            // Boss gaat omhoog uit beeld (zelfde normale snelheid: 8px/frame @60fps).
+            // Grid spawnt NOG NIET: eerst moet de spiegel 2 sec kunnen doorzakken.
+            isEntrancePhaseActive = true;
             bossStageBoss.y -= 8;
             if (bossStageBoss.y < -bossStageBoss.height - 50) {
-                // Hide boss, wait for grid clear
-                bossStagePhase = 'waiting_grid_clear';
-                console.log("[BOSS] Grid full, boss exited, waiting clear");
+                // Boss is boven uit beeld, spiegel staat nog in de vloer.
+                // Spiegel zakt nu 2 sec verder met dezelfde normale snelheid.
+                bossStagePhase = 'mirror_settling';
+                bossStageMirrorSettleStartTime = now;
+                console.log("[BOSS] Boss boven uit beeld, spiegel zakt nog 2s door");
+            }
+            break;
+        }
+        case 'mirror_settling': {
+            // NIEUW: 2 sec (2000ms, op klok niet op frames) doorzakken met
+            // EXACT dezelfde snelheid als exiting: 8px/frame @60fps.
+            // _mirrorRect in rendering zet dat om naar ~1.76px/frame spiegel-
+            // snelheid (factor 0.22), dus de spiegel flipt nooit opeens weg.
+            // Grid-vijanden spawnen pas NA deze 2 sec.
+            isEntrancePhaseActive = true;
+            bossStageBoss.y -= 8;
+            if (now - bossStageMirrorSettleStartTime >= 2000) {
+                bossStagePhase = 'spawning';
+                bossStageLastSpawnTime = now;
+                bossStageSpawnIndex = 0;
+                console.log("[BOSS] Spiegel 2s doorgezakt, nu pas grid spawnen");
             }
             break;
         }
