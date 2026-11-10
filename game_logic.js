@@ -1810,7 +1810,18 @@ function updateBossStageLogic(now) {
             while (bossStageSpawnIndex < bossStageSpawnQueue.length) {
                 spawnOneBossStageBee();
             }
-            bossStagePhase = 'waiting_for_grid'; // boss is al weg, NIET terug naar exiting (anders lus)
+            // HERSTEL VUREN (was per ongeluk veranderd): terug naar de OUDE
+            // route 'waiting_grid_clear', NIET naar 'waiting_for_grid' ->
+            // 'bees_in_grid'. Die laatste fase was vóór mijn wijziging
+            // ONBEREIKBAAR en bevat een eigen vuurblok (elke 400/280/180ms,
+            // kans 0.25/0.38/0.55, 1 kogel) + zet isEntrancePhaseActive=false
+            // waardoor ook de normale triggerGridFiring (ENEMY2/3-minions)
+            // opeens door createBulletSimple heen kwam. In 'waiting_grid_clear'
+            // vuurden de grid-minions dus vrijwel niet (bees: 0, ENEMY2/3:
+            // geblokkeerd door entrance-flag) - en dat blijft nu zo.
+            // De grid-stage zelf begint gewoon door het spawnen/landen van
+            // de vijanden, niet door de boss-fase.
+            bossStagePhase = 'waiting_grid_clear';
             break;
         }
         case 'exiting_after_spawn': {
