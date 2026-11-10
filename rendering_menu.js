@@ -1083,7 +1083,7 @@ function drawFloorMirrorGame(now) {
     var _persp = Math.max(1, _h - _hor);
     var _cx = _w / 2;
     var _mirrorRect = function (x, y, wgt, hgt) {
-      var _my = _hor + (_hor - (y + hgt)) * 0.28;
+      var _my = _hor + (_hor - (y + hgt)) * 0.22;
       var _pp = Math.max(0, Math.min(1, (_my - _hor) / _persp));
       var _sx = 1 + _pp * 0.45;
       return { x: _cx + (x - _cx) * _sx, y: _my, w: wgt * _sx, h: hgt * 0.35, fade: 1 - _pp * 0.45 };
@@ -1181,14 +1181,27 @@ function drawFloorMirrorGame(now) {
     }
 if (typeof isBossStage !== 'undefined' && isBossStage && typeof bossStageBoss !== 'undefined' && bossStageBoss) {
       var b = bossStageBoss;
-      // SPIEGEL = alleen als de baas zelf (deels) in beeld is. Na 3x bouncen gaat hij
-      // omhoog (exiting_after_spawn): zolang hij nog deels zichtbaar is, blijft de
-      // spiegel hem tonen; zodra zijn onderkant boven het scherm is (b.y + b.height <= 0)
-      // is hij weg uit de spiegel. Bij terugvallen (boss_entering_return) verschijnt hij
-      // in de spiegel zodra zijn onderkant weer in beeld komt. 60fps: 2 goedkope
-      // vergelijkingen, geen allocaties, geen extra drawImage.
-      if (b && b.y < _hor && (b.y + b.height) > 0 && b.y < _h) {
+      // SPIEGEL EINDBAAS: 2 situaties, anders blijft het oude beeld onder hangen.
+      // 1) OMHOOG na 3x bouncen (bossStagePhase === 'exiting_after_spawn'): de spiegel
+      //    moet VEEL verder naar beneden doorzakken dan de oude 150px, anders staat
+      //    hij onder nog in beeld als de baas boven alweer terugkomt. Daarom nu:
+      //    extra zak van 1.2x de afstand boven het scherm + uitfaden over 400px.
+      //    Zo zakt hij helemaal tot onder de vloer weg en is hij echt weg vóór de terugkeer.
+      // 2) ALLES ANDERS (terugvallen / terugkomen / vechten): strikte regel, spiegel
+      //    alleen als de baas zelf (deels) in beeld is (onderkant > 0). Zo popt er bij
+      //    het terugkomen geen oud / vroeg spiegelbeeld meer onder in beeld.
+      // 60fps: paar goedkope vergelijkingen, geen allocaties, geen extra drawImage.
+      var _bossExitingUp = (typeof bossStagePhase !== 'undefined' && bossStagePhase === 'exiting_after_spawn');
+      var _bossBottom = b.y + b.height;
+      if (b && b.y < _hor && (_bossExitingUp ? _bossBottom > -400 : _bossBottom > 0) && b.y < _h) {
         var _mb = _mirrorRect(b.x, b.y, b.width, b.height);
+        var _bossOffTop = -_bossBottom; // > 0 zodra baas helemaal boven uit beeld is
+        var _bossMirrorSink = 0; // extra zak naar beneden, alleen bij omhooggaan
+        if (_bossExitingUp && _bossOffTop > 0) {
+          _bossMirrorSink = _bossOffTop * 1.2;
+          _mb.y += _bossMirrorSink;
+          _mb.fade *= Math.max(0, 1 - _bossOffTop / 400);
+        }
         gameCtx.globalAlpha = 0.45 * _mb.fade; // FINE-TUNE BOSS: sterkte spiegeling
         var bimg = null;
         var _use2b = !isPaused && (now % 400) >= 200;
@@ -1197,7 +1210,7 @@ if (typeof isBossStage !== 'undefined' && isBossStage && typeof bossStageBoss !=
         else bimg = _use2b ? beeImage2 : beeImage;
         if (bimg && bimg.complete) { gameCtx.save(); gameCtx.translate(Math.round(_mb.x) + _mb.w / 2, Math.round(_mb.y) + _mb.h / 2); gameCtx.scale(1, -1); gameCtx.drawImage(bimg, -_mb.w / 2, -_mb.h / 2, _mb.w, _mb.h); var _bossTint2 = null; if (b.isDamagedFlash) _bossTint2 = 'rgba(255,255,255,0.75)'; else if (b.isBluePhase && typeof bossStageVariant !== 'undefined' && bossStageVariant === 'enemy3') { var _bpct = (typeof bossStageBossHealth !== 'undefined' ? bossStageBossHealth : 150) / (typeof bossStageBossMaxHealth !== 'undefined' ? bossStageBossMaxHealth : 150); _bossTint2 = 'rgba(0, 80, 255, 0.45)'; if (_bpct <= 0.25) _bossTint2 = 'rgba(255, 0, 0, 0.50)'; else if (_bpct <= 0.40) _bossTint2 = 'rgba(255, 40, 40, 0.50)'; } if (_bossTint2) { gameCtx.save(); gameCtx.beginPath(); gameCtx.rect(-_mb.w / 2, -_mb.h / 2, _mb.w, _mb.h); gameCtx.clip(); gameCtx.globalCompositeOperation = 'source-atop'; gameCtx.globalAlpha = 1; gameCtx.fillStyle = _bossTint2; gameCtx.fillRect(-_mb.w / 2, -_mb.h / 2, _mb.w, _mb.h); gameCtx.restore(); gameCtx.globalAlpha = 0.60 * _mb.fade; gameCtx.globalCompositeOperation = 'source-over'; } gameCtx.restore(); } // einde flip spiegel-boss
         else { var _bf = 'green'; if (b.isBluePhase) { var _bpc2 = (typeof bossStageBossHealth !== 'undefined' ? bossStageBossHealth : 150) / (typeof bossStageBossMaxHealth !== 'undefined' ? bossStageBossMaxHealth : 150); _bf = (_bpc2 <= 0.25) ? 'red' : 'blue'; } else if (b.isDamaged) _bf = 'white'; gameCtx.fillStyle = _bf; gameCtx.save(); gameCtx.translate(Math.round(_mb.x) + _mb.w / 2, Math.round(_mb.y) + _mb.h / 2); gameCtx.scale(1, -1); gameCtx.fillRect(-_mb.w / 2, -_mb.h / 2, _mb.w, _mb.h); gameCtx.restore(); }
-        if (typeof bossStagePhase !== 'undefined' && bossStagePhase !== 'defeated' && bossStagePhase !== 'none') { var _barW = b.width * 0.8, _barH = 8, _barX = b.x + (b.width - _barW) / 2, _barY = b.y - 14; var _barPct = (typeof bossStageBossHealth !== 'undefined' ? bossStageBossHealth : 10) / (typeof bossStageBossMaxHealth !== 'undefined' ? bossStageBossMaxHealth : 10); var _barBg = _mirrorRect(_barX - 2, _barY - 2, _barW + 4, _barH + 4); var _barFill = _mirrorRect(_barX, _barY, _barW * Math.max(0, _barPct), _barH); gameCtx.fillStyle = 'rgba(0,0,0,0.6)'; gameCtx.fillRect(Math.round(_barBg.x), Math.round(_barBg.y), _barBg.w, _barBg.h); gameCtx.fillStyle = (_barPct < 0.3) ? '#FF0000' : (_barPct < 0.6) ? '#FFFF00' : '#00FF00'; gameCtx.fillRect(Math.round(_barFill.x), Math.round(_barFill.y), _barFill.w, _barFill.h); gameCtx.strokeStyle = 'white'; gameCtx.lineWidth = 1; gameCtx.strokeRect(Math.round(_barBg.x), Math.round(_barBg.y), _barBg.w, _barBg.h); }
+        if (typeof bossStagePhase !== 'undefined' && bossStagePhase !== 'defeated' && bossStagePhase !== 'none') { var _barW = b.width * 0.8, _barH = 8, _barX = b.x + (b.width - _barW) / 2, _barY = b.y - 14; var _barPct = (typeof bossStageBossHealth !== 'undefined' ? bossStageBossHealth : 10) / (typeof bossStageBossMaxHealth !== 'undefined' ? bossStageBossMaxHealth : 10); var _barBg = _mirrorRect(_barX - 2, _barY - 2, _barW + 4, _barH + 4); var _barFill = _mirrorRect(_barX, _barY, _barW * Math.max(0, _barPct), _barH); _barBg.y += _bossMirrorSink; _barFill.y += _bossMirrorSink; gameCtx.fillStyle = 'rgba(0,0,0,0.6)'; gameCtx.fillRect(Math.round(_barBg.x), Math.round(_barBg.y), _barBg.w, _barBg.h); gameCtx.fillStyle = (_barPct < 0.3) ? '#FF0000' : (_barPct < 0.6) ? '#FFFF00' : '#00FF00'; gameCtx.fillRect(Math.round(_barFill.x), Math.round(_barFill.y), _barFill.w, _barFill.h); gameCtx.strokeStyle = 'white'; gameCtx.lineWidth = 1; gameCtx.strokeRect(Math.round(_barBg.x), Math.round(_barBg.y), _barBg.w, _barBg.h); }
       }
     }
     if (typeof bullets !== 'undefined' && bullets) {
