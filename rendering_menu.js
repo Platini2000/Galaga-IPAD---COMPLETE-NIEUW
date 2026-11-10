@@ -1097,7 +1097,7 @@ function drawFloorMirrorGame(now) {
         var e = enemies[i];
         if (!e || e.y >= _hor) continue;
         var _m = _mirrorRect(e.x, e.y, e.width, e.height);
-        gameCtx.globalAlpha = 0.25 * _m.fade; // FINE-TUNE VIJANDEN: sterkte spiegeling
+        gameCtx.globalAlpha = 0.30 * _m.fade; // FINE-TUNE VIJANDEN: sterkte spiegeling
         if (gameCtx.globalAlpha <= 0.01) continue;
         var img = null, col = 'grey';
         if (e.type === ENEMY3_TYPE) { img = _use2 ? bossGalagaImage2 : bossGalagaImage; col = 'purple'; }
@@ -1126,7 +1126,7 @@ function drawFloorMirrorGame(now) {
         else { _cx2 = _ce.x + CAPTURED_SHIP_OFFSET_X; _cy2 = _ce.y + CAPTURED_SHIP_OFFSET_Y; }
         if (_cy2 >= _hor) continue;
         var _cm = _mirrorRect(_cx2, _cy2, _cw, _ch);
-        gameCtx.globalAlpha = 0.25 * _cm.fade; // FINE-TUNE VIJANDEN: zelfde sterkte als vijanden
+        gameCtx.globalAlpha = 0.30 * _cm.fade; // FINE-TUNE VIJANDEN: zelfde sterkte als vijanden
         if (gameCtx.globalAlpha <= 0.01) continue;
         gameCtx.drawImage(shipImage, Math.round(_cm.x), Math.round(_cm.y), _cm.w, _cm.h);
       }
@@ -1136,7 +1136,7 @@ function drawFloorMirrorGame(now) {
         var _fs = fallingShips[_fi];
         if (!_fs || _fs.y >= _hor) continue;
         var _fm = _mirrorRect(_fs.x, _fs.y, _fs.width, _fs.height);
-        gameCtx.globalAlpha = 0.25 * _fm.fade; // FINE-TUNE VIJANDEN: zelfde sterkte als vijanden
+        gameCtx.globalAlpha = 0.30 * _fm.fade; // FINE-TUNE VIJANDEN: zelfde sterkte als vijanden
         if (gameCtx.globalAlpha <= 0.01) continue;
         // Vallend schip: zelfde rotatie als het origineel + verticaal geflippt.
         // Volgorde translate -> scale(1,-1) -> rotate(rotation): de spiegeling keert
@@ -1162,7 +1162,7 @@ function drawFloorMirrorGame(now) {
         var _fpp = Math.max(0, Math.min(1, (_fmy - _hor) / _persp));
         var _fsx = 1 + _fpp * 0.45;
         var _ffade = 1 - _fpp * 0.45;
-        gameCtx.globalAlpha = 0.45 * _ffade; // Spiegel flying scores iets vervaagd: 0.45 i.p.v. 0.60 — alleen deze spiegel, verder niks veranderd
+        gameCtx.globalAlpha = 0.30 * _ffade; // Spiegel flying scores iets vervaagd: 0.45 i.p.v. 0.60 — alleen deze spiegel, verder niks veranderd
         if (gameCtx.globalAlpha <= 0.01) continue;
         gameCtx.save();
         gameCtx.translate(_cx + (_fs2.x - _cx) * _fsx, _fmy);
@@ -1183,7 +1183,7 @@ if (typeof isBossStage !== 'undefined' && isBossStage && typeof bossStageBoss !=
       var b = bossStageBoss;
       if (b && b.y < _hor) {
         var _mb = _mirrorRect(b.x, b.y, b.width, b.height);
-        gameCtx.globalAlpha = 0.25 * _mb.fade; // FINE-TUNE BOSS: sterkte spiegeling
+        gameCtx.globalAlpha = 0.30 * _mb.fade; // FINE-TUNE BOSS: sterkte spiegeling
         var bimg = null;
         var _use2b = !isPaused && (now % 400) >= 200;
         if (typeof bossStageVariant !== 'undefined' && bossStageVariant === 'enemy3') bimg = _use2b ? bossGalagaImage2 : bossGalagaImage;
@@ -1199,7 +1199,7 @@ if (typeof isBossStage !== 'undefined' && isBossStage && typeof bossStageBoss !=
         var bl = bullets[j];
         if (!bl || bl.y >= _hor) continue;
         var _mbl = _mirrorRect(bl.x, bl.y, bl.width, bl.height);
-        gameCtx.globalAlpha = 0.80 * _mbl.fade; // FINE-TUNE KOGELS SPELER: sterkte spiegeling
+        gameCtx.globalAlpha = 0.50 * _mbl.fade; // FINE-TUNE KOGELS SPELER: sterkte spiegeling
         if (gameCtx.globalAlpha <= 0.01) continue;
         if (typeof bulletImage !== 'undefined' && bulletImage.complete) gameCtx.drawImage(bulletImage, Math.round(_mbl.x), Math.round(_mbl.y), _mbl.w, _mbl.h);
         else { gameCtx.fillStyle = 'yellow'; gameCtx.fillRect(Math.round(_mbl.x), Math.round(_mbl.y), _mbl.w, _mbl.h); }
@@ -1210,7 +1210,7 @@ if (typeof isBossStage !== 'undefined' && isBossStage && typeof bossStageBoss !=
         var eb = enemyBullets[k];
         if (!eb || eb.y >= _hor) continue;
         var _meb = _mirrorRect(eb.x, eb.y, eb.width, eb.height);
-        gameCtx.globalAlpha = 0.80 * _meb.fade; // FINE-TUNE KOGELS VIJAND: sterkte spiegeling
+        gameCtx.globalAlpha = 0.50 * _meb.fade; // FINE-TUNE KOGELS VIJAND: sterkte spiegeling
         if (gameCtx.globalAlpha <= 0.01) continue;
         if (typeof enemyBulletImage !== 'undefined' && enemyBulletImage.complete && enemyBulletImage.naturalWidth > 0) gameCtx.drawImage(enemyBulletImage, Math.round(_meb.x), Math.round(_meb.y), _meb.w, _meb.h);
         else { gameCtx.fillStyle = 'white'; gameCtx.fillRect(Math.round(_meb.x), Math.round(_meb.y), _meb.w, _meb.h); }
