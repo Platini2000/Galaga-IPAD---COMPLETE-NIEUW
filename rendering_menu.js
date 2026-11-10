@@ -1181,7 +1181,13 @@ function drawFloorMirrorGame(now) {
     }
 if (typeof isBossStage !== 'undefined' && isBossStage && typeof bossStageBoss !== 'undefined' && bossStageBoss) {
       var b = bossStageBoss;
-      if (b && b.y < _hor) {
+      // SPIEGEL = alleen als de baas zelf (deels) in beeld is. Na 3x bouncen gaat hij
+      // omhoog (exiting_after_spawn): zolang hij nog deels zichtbaar is, blijft de
+      // spiegel hem tonen; zodra zijn onderkant boven het scherm is (b.y + b.height <= 0)
+      // is hij weg uit de spiegel. Bij terugvallen (boss_entering_return) verschijnt hij
+      // in de spiegel zodra zijn onderkant weer in beeld komt. 60fps: 2 goedkope
+      // vergelijkingen, geen allocaties, geen extra drawImage.
+      if (b && b.y < _hor && (b.y + b.height) > 0 && b.y < _h) {
         var _mb = _mirrorRect(b.x, b.y, b.width, b.height);
         gameCtx.globalAlpha = 0.45 * _mb.fade; // FINE-TUNE BOSS: sterkte spiegeling
         var bimg = null;
