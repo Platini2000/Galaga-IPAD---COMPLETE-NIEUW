@@ -1061,11 +1061,11 @@ function shouldDrawShieldForPlayer(playerNum) {
 // De reflectie is NIET recht naar beneden: steil 0.35 + naar beneden toe 45%
 // breder, als de vloerperspectieflijnen. Verander ALLEEN het getalletje achter
 // 'FINE-TUNE'. 0 = uit, 1 = even fel als origineel.
-//   Vijanden       -> 'FINE-TUNE VIJANDEN'        (nu 0.35)
-//   Gecaptuurd schip -> 'FINE-TUNE VIJANDEN'       (nu 0.35, zelfde als vijand waar het aan hangt)
-//   Vallend schip   -> 'FINE-TUNE VIJANDEN'       (nu 0.35, zelfde als vijanden)
-//   Floating scores -> 'FINE-TUNE VIJANDEN'       (nu 0.35, zelfde als vijanden, incl. upgrade-scores, op de kop)
-//   Boss           -> 'FINE-TUNE BOSS'            (nu 0.35)
+//   Vijanden       -> 'FINE-TUNE VIJANDEN'        (nu 0.45)
+//   Gecaptuurd schip -> 'FINE-TUNE VIJANDEN'       (nu 0.45, zelfde als vijand waar het aan hangt)
+//   Vallend schip   -> 'FINE-TUNE VIJANDEN'       (nu 0.45, zelfde als vijanden)
+//   Floating scores -> 'FINE-TUNE VIJANDEN'       (nu 0.45, zelfde als vijanden, incl. upgrade-scores, op de kop)
+//   Boss           -> 'FINE-TUNE BOSS'            (nu 0.45)
 //   Kogels speler  -> 'FINE-TUNE KOGELS SPELER'  (nu 0.50)
 //   Kogels vijand  -> 'FINE-TUNE KOGELS VIJAND'  (nu 0.50)
 //   Explosies      -> 'FINE-TUNE EXPLOSIES'      (nu 0.20 x eigen alpha)
@@ -1097,7 +1097,7 @@ function drawFloorMirrorGame(now) {
         var e = enemies[i];
         if (!e || e.y >= _hor) continue;
         var _m = _mirrorRect(e.x, e.y, e.width, e.height);
-        gameCtx.globalAlpha = 0.35 * _m.fade; // FINE-TUNE VIJANDEN: sterkte spiegeling
+        gameCtx.globalAlpha = 0.45 * _m.fade; // FINE-TUNE VIJANDEN: sterkte spiegeling
         if (gameCtx.globalAlpha <= 0.01) continue;
         var img = null, col = 'grey';
         if (e.type === ENEMY3_TYPE) { img = _use2 ? bossGalagaImage2 : bossGalagaImage; col = 'purple'; }
@@ -1126,7 +1126,7 @@ function drawFloorMirrorGame(now) {
         else { _cx2 = _ce.x + CAPTURED_SHIP_OFFSET_X; _cy2 = _ce.y + CAPTURED_SHIP_OFFSET_Y; }
         if (_cy2 >= _hor) continue;
         var _cm = _mirrorRect(_cx2, _cy2, _cw, _ch);
-        gameCtx.globalAlpha = 0.35 * _cm.fade; // FINE-TUNE VIJANDEN: zelfde sterkte als vijanden
+        gameCtx.globalAlpha = 0.45 * _cm.fade; // FINE-TUNE VIJANDEN: zelfde sterkte als vijanden
         if (gameCtx.globalAlpha <= 0.01) continue;
         gameCtx.drawImage(shipImage, Math.round(_cm.x), Math.round(_cm.y), _cm.w, _cm.h);
       }
@@ -1136,7 +1136,7 @@ function drawFloorMirrorGame(now) {
         var _fs = fallingShips[_fi];
         if (!_fs || _fs.y >= _hor) continue;
         var _fm = _mirrorRect(_fs.x, _fs.y, _fs.width, _fs.height);
-        gameCtx.globalAlpha = 0.35 * _fm.fade; // FINE-TUNE VIJANDEN: zelfde sterkte als vijanden
+        gameCtx.globalAlpha = 0.45 * _fm.fade; // FINE-TUNE VIJANDEN: zelfde sterkte als vijanden
         if (gameCtx.globalAlpha <= 0.01) continue;
         // Vallend schip: zelfde rotatie als het origineel + verticaal geflippt.
         // Volgorde translate -> scale(1,-1) -> rotate(rotation): de spiegeling keert
@@ -1183,7 +1183,7 @@ if (typeof isBossStage !== 'undefined' && isBossStage && typeof bossStageBoss !=
       var b = bossStageBoss;
       if (b && b.y < _hor) {
         var _mb = _mirrorRect(b.x, b.y, b.width, b.height);
-        gameCtx.globalAlpha = 0.35 * _mb.fade; // FINE-TUNE BOSS: sterkte spiegeling
+        gameCtx.globalAlpha = 0.45 * _mb.fade; // FINE-TUNE BOSS: sterkte spiegeling
         var bimg = null;
         var _use2b = !isPaused && (now % 400) >= 200;
         if (typeof bossStageVariant !== 'undefined' && bossStageVariant === 'enemy3') bimg = _use2b ? bossGalagaImage2 : bossGalagaImage;
