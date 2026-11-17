@@ -1310,23 +1310,6 @@ function getBossStageDifficulty(variant) {
 }
 window.getBossStageDifficulty = getBossStageDifficulty;
 
-function getWaveTypeInternal(level) {
-    if (level <= 0) level = 1;
-    // DEFINITIEF: alleen elke 6 (6,12,18,24,30,36...) - level 2 is normaal
-    if (level % 6 === 0) {
-        return 'boss_stage';
-    }
-    // FIXED V10: 5-wave cycle - nieuw level na elke CS
-    const basePatternIndex = (level - 1) % 5;
-    switch (basePatternIndex) {
-        case 0: return 'full_grid';
-        case 1: return 'entrance_flight_1';
-        case 2: return 'challenging_stage';
-        case 3: return 'simultaneous_assault';
-        case 4: return 'entrance_flight_2';
-        default: return 'full_grid';
-    }
-}
 window.getWaveType = getWaveTypeInternal;
 
 /**
@@ -1408,43 +1391,6 @@ function generateWaveDefinitionInternal(level) {
 }
 window.generateWaveDefinition = generateWaveDefinitionInternal;
 
-function startFullGridWave() {
-    if (!currentWaveDefinition || currentWaveDefinition.length === 0 || !isFullGridWave) {
-        isWaveTransitioning = true; readyForNextWaveReset = true;
-        return;
-    }
-    playSound('entranceSound', false, 0.4);
-    enemySpawnTimeouts.forEach(clearTimeout); enemySpawnTimeouts = [];
-    totalEnemiesScheduledForWave = 0; enemiesSpawnedThisWave = 0;
-    squadronCompletionStatus = {}; squadronEntranceFiringStatus = {};
-    let totalEnemiesPlaced = 0;
-    currentWaveDefinition.forEach((squadronData, squadronIndex) => {
-        let enemiesInSquadron = 0;
-        if (squadronData && squadronData.enemies && Array.isArray(squadronData.enemies)) {
-            enemiesInSquadron = squadronData.enemies.length;
-            squadronData.enemies.forEach((enemyDef, enemyIndex) => {
-                try {
-                    let enemyType = enemyDef.type;
-                    let enemyHealth = (enemyType === ENEMY3_TYPE) ? ENEMY3_MAX_HITS : 1;
-                    let enemyWidth = (enemyType === ENEMY1_TYPE) ? ENEMY1_WIDTH : (enemyType === ENEMY3_TYPE ? BOSS_WIDTH : ENEMY_WIDTH);
-                    let enemyHeight = (enemyType === ENEMY1_TYPE) ? ENEMY1_HEIGHT : (enemyType === ENEMY3_TYPE ? BOSS_HEIGHT : ENEMY_HEIGHT);
-                    const { x: targetGridX, y: targetGridY } = getCurrentGridSlotPosition(enemyDef.gridRow, enemyDef.gridCol, enemyWidth);
-                    const newEnemy = { x: targetGridX, y: targetGridY, width: enemyWidth, height: enemyHeight, targetGridX, targetGridY, speed: 0, state: 'in_grid', gridRow: enemyDef.gridRow, gridCol: enemyDef.gridCol, type: enemyType, health: enemyHealth, isDamaged: false, velocityX: 0, velocityY: 0, attackPathStep: 0, initialY: 0, initialX: 0, diveDirection: 1, lastFiredTime: 0, targetX1: 0, targetY1: 0, targetX2: 0, targetY2: 0, targetX3: 0, targetY3: 0, attackPathSegments: [], attackPathSegmentIndex: 0, attackPathT: 0, attackStartTime: 0, attackFormationOffsetX: 0, attackGroupId: null, entrancePathId: null, pathSegmentIndex: 0, pathT: 0, squadronId: squadronIndex, squadronEnemyIndex: enemyIndex, id: `enemy-grid-${squadronIndex}-${enemyIndex}-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`, justReturned: false, canFireThisDive: false, attackType: 'normal', hasCapturedShip: (enemyType === ENEMY3_TYPE) ? false : undefined, capturedShipX: undefined, capturedShipY: undefined, capturedShipLastFiredTime: (enemyType === ENEMY3_TYPE) ? 0 : undefined, capturedPlayerId: undefined, capturedPlayerNum: undefined, captureStartTime: 0, capturePrepareTimeout: null, pathSpeedMultiplier: 1.0, captureDiveInitiationTime: 0 };
-                    enemies.push(newEnemy);
-                    totalEnemiesPlaced++;
-                } catch (placementError) { console.error(`Full Grid error:`, placementError); }
-            });
-        }
-        squadronCompletionStatus[squadronIndex] = { completed: enemiesInSquadron, total: enemiesInSquadron };
-    });
-    totalEnemiesScheduledForWave = totalEnemiesPlaced;
-    enemiesSpawnedThisWave = totalEnemiesPlaced;
-    isEntrancePhaseActive = false;
-    gridJustCompleted = true;
-    if (!isGridSoundPlaying) { isGridSoundPlaying = true; playSound('gridBackgroundSound', true, 0.1); }
-    if (GRID_BREATH_ENABLED && !isGridBreathingActive) { isGridBreathingActive = true; gridBreathStartTime = Date.now(); currentGridBreathFactor = 0; }
-    lastGridFireCheckTime = Date.now(); firstEnemyLanded = true;
-}
 
 window.startFullGridWave = startFullGridWave;
 
@@ -8297,13 +8243,16 @@ var MINI_BOSS_Y = 87 + MINI_BOSS_LOWER_PX; // 105: 1 cm lager, daarna 20px hoger
 var MINI_BOSS_MINION_FIRE_INTERVAL_MS = 3000; // 1 kogel per minion per 3 sec
 var hotChallengeFiredSquadrons = {}; // squadronId -> true, als die wave zijn 2 hot-kogels al vuurde
 
-// Een level is een challenge-slot als het (zonder boss/mini-boss) een challenge zou zijn:
-// de vaste challenge-plek (level % 10 === 7) of de challenge-plek in de 5-wave cyclus.
+// Voorstel A + Entrance Flight 2 behouden: challenge-slot = elke 5 levels
+// (lvl % 5 === 0), behalve als het al een boss- of mini-boss-level is.
+// De oude takken (lvl % 10 === 7 en (lvl - 1) % 5 === 2) gaven maar 1 slot
+// per 10 levels, dus hot maar 1x per 20; nu is hot ±1x per 15 levels.
+// Elke 4e challenge-slot wordt Entrance Flight 2 (zie getWaveTypeInternal),
+// zodat GEEN enkel leveltype helemaal wegvalt.
 function keptIsChallengeSlot(lvl){
   if (lvl % 6 === 0) return false;
   if (lvl % 10 === 3 || lvl % 10 === 8) return false;
-  if (lvl % 10 === 7) return true;
-  return ((lvl - 1) % 5 === 2);
+  return (lvl % 5 === 0);
 }
 // Hoeveelste challenge-slot is dit? 0 = eerste, 1 = tweede, enz. Puur uit het level
 // afgeleid (geen teller die per ongeluk dubbel kan lopen): even = normaal, oneven = hot.
@@ -8317,9 +8266,17 @@ function getWaveTypeInternal(level){
   if (level % 6 === 0) return 'boss_stage';
   // Mini Boss: level 3, 8, 13, 23, 28, ... (zoals eerder)
   if (level % 10 === 3 || level % 10 === 8) return 'mini_boss';
-  // Challenge wisselt af: normaal, hot, normaal, hot...
-  // Dus level 7 = normaal, 17 = hot, 27 = normaal, 37 = hot, ...
-  if (keptIsChallengeSlot(level)) return (keptChallengeIndex(level) % 2 === 0) ? 'challenging_stage' : 'hot_challenge';
+  // Challenge wisselt af: normaal, hot, normaal, hot... MAAR elke 4e
+  // challenge-slot (idx 3, 7, 11, ...) wordt Entrance Flight 2, zodat dat
+  // leveltype niet wegvalt. De normaal/hot-afwisseling telt alleen de
+  // echte challenge-slots mee (EF2-slots worden eruit gerekend), dus
+  // de afwisseling blijft netjes: CS, HOT, CS, EF2, HOT, CS, HOT, EF2, ...
+  if (keptIsChallengeSlot(level)) {
+    var _ci = keptChallengeIndex(level);
+    if (_ci % 4 === 3) return 'entrance_flight_2';
+    var _eff = _ci - Math.floor(_ci / 4);
+    return (_eff % 2 === 0) ? 'challenging_stage' : 'hot_challenge';
+  }
   // Verder: ORIGINELE 5-wave cyclus
   var basePatternIndex = (level - 1) % 5;
   switch (basePatternIndex){
