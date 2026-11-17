@@ -1108,7 +1108,7 @@ function resetWaveInternal() {
     enemiesSpawnedThisWave = 0;
 
     const currentWaveType = getWaveTypeInternal(level);
-    isChallengingStage = currentWaveType === 'challenging_stage';
+    isChallengingStage = currentWaveType === 'challenging_stage' || currentWaveType === 'hot_challenge'; // Hot = echte Challenge Stage
     isFullGridWave = currentWaveType === 'full_grid';
     isSimultaneousAssaultWave = currentWaveType === 'simultaneous_assault';
     isBossStage = currentWaveType === 'boss_stage';
@@ -1156,7 +1156,7 @@ function resetWaveInternal() {
     } else if (selectedGameMode === 'coop') {
         // VOLGENDE stages: alleen STAGE X / CHALLENGING / BOSS, met pauze
         if (isBossStage) introStep = 2;
-        else if (isChallengingStage) introStep = 3;
+        else if (isChallengingStage && currentWaveType !== 'hot_challenge') introStep = 3;
         else introStep = 2;
         isShowingIntro = true;
         if (!isManualControl) isShowingDemoText = true;
@@ -1169,7 +1169,7 @@ function resetWaveInternal() {
         introStep = 2;
         isShowingIntro = true;
         if (!isManualControl) isShowingDemoText = true;
-    } else if (isChallengingStage) {
+    } else if (isChallengingStage && currentWaveType !== 'hot_challenge') {
         introStep = 3;
         isShowingIntro = true;
         if (!isManualControl) isShowingDemoText = true;
@@ -1328,7 +1328,7 @@ function generateWaveDefinitionInternal(level) {
     
     const selectedPattern = waveEntrancePatterns[currentWavePatternIndex];
 
-    if (waveType === 'challenging_stage') {
+    if (waveType === 'challenging_stage' || waveType === 'hot_challenge') {
         waveDef = []; 
     } else if (selectedPattern && selectedPattern.length > 0) {
         try {
@@ -2580,6 +2580,7 @@ function startCSController(effectiveBaseSpeedMultiplier) {
 }
 
 function startChallengingStageSequence() {
+    hotChallengeFiredSquadrons = {}; // hot: elke stage opnieuw 2 kogels per wave
     currentWaveDefinition = [];
     isEntrancePhaseActive = false;
     enemySpawnTimeouts.forEach(clearTimeout);
@@ -2842,6 +2843,14 @@ function startFullGridWave() {
 function handleEnemyHit(enemy, shootingPlayerId = null) {
     // BOSS-MINION: 1 sec onkwetsbaar na het uitploppen
     if (enemy && enemy.isBossMinion && enemy.bossMinionInvulnerableUntil && Date.now() < enemy.bossMinionInvulnerableUntil) return false;
+    // MINI-BOSS MINIONS: onkwetsbaar tot de healthbar van de grote boss op de helft staat.
+    // Direct op de healthbar-breuk gerekend (health / maxHealthNew), niet via een hulpfunctie.
+    if (enemy && enemy.isMiniBossMinion){
+      var _mbH = null;
+      for (var _mhi = 0; _mhi < (typeof enemies !== 'undefined' ? enemies.length : 0); _mhi++){ if (enemies[_mhi] && enemies[_mhi].isMiniBoss){ _mbH = enemies[_mhi]; break; } }
+      var _maxH = _mbH ? (_mbH.maxHealthNew || _mbH.maxHealth || 20) : 20;
+      if (_mbH && _mbH.health > _maxH / 2) return false;
+    }
     if (!enemy) return { destroyed: false, pointsAwarded: 0 };
     const now = Date.now();
     let points = 0; let destroyed = false; let wasBossDamagedBeforeHit = enemy.isDamaged; let playHitSoundId = null; let playHitSoundVolume = 1.0;
@@ -2948,6 +2957,8 @@ function handleEnemyHit(enemy, shootingPlayerId = null) {
                 baseScore *= 2;
             }
             points = baseScore;
+            // HOT CS: elke hit 2x zoveel score (ook de chain-verdubbelde hit).
+            if (typeof isHotChallengeWave !== 'undefined' && isHotChallengeWave) points *= 2;
             csCurrentChainScore += points;
             scoreEarnedThisCS += points;
             playHitSoundId = 'explosionSound'; playHitSoundVolume = 0.4;
@@ -3010,6 +3021,8 @@ function handleEnemyHit(enemy, shootingPlayerId = null) {
                 if (typeof isUpgradeActiveForPlayer === 'function' && isUpgradeActiveForPlayer('SCORE-UP', _sp)) {
                     const _isFlying = enemy.state !== 'in_grid';
                     points = _isFlying ? 1000 : 500;
+                    // HOT CS: ook SCORE-UP hit-punten 2x (LUCKY 7 niet)
+                    if (typeof isHotChallengeWave !== 'undefined' && isHotChallengeWave && isChallengingStage) points *= 2;
                     scoreUpBonusThisHit = true;
                 }
                 if (typeof isUpgradeActiveForPlayer === 'function' && isUpgradeActiveForPlayer('LUCKY 7', _sp)) {
@@ -3181,7 +3194,27 @@ function handleEnemyHit(enemy, shootingPlayerId = null) {
             }
         }
 
-        createExplosion(enemy.x + enemyWidthForCalc / 2, enemy.y + enemyHeightForCalc / 2);
+        // MINI-BOSS verslagen: zelfde eind-explosies + geluid als de gewone boss-stage
+        // (triggerBossStageDefeat: 5x een 2x zo grote explosie rondom de boss + bossExplosionSound)
+        // De normale kleine explosie + explosionSound hieronder wordt dan overgeslagen.
+        if (enemy.isMiniBoss) {
+            const _mbX = enemy.x + enemy.width / 2, _mbY = enemy.y + enemy.height / 2;
+            const _mbW = enemy.width, _mbH = enemy.height;
+            for (let _i = 0; _i < 5; _i++) {
+                setTimeout(() => {
+                    const rx = (Math.random() - 0.5) * _mbW * 0.8 + _mbX;
+                    const ry = (Math.random() - 0.5) * _mbH * 0.8 + _mbY;
+                    if (typeof createExplosion === 'function') {
+                        createExplosion(rx, ry, BOSS_STAGE_BOSS_WIDTH * 2.0, BOSS_STAGE_BOSS_HEIGHT * 2.0);
+                    }
+                    stopSound('bossExplosionSound');
+                    playSound('bossExplosionSound', false, 0.7);
+                }, _i * 120);
+            }
+            playHitSoundId = null; // geen gewone explosionSound ernaast
+        } else {
+            createExplosion(enemy.x + enemyWidthForCalc / 2, enemy.y + enemyHeightForCalc / 2);
+        }
         if (enemy.id === capturingBossId) { stopSound('captureSound'); }
         if (enemy.state === 'attacking' || enemy.state === 'following_entrance_path' || enemy.state === 'diving_to_capture_position' || enemy.state === 'following_bezier_path' || enemy.state === 'returning' || enemy.state === 'showing_capture_message') {
             if (enemy.type === ENEMY3_TYPE) stopSound('bossGalagaDiveSound');
@@ -3190,7 +3223,16 @@ function handleEnemyHit(enemy, shootingPlayerId = null) {
 
     } else { // Enemy not destroyed, only damaged (Boss)
         destroyed = false;
-        if (enemy.type === ENEMY3_TYPE) {
+        // MINI-BOSS: zelfde hit-explosie + geluid als de gewone boss-stage
+        // (handleBossStageBossHit: createExplosion op willekeurige plek op de boss + bossHit1Sound)
+        if (enemy.isMiniBoss) {
+            if (typeof createExplosion === 'function') {
+                const hx = enemy.x + enemy.width / 2 + (Math.random() - 0.5) * enemy.width * 0.4;
+                const hy = enemy.y + enemy.height / 2 + (Math.random() - 0.5) * enemy.height * 0.4;
+                createExplosion(hx, hy);
+            }
+            playHitSoundId = 'bossHit1Sound'; playHitSoundVolume = 0.5;
+        } else if (enemy.type === ENEMY3_TYPE) {
             playHitSoundId = 'bossHit1Sound'; playHitSoundVolume = 0.6;
             points = 0;
         }
@@ -4215,9 +4257,47 @@ function aiControl() {
                 desiredTargetX = targetCenterShipX;
                 shouldTryShoot_AI = false;
             }
-            // Geen ontwijkingslogica voor CS
-             aiPreviousDodgeDirection = 0;
-             aiDodgeCommitEndTime = 0;
+            // Normale CS: geen kogels, dus geen ontwijking nodig.
+            // Hot CS: wél 2 kogels per wave op het schip -> AI moet die ontwijken.
+            // Mikken blijft gewoon doorgaan (shouldTryShoot_AI blijft staan).
+            if (typeof isHotChallengeWave !== 'undefined' && isHotChallengeWave && typeof enemyBullets !== 'undefined' && enemyBullets.length > 0 && !_aiShieldNoDodgeSingle){
+              var _hotThreats = [];
+              for (var _hb = 0; _hb < enemyBullets.length; _hb++){
+                var _bul = enemyBullets[_hb];
+                if (!_bul) continue;
+                if (_bul.y < activeShipForAI.y + SHIP_HEIGHT * 6 && _bul.y + _bul.height > activeShipForAI.y - SHIP_HEIGHT * 3){
+                  var _frames = 350 / 16.67; // zelfde projectie als normale ontwijking
+                  var _px = _bul.x + (_bul.vx || 0) * _frames, _py = _bul.y + (_bul.vy || 0) * _frames;
+                  var _sx = effectiveShipWidth * 0.6, _sy = SHIP_HEIGHT * 0.6;
+                  _hotThreats.push({ x: _px - _bul.width / 2 - _sx, y: _py - _bul.height / 2 - _sy, width: _bul.width + 2 * _sx, height: _bul.height + 2 * _sy });
+                  _hotThreats.push({ x: _bul.x - _bul.width / 2 - _sx * 0.5, y: _bul.y - _bul.height / 2 - _sy * 0.5, width: _bul.width + _sx, height: _bul.height + _sy });
+                }
+              }
+              var _shipNow = { x: currentSmoothedShipXForAI, y: activeShipForAI.y, width: effectiveShipWidth, height: activeShipForAI.height };
+              var _collNow = 0;
+              for (var _ht = 0; _ht < _hotThreats.length; _ht++){ if (checkCollision(_shipNow, _hotThreats[_ht])) _collNow++; }
+              if (_collNow > 0){
+                isDodgingThreat = true;
+                var _bestHotX = currentSmoothedShipXForAI, _bestHotColl = _collNow, _bestHotDist = -Infinity;
+                for (var _hi = -3; _hi <= 3; _hi++){
+                  if (_hi === 0) continue;
+                  var _tx = currentSmoothedShipXForAI + _hi * effectiveShipWidth * 0.9;
+                  _tx = Math.max(AI_EDGE_BUFFER * 1.2, Math.min(canvasWidth - effectiveShipWidth - AI_EDGE_BUFFER * 1.2, _tx));
+                  var _sr = { x: _tx, y: activeShipForAI.y, width: effectiveShipWidth, height: activeShipForAI.height };
+                  var _c = 0, _d = Infinity;
+                  for (var _ht2 = 0; _ht2 < _hotThreats.length; _ht2++){
+                    if (checkCollision(_sr, _hotThreats[_ht2])) _c++;
+                    var _dc = Math.abs((_sr.x + _sr.width / 2) - (_hotThreats[_ht2].x + _hotThreats[_ht2].width / 2)) - (_sr.width / 2 + _hotThreats[_ht2].width / 2);
+                    if (_dc < _d) _d = _dc;
+                  }
+                  if (_c < _bestHotColl || (_c === _bestHotColl && _d > _bestHotDist)){ _bestHotColl = _c; _bestHotDist = _d; _bestHotX = _tx; if (_hi !== 0) aiPreviousDodgeDirection = Math.sign(_hi); }
+                }
+                desiredTargetX = _bestHotX;
+                aiDodgeCommitEndTime = now + 340;
+              }
+            }
+             aiPreviousDodgeDirection = isDodgingThreat ? aiPreviousDodgeDirection : 0;
+             aiDodgeCommitEndTime = isDodgingThreat ? aiDodgeCommitEndTime : 0;
 
         } else if (!isInvincibleForAI && !isShowingBlockingMessage) { // <<< BEGIN ORIGINELE LOGICA VOOR NIET-CS >>>
             const currentLevelFactor = Math.min(1, level / 10);
@@ -4314,6 +4394,7 @@ function aiControl() {
                 let generalTargetWhileDodging = null; let bestGeneralScore = -Infinity;
                 for (const enemy of enemies) {
                     if (!enemy) continue;
+                    if (enemy.isMiniBossMinion && typeof keptMiniBossMinionsProtected === 'function' && keptMiniBossMinionsProtected()) continue; // onkwetsbare minion: niet als doelwit
                     let currentScore = (canvasHeight - enemy.y) * 1.5 - Math.abs((enemy.x + enemy.width / 2) - shipCenterX) * 2.0;
                     if (enemy.state === 'attacking' || enemy.state === 'diving_to_capture_position') currentScore += 600;
                     if (enemy.type === ENEMY3_TYPE && enemy.hasCapturedShip) currentScore += 1200;
@@ -4351,6 +4432,7 @@ function aiControl() {
                     targetEnemyForAI = null; let bestTargetScore = -Infinity;
                     for (const enemy of enemies) {
                         if (!enemy) continue;
+                        if (enemy.isMiniBossMinion && typeof keptMiniBossMinionsProtected === 'function' && keptMiniBossMinionsProtected()) continue; // onkwetsbare minion: niet als doelwit
                         if (typeof isProtectedBossForAI === 'function' && isProtectedBossForAI(enemy)) continue;
                         if (typeof aiProtectedBossBlocksShot === 'function' && aiProtectedBossBlocksShot(shipCenterX, shipTopY, enemy)) continue; // doelwit achter boss zonder capture -> ander doelwit
                         let currentScore = 0; const enemyCenterX = enemy.x + enemy.width / 2; const dx = enemyCenterX - shipCenterX; const dy = shipTopY - (enemy.y + enemy.height);
@@ -4677,7 +4759,7 @@ function calculateAIDesiredState(currentShip, currentSmoothedX, isShipDual, game
         predictedCollisionsForReturn = 0;
         isDodgingThreatCurrentFrame = false;
         dodgeTargetX = currentSmoothedX;
-    } else if (!isChallengingStage && !isShipInvincible) {
+    } else if ((!isChallengingStage || (typeof isHotChallengeWave !== 'undefined' && isHotChallengeWave)) && !isShipInvincible) { // hot CS: kogels ontwijken, normale CS: geen kogels dus geen dreiging
         // BOSS FIGHT: FIX VOOR PRECIES MIKKEN OP AI - veel grotere lookahead en safety
         let AI_DANGER_LOOKAHEAD_Y_COOP = isBossFightActive ? SHIP_HEIGHT * 14.0 : SHIP_HEIGHT * 5.0;
         let AI_BULLET_PROJECTION_MS_COOP = isBossFightActive ? 950 : 350;
@@ -4833,6 +4915,7 @@ function calculateAIDesiredState(currentShip, currentSmoothedX, isShipDual, game
             let bestGeneralScoreCoop = -Infinity;
             for (const enemy of gameEnemies){
                 if(!enemy)continue; if(ignoreBossId_passed && enemy.id === ignoreBossId_passed) continue;
+                if (enemy.isMiniBossMinion && typeof keptMiniBossMinionsProtected === 'function' && keptMiniBossMinionsProtected()) continue; // onkwetsbare minion: niet als doelwit
                 let score=0;const eCX=enemy.x+enemy.width/2;const dX=eCX-shipCenterX;const dY=shipTopY-(enemy.y+enemy.height);
                 if(dY<0&&enemy.state!=='attacking'&&enemy.state!=='diving_to_capture_position'&&enemy.state!=='following_bezier_path')continue;
                 score=(canvasHeight-enemy.y)*1.2-Math.abs(dX)*2.2-dY*0.7;
@@ -4952,6 +5035,7 @@ function calculateAIDesiredState(currentShip, currentSmoothedX, isShipDual, game
                 let bestScore=-Infinity;
                 for(const enemy of gameEnemies){
                     if(!enemy)continue; if(ignoreBossId_passed && enemy.id === ignoreBossId_passed) continue;
+                    if (enemy.isMiniBossMinion && typeof keptMiniBossMinionsProtected === 'function' && keptMiniBossMinionsProtected()) continue; // onkwetsbare minion: niet als doelwit
                     if(typeof isProtectedBossForAI === 'function' && isProtectedBossForAI(enemy)) continue;
                     if(typeof aiProtectedBossBlocksShot === 'function' && aiProtectedBossBlocksShot(shipCenterX, shipTopY, enemy)) continue; // doelwit achter boss zonder capture -> ander doelwit
                     if(activeCapturingBoss&&enemy.id===activeCapturingBoss.id&& (activeCapturingBoss.state==='preparing_capture'||activeCapturingBoss.state==='diving_to_capture_position'||activeCapturingBoss.state==='capturing'))continue;
@@ -5703,6 +5787,13 @@ function moveEntities(overrideP1Left = null, overrideP1Right = null) {
                 const enemy = enemies[j]; if (!enemy) { enemies.splice(j,1); continue; }
                 // BOSS-MINION: 1 sec onkwetsbaar na het uitploppen, kogel vliegt er gewoon doorheen
                 if (enemy.isBossMinion && enemy.bossMinionInvulnerableUntil && Date.now() < enemy.bossMinionInvulnerableUntil) continue;
+                // MINI-BOSS MINIONS: onkwetsbaar tot healthbar grote boss op de helft staat -> kogel vliegt erdoor
+                if (enemy.isMiniBossMinion){
+                  var _mbB = null;
+                  for (var _mbi2 = 0; _mbi2 < enemies.length; _mbi2++){ if (enemies[_mbi2] && enemies[_mbi2].isMiniBoss){ _mbB = enemies[_mbi2]; break; } }
+                  var _maxB = _mbB ? (_mbB.maxHealthNew || _mbB.maxHealth || 20) : 20;
+                  if (_mbB && _mbB.health > _maxB / 2) continue;
+                }
                 // INVLIEGENDE BOSS: AI-kogel vliegt er DOORHEEN, raakt hem niet.
                 // Dekt ook kogels die al in de lucht waren toen deze boss
                 // begon met invliegen (volgende squadron in level 2). Mens-
@@ -6881,6 +6972,7 @@ function triggerGridFiring() {
         gridEnemies.sort(() => Math.random() - 0.5);
         for (const enemy of gridEnemies) {
             if (firingCount >= maxFiringEnemies) { break; }
+            if (enemy.isBossMinion) { continue; } // mini-boss minion: alleen 1 kogel per 3 sec via keptWaveTick
             if (enemy.type === ENEMY2_TYPE || enemy.type === ENEMY3_TYPE) {
                 if (enemy.type === ENEMY3_TYPE && enemy.hasCapturedShip) { continue; }
                 if (Math.random() < fireProbability) {
@@ -7054,9 +7146,11 @@ function runSingleGameUpdate(timestamp) {
             } else if (isShowingIntro) {
                 if (now - introDisplayStartTime < 100) { explosions = []; if (typeof updateExplosions === 'function') updateExplosions(); }
                 let currentCoopIntroStepDuration = INTRO_DURATION_PER_STEP;
+                if ((typeof isMiniBossWave !== 'undefined' && isMiniBossWave) || (typeof isHotChallengeWave !== 'undefined' && isHotChallengeWave)) currentCoopIntroStepDuration = 4000;
                 // Voor Human 2P CO-OP, is introStep 1 "PLAYER 1 / PLAYER 2" en introStep 2 "STAGE 1"
                 if (introStep === 1 && !isCoopAIDemoActive && !(isPlayerTwoAI && selectedOnePlayerGameVariant === '1P_VS_AI_COOP')) {
                     currentCoopIntroStepDuration = TWO_PLAYER_STAGE_INTRO_DURATION;
+                    if ((typeof isMiniBossWave !== 'undefined' && isMiniBossWave) || (typeof isHotChallengeWave !== 'undefined' && isHotChallengeWave)) currentCoopIntroStepDuration = 4000;
                 }
 
                 if (now >= introDisplayStartTime + currentCoopIntroStepDuration) {
@@ -7439,12 +7533,14 @@ function runSingleGameUpdate(timestamp) {
             let introTextFinished = false;
             const elapsedIntroTime = now - introDisplayStartTime;
             let currentIntroStepDuration = INTRO_DURATION_PER_STEP;
+             if ((typeof isMiniBossWave !== 'undefined' && isMiniBossWave) || (typeof isHotChallengeWave !== 'undefined' && isHotChallengeWave)) currentIntroStepDuration = 4000;
 
             const isP1vsAINormal = (isPlayerTwoAI && selectedOnePlayerGameVariant === '1P_VS_AI_NORMAL');
             const is2PHumanNormal = (isTwoPlayerMode && selectedGameMode === 'normal' && !isPlayerTwoAI);
 
             if (is2PHumanNormal || isP1vsAINormal) {
                 currentIntroStepDuration = TWO_PLAYER_STAGE_INTRO_DURATION;
+             if ((typeof isMiniBossWave !== 'undefined' && isMiniBossWave) || (typeof isHotChallengeWave !== 'undefined' && isHotChallengeWave)) currentIntroStepDuration = 4000;
             }
 
             if (introStep === 1) { // PLAYER X
@@ -7486,7 +7582,7 @@ function runSingleGameUpdate(timestamp) {
                 }
 
                 if (elapsedIntroTime >= currentIntroStepDuration) {
-                    if (isChallengingStage) introStep = 3;
+                    if (isChallengingStage && !(typeof isHotChallengeWave !== 'undefined' && isHotChallengeWave)) introStep = 3;
                     else introStep = 2;
                     introDisplayStartTime = now;
                     explosions = []; if(typeof updateExplosions === 'function') updateExplosions();
@@ -7802,7 +7898,10 @@ function runSingleGameUpdate(timestamp) {
                          }, EXPLOSION_DURATION);
 
                          if (csCompletionResultIsPerfect) {
-                             let perfectBonus = 10000;
+                             // HOT CS: perfect = 20000 bonus, normale CS = 10000. Dit is DE regel die de bonus
+                             // toekent aan ALLE spelers (coop: player1Score EN player2Score, 1P: score).
+                             let perfectBonus = (typeof isHotChallengeWave !== 'undefined' && isHotChallengeWave) ? 20000 : 10000;
+                             try { window.csPerfectBonus = perfectBonus; } catch(e) {}
                              if (isTwoPlayerMode && selectedGameMode === 'coop') {
                                  if (player1Lives > 0 || ((isCoopAIDemoActive || (isPlayerTwoAI && selectedOnePlayerGameVariant === '1P_VS_AI_COOP')) && ship1)) {
                                      player1Score += perfectBonus;
@@ -8110,6 +8209,314 @@ function checkAndAwardExtraLife(playerNumber = null) { // playerNumber kan null 
         });
     } catch (e) { console.error("Error checking/awarding extra life:", e); }
 }
+
+
+
+// ================= BEHOUDEN: ALLEEN Mini Boss + Hot Challenge =================
+// Al het andere is verwijderd:
+// de originele wave-cyclus hieronder is weer het origineel zoals aangeleverd.
+var isMiniBossWave = false, isHotChallengeWave = false, miniBossSpawned = false, miniBossBonus = 2000;
+// AFGESPROKEN REGELS (niet meer aanpassen zonder overleg):
+// - Mini boss spawnt 1 cm lager en daarna 20px hoger: 87 + 38 - 20 = 105. Minions mee.
+// - Minions: zelfde enemy-type als de boss, zelfde X-beweging als de boss,
+//   1 kogel per minion, elke 3 sec, op het schip. Alleen de grid wordt moeilijker.
+// - Challenge wisselt af: normaal, hot, normaal, hot... Hot = zelfde stage als
+//   normaal, enige verschil: 2 kogels per wave (per squadron) op het schip.
+//   Er bestaat GEEN hot mini boss.
+var MINI_BOSS_LOWER_PX = 38 - 20; // 1 cm lager (38px), daarna 20px hoger = netto 18px lager dan origineel
+var MINI_BOSS_Y = 87 + MINI_BOSS_LOWER_PX; // 105: 1 cm lager, daarna 20px hoger
+var MINI_BOSS_MINION_FIRE_INTERVAL_MS = 3000; // 1 kogel per minion per 3 sec
+var hotChallengeFiredSquadrons = {}; // squadronId -> true, als die wave zijn 2 hot-kogels al vuurde
+
+// Een level is een challenge-slot als het (zonder boss/mini-boss) een challenge zou zijn:
+// de vaste challenge-plek (level % 10 === 7) of de challenge-plek in de 5-wave cyclus.
+function keptIsChallengeSlot(lvl){
+  if (lvl % 6 === 0) return false;
+  if (lvl % 10 === 3 || lvl % 10 === 8) return false;
+  if (lvl % 10 === 7) return true;
+  return ((lvl - 1) % 5 === 2);
+}
+// Hoeveelste challenge-slot is dit? 0 = eerste, 1 = tweede, enz. Puur uit het level
+// afgeleid (geen teller die per ongeluk dubbel kan lopen): even = normaal, oneven = hot.
+function keptChallengeIndex(lvl){
+  var c = 0;
+  for (var l = 1; l < lvl; l++){ if (keptIsChallengeSlot(l)) c++; }
+  return c;
+}
+function getWaveTypeInternal(level){
+  if (level <= 0) level = 1;
+  if (level % 6 === 0) return 'boss_stage';
+  // Mini Boss: level 3, 8, 13, 23, 28, ... (zoals eerder)
+  if (level % 10 === 3 || level % 10 === 8) return 'mini_boss';
+  // Challenge wisselt af: normaal, hot, normaal, hot...
+  // Dus level 7 = normaal, 17 = hot, 27 = normaal, 37 = hot, ...
+  if (keptIsChallengeSlot(level)) return (keptChallengeIndex(level) % 2 === 0) ? 'challenging_stage' : 'hot_challenge';
+  // Verder: ORIGINELE 5-wave cyclus
+  var basePatternIndex = (level - 1) % 5;
+  switch (basePatternIndex){
+    case 0: return 'full_grid';
+    case 1: return 'entrance_flight_1';
+    case 2: return 'challenging_stage';
+    case 3: return 'simultaneous_assault';
+    case 4: return 'entrance_flight_2';
+    default: return 'full_grid';
+  }
+}
+window.getWaveType = getWaveTypeInternal;
+
+function newWaveSetupForLevel(lvl){
+  try{
+    var wt = getWaveTypeInternal(lvl);
+    isMiniBossWave = (wt === 'mini_boss');
+    isHotChallengeWave = (wt === 'hot_challenge');
+    miniBossSpawned = false;
+    hotChallengeFiredSquadrons = {};
+    miniBossBonus = (lvl >= 9) ? 3000 : 2000;
+    window.isMiniBossWave = isMiniBossWave;
+    window.isHotChallengeWave = isHotChallengeWave;
+    console.log('[WAVE] level', lvl, 'type', wt);
+  }catch(e){ console.error('newWaveSetup', e); }
+}
+window.newWaveSetupForLevel = newWaveSetupForLevel;
+
+// Hook resetWave: na elke originele reset de vlaggen voor Mini Boss / Hot Challenge zetten.
+var _origResetWaveInternal = (typeof resetWaveInternal !== 'undefined') ? resetWaveInternal : null;
+if (_origResetWaveInternal && !window.__keptResetWrapped){
+  window.__keptResetWrapped = true;
+  try { resetWaveInternal = function(){ _origResetWaveInternal(); newWaveSetupForLevel(level); }; } catch(e){}
+  try { if (typeof window !== 'undefined') window.resetWaveInternal = resetWaveInternal; } catch(e){}
+  try { if (typeof resetWave === 'function' && resetWave !== resetWaveInternal){ var _orw = resetWave; resetWave = function(){ var r = _orw.apply(this, arguments); try{ newWaveSetupForLevel(level); }catch(e){} return r; }; window.resetWave = resetWave; } } catch(e){}
+}
+
+function keptMiniBossTypeForLevel(lvl){
+  var count = 0;
+  for (var l = 1; l <= lvl; l++){
+    if ((l % 10 === 3 || l % 10 === 8) && l % 6 !== 0) count++;
+  }
+  var cyc = (count - 1) % 3;
+  if (cyc === 1) return ENEMY2_TYPE;
+  if (cyc === 2) return ENEMY3_TYPE;
+  return ENEMY1_TYPE;
+}
+function keptSpawnMiniBoss(){
+  try{
+    if (!isMiniBossWave || miniBossSpawned) return;
+    if (typeof isShowingIntro !== 'undefined' && isShowingIntro) return;
+    if (typeof gameCanvas === 'undefined' || !gameCanvas || !gameCanvas.width) return;
+    miniBossSpawned = true;
+    var hp = (level >= 9) ? 25 : 20;
+    var w = Math.round(BOSS_WIDTH * 1.6), h = Math.round(BOSS_HEIGHT * 1.6);
+    var cx = gameCanvas.width / 2 - w / 2;
+    var bossType = keptMiniBossTypeForLevel(level);
+    enemies.push({ x: cx, y: MINI_BOSS_Y, width: w, height: h, targetGridX: cx, targetGridY: MINI_BOSS_Y, speed: 0, state: 'in_grid', gridRow: 0, gridCol: 4, type: bossType, health: hp, maxHealthNew: hp, isDamaged: false, velocityX: 0, velocityY: 0, attackPathStep: 0, initialY: MINI_BOSS_Y, initialX: cx, diveDirection: 1, lastFiredTime: 0, targetX1: 0, targetY1: 0, targetX2: 0, targetY2: 0, targetX3: 0, targetY3: 0, attackPathSegments: [], attackPathSegmentIndex: 0, attackPathT: 0, attackStartTime: 0, attackFormationOffsetX: 0, attackGroupId: null, entrancePathId: null, pathSegmentIndex: 0, pathT: 0, squadronId: 99, squadronEnemyIndex: 0, id: 'mini-boss-'+Date.now(), justReturned: false, canFireThisDive: true, attackType: 'normal', hasCapturedShip: false, capturedShipX: undefined, capturedShipY: undefined, capturedShipLastFiredTime: 0, capturedPlayerId: undefined, capturedPlayerNum: undefined, captureStartTime: 0, capturePrepareTimeout: null, pathSpeedMultiplier: 1.0, captureDiveInitiationTime: 0, isMiniBoss: true });
+    var bcx = cx + w / 2, moff = w / 2 + 45;
+    for (var i = 0; i < 2; i++){
+      var mx = bcx + (i % 2 === 0 ? -moff : moff) - ENEMY_WIDTH / 2;
+      enemies.push({ x: mx, y: MINI_BOSS_Y, width: ENEMY_WIDTH, height: ENEMY_HEIGHT, targetGridX: mx, targetGridY: MINI_BOSS_Y, speed: 0, state: 'in_grid', gridRow: 1, gridCol: i, type: bossType, health: 1, /* minion = zelfde enemy-type als de boss zelf */ isDamaged: false, velocityX: 0, velocityY: 0, attackPathStep: 0, initialY: MINI_BOSS_Y, initialX: mx, diveDirection: 1, lastFiredTime: Date.now(), targetX1: 0, targetY1: 0, targetX2: 0, targetY2: 0, targetX3: 0, targetY3: 0, attackPathSegments: [], attackPathSegmentIndex: 0, attackPathT: 0, attackStartTime: 0, attackFormationOffsetX: 0, attackGroupId: null, entrancePathId: null, pathSegmentIndex: 0, pathT: 0, squadronId: 99, squadronEnemyIndex: i + 1, id: 'mini-boss-minion-'+Date.now()+'-'+i, justReturned: false, canFireThisDive: false, attackType: 'normal', hasCapturedShip: false, captureStartTime: 0, capturePrepareTimeout: null, pathSpeedMultiplier: 1.0, captureDiveInitiationTime: 0, isBossMinion: true, isMiniBossMinion: true });
+    }
+  }catch(e){ console.error('mini-boss spawn', e); }
+}
+
+// Mini-boss minions zijn ONKWETSBAAR zolang de healthbar van de grote boss nog boven
+// de helft staat. Pas als de healthbar op of onder de helft komt, worden ze kwetsbaar.
+// Healthbar in rendering_menu.js: health / (maxHealthNew || 20) -> exact diezelfde breuk.
+function keptMiniBossMinionsProtected(){
+  try{
+    var mb = null;
+    for (var i = 0; i < (typeof enemies !== 'undefined' ? enemies.length : 0); i++){
+      if (enemies[i] && enemies[i].isMiniBoss){ mb = enemies[i]; break; }
+    }
+    if (!mb) return false; // geen boss meer -> minions gewoon kwetsbaar
+    var max = mb.maxHealthNew || mb.maxHealth || 20; // zelfde noemer als de healthbar
+    return mb.health > max / 2;
+  }catch(e){ return false; }
+}
+
+// 1 kogel, gericht op het schip. Gebruikt door mini-boss minions (1 per minion per 3 sec)
+// en door hot challenge (2 per wave/squadron). Zelfde richt-logica als createBulletSimple,
+// maar zonder de entrance-blokkade (CS-vijanden en mini-boss minions staan in_grid).
+function keptFireAimedEnemyBullet(enemy){
+  try{
+    if (!enemy || typeof isPaused !== 'undefined' && isPaused) return false;
+    if (typeof isInGameState !== 'undefined' && !isInGameState) return false;
+    try { if (typeof isClearBlocking === 'function' ? isClearBlocking() : (typeof isClearNoBulletsActive !== 'undefined' && isClearNoBulletsActive && Date.now() < clearActiveUntil)) return false; } catch(e) {}
+    var targetShip = null;
+    try{
+      if (typeof isTwoPlayerMode !== 'undefined' && isTwoPlayerMode && typeof selectedGameMode !== 'undefined' && selectedGameMode === 'coop'){
+        var p1 = (typeof ship1 !== 'undefined' && ship1 && typeof player1Lives !== 'undefined' && player1Lives > 0);
+        var p2 = (typeof ship2 !== 'undefined' && ship2 && typeof player2Lives !== 'undefined' && player2Lives > 0);
+        if (p1 && p2) targetShip = (Math.random() < 0.5) ? ship1 : ship2;
+        else if (p1) targetShip = ship1;
+        else if (p2) targetShip = ship2;
+      } else if (typeof ship !== 'undefined' && ship && typeof playerLives !== 'undefined' && playerLives > 0) targetShip = ship;
+    }catch(e){}
+    if (!targetShip) return false;
+    var speed = 4;
+    try { if (typeof scaleValue === 'function' && typeof BASE_ENEMY_BULLET_SPEED !== 'undefined') speed = scaleValue(level, BASE_ENEMY_BULLET_SPEED, MAX_ENEMY_BULLET_SPEED); } catch(e) {}
+    var sx = enemy.x + enemy.width / 2, sy = enemy.y + enemy.height / 2;
+    var dx = (targetShip.x + targetShip.width / 2) - sx, dy = (targetShip.y + targetShip.height / 2) - sy;
+    var dist = Math.sqrt(dx * dx + dy * dy);
+    if (!dist) return false;
+    var vx = (dx / dist) * speed, vy = (dy / dist) * speed;
+    if (vy <= 0) vy = Math.abs(vy) || speed; // altijd naar beneden richting schip
+    enemyBullets.push({ x: sx - ENEMY_BULLET_WIDTH / 2, y: sy, width: ENEMY_BULLET_WIDTH, height: ENEMY_BULLET_HEIGHT, vx: vx, vy: vy, type: enemy.type });
+    return true;
+  }catch(e){ console.error('keptFireAimedEnemyBullet', e); return false; }
+}
+
+function keptWaveTick(){
+  try{
+    if (typeof gameCanvas === 'undefined' || !gameCanvas || !gameCanvas.width) return;
+    if (!isMiniBossWave && !isHotChallengeWave) return;
+    var now = Date.now();
+    if (isMiniBossWave){
+      keptSpawnMiniBoss();
+      var _mb = null;
+      for (var mi = 0; mi < enemies.length; mi++){
+        var mb = enemies[mi];
+        if (mb && mb.isMiniBoss){
+          _mb = mb;
+          mb.x = gameCanvas.width / 2 - mb.width / 2 + Math.sin(now / 700) * Math.min(140, gameCanvas.width * 0.25);
+          mb.targetGridX = mb.x;
+          mb.y = MINI_BOSS_Y; mb.targetGridY = MINI_BOSS_Y;
+          if (mb.state === 'preparing_capture' || mb.state === 'diving_to_capture_position' || mb.state === 'capturing' || mb.state === 'showing_capture_message'){
+            mb.state = 'in_grid'; mb.captureDiveInitiationTime = 0; mb.isPreparingForImmediateCapture = false;
+            if (typeof capturingBossId !== 'undefined' && capturingBossId === mb.id) capturingBossId = null;
+            if (typeof captureBeamActive !== 'undefined') captureBeamActive = false;
+          }
+        }
+      }
+      if (_mb){
+        var _bcx = _mb.x + _mb.width / 2;
+        var _moff = _mb.width / 2 + 45;
+        var _mi2 = 0;
+        for (var mni = 0; mni < enemies.length; mni++){
+          var mn = enemies[mni];
+          if (mn && mn.isBossMinion && (mn.state === 'in_grid' || mn.state === 'returning' || mn.state === 'moving_to_grid')){
+            var _side = (_mi2 % 2 === 0) ? -1 : 1;
+            mn.x = _bcx + _side * _moff - mn.width / 2; // zelfde X-beweging als de boss, vaste offset links/rechts
+            mn.y = MINI_BOSS_Y; mn.targetGridX = mn.x; mn.targetGridY = MINI_BOSS_Y;
+            // 1 kogel per minion, elke 3 sec, op het schip
+            if (now - (mn.lastFiredTime || 0) >= MINI_BOSS_MINION_FIRE_INTERVAL_MS){
+              if (keptFireAimedEnemyBullet(mn)){ mn.lastFiredTime = now; try { playSound('enemyShootSound', false, 0.4); } catch(e){} }
+              else mn.lastFiredTime = now; // geen schip / geblokkeerd: timer wel door laten lopen
+            }
+            _mi2++;
+          }
+        }
+      }
+    }
+    if (isHotChallengeWave){
+      // CLEAR (clair) werkt OOK in hot CS: zolang CLEAR nog actief is, GEEN kogels.
+      // Expliciete blokkade hier (niet alleen per schutter in keptFire), zodat er ook
+      // geen kogel uit een eerder frame kan blijven liggen, en squadrons niet als
+      // 'gevuurd' worden gemarkeerd terwijl CLEAR actief was: als CLEAR later in
+      // dezezelfde hot CS verloopt, mogen de nog-niet-vurende squadrons alsnog vuren.
+      try {
+        var _clearBlocksHot = (typeof isClearBlocking === 'function') ? isClearBlocking() : (typeof isClearNoBulletsActive !== 'undefined' && isClearNoBulletsActive && typeof clearActiveUntil !== 'undefined' && Date.now() < clearActiveUntil);
+        if (_clearBlocksHot) { if (typeof enemyBullets !== 'undefined') enemyBullets = []; return; }
+      } catch(e) {}
+      // Hot = exact dezelfde stage als normaal, enige verschil: 2 kogels per wave
+      // op het schip. Een 'wave' is hier 1 squadron (csGroups spawnt per squadron).
+      // Elke NIET-horizontale squadron vuurt 1x zijn 2 kogels, zodra hij in beeld is.
+      // Horizontale (FlyBy) waves vuren NOOIT.
+      var _bySq = {};
+      for (var hk = 0; hk < enemies.length; hk++){
+        var he = enemies[hk];
+        if (!he || he.isMiniBoss || he.isBossMinion) continue;
+        if (he.state !== 'following_bezier_path') continue;
+        // Horizontaal (FlyBy): nooit vuren
+        if (he.entrancePathId && String(he.entrancePathId).indexOf('FlyBy') !== -1) continue;
+        var _sq = (typeof he.squadronId !== 'undefined' && he.squadronId !== null) ? he.squadronId : ('solo-' + hk);
+        if (!_bySq[_sq]) _bySq[_sq] = [];
+        _bySq[_sq].push(he);
+      }
+      for (var _sqId in _bySq){
+        if (hotChallengeFiredSquadrons[_sqId]) continue;
+        var _members = _bySq[_sqId];
+        var _fired = 0;
+        for (var _fi = 0; _fi < _members.length && _fired < 2; _fi++){
+          var _shooter = _members[_fi];
+          // Alleen schutters die echt in beeld staan: een kogel die off-screen start,
+          // wordt door moveEntities meteen opgeruimd en haalt het scherm nooit.
+          if (_shooter.x < -10 || _shooter.x > gameCanvas.width + 10 ||
+              _shooter.y < -10 || _shooter.y > gameCanvas.height + 10) continue;
+          if (keptFireAimedEnemyBullet(_shooter)) _fired++;
+        }
+        if (_fired > 0){ hotChallengeFiredSquadrons[_sqId] = true; try { playSound('enemyShootSound', false, 0.4); } catch(e){} }
+      }
+    }
+  }catch(e){ console.error('keptWaveTick', e); }
+}
+
+// AI-fix: mini-boss is GEEN capture-boss en moet altijd vogelvrij zijn voor de AI.
+var _origIsProtectedBossForAI = (typeof isProtectedBossForAI !== 'undefined') ? isProtectedBossForAI : null;
+if (_origIsProtectedBossForAI && !window.__miniBossProtectedFixed){
+  window.__miniBossProtectedFixed = true;
+  var _newIsProtectedBossForAI = function(enemy){
+    try{ if (enemy && enemy.isMiniBoss) return false; }catch(e){}
+    return _origIsProtectedBossForAI(enemy);
+  };
+  try { isProtectedBossForAI = _newIsProtectedBossForAI; } catch(e){}
+  try { if (typeof window !== 'undefined') window.isProtectedBossForAI = _newIsProtectedBossForAI; } catch(e){}
+}
+var _origAiPickHuntTarget = (typeof aiPickHuntTarget !== 'undefined') ? aiPickHuntTarget : null;
+if (_origAiPickHuntTarget && !window.__miniBossHuntFixed){
+  window.__miniBossHuntFixed = true;
+  var _newAiPickHuntTarget = function(list, shipCenterX){
+    try{
+      var arr = list || (typeof enemies !== 'undefined' ? enemies : []);
+      for (var i = 0; i < arr.length; i++){ if (arr[i] && arr[i].isMiniBoss && arr[i].health > 0) return arr[i]; }
+    }catch(e){}
+    return _origAiPickHuntTarget(list, shipCenterX);
+  };
+  try { aiPickHuntTarget = _newAiPickHuntTarget; } catch(e){}
+  try { if (typeof window !== 'undefined') window.aiPickHuntTarget = _newAiPickHuntTarget; } catch(e){}
+}
+
+// Mini Boss bonus. Hot = gewone CS: geen dubbele punten meer. Verder originele hit-logica.
+var _origHandleEnemyHit = (typeof handleEnemyHit !== 'undefined') ? handleEnemyHit : null;
+if (_origHandleEnemyHit && !window.__keptHitWrapped){
+  window.__keptHitWrapped = true;
+  var _keptHandleEnemyHit = function(enemy, shootingPlayerId){
+    var res = _origHandleEnemyHit(enemy, shootingPlayerId);
+    try{
+      if (res && res.destroyed){
+        if (enemy && enemy.isMiniBoss){
+          try { if (typeof score !== 'undefined') score += miniBossBonus; if (typeof floatingScores !== 'undefined') floatingScores.push({ text: 'MINI-BOSS +' + miniBossBonus, x: enemy.x, y: enemy.y, creationTime: Date.now(), durationMs: 2500 }); } catch(e){}
+        }
+        // Hot = gewone CS: geen dubbele punten meer.
+      }
+    }catch(e){}
+    return res;
+  };
+  try { handleEnemyHit = _keptHandleEnemyHit; } catch(e){}
+  try { if (typeof window !== 'undefined') window.handleEnemyHit = _keptHandleEnemyHit; } catch(e){}
+}
+
+var _origMoveEntities = (typeof moveEntities !== 'undefined') ? moveEntities : null;
+if (_origMoveEntities && !window.__keptMoveWrapped){
+  window.__keptMoveWrapped = true;
+  var _keptMoveEntities = function(){ var r = _origMoveEntities.apply(this, arguments); try { keptWaveTick(); } catch(e){} return r; };
+  try { moveEntities = _keptMoveEntities; } catch(e){}
+  try { if (typeof window !== 'undefined') window.moveEntities = _keptMoveEntities; } catch(e){}
+}
+
+
+
+var _origGridSlotPos = (typeof getCurrentGridSlotPosition !== 'undefined') ? getCurrentGridSlotPosition : null;
+if (_origGridSlotPos && !window.__miniBossGridShiftWrapped){
+  window.__miniBossGridShiftWrapped = true;
+  var _shiftedGridSlotPos = function(gridRow, gridCol, enemyWidth){
+    var pos = _origGridSlotPos(gridRow, gridCol, enemyWidth);
+    try { if (typeof isMiniBossWave !== 'undefined' && isMiniBossWave && pos) pos.y = pos.y + 90 + MINI_BOSS_LOWER_PX; } catch(e){} // mini boss 1 cm lager
+    return pos;
+  };
+  try { getCurrentGridSlotPosition = _shiftedGridSlotPos; } catch(e){}
+  try { if (typeof window !== 'undefined') window.getCurrentGridSlotPosition = _shiftedGridSlotPos; } catch(e){}
+}
+try { if (typeof maxSubWavesPerLevel !== 'undefined') maxSubWavesPerLevel = 1; } catch(e){}
+try { if (typeof window !== 'undefined' && typeof window.maxSubWavesPerLevel !== 'undefined') window.maxSubWavesPerLevel = 1; } catch(e){}
 
 
 // --- EINDE deel 8      van 8 dit codeblok ---
