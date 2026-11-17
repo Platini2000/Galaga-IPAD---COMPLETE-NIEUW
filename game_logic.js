@@ -946,7 +946,20 @@ window.resetGame = resetGameInternal;
 /**
  * Reset de state voor een nieuwe wave (ronde).
  */
+const BOSS_DEFEATED_BONUS_HOLD_MS = 4000; // Bonus score na boss stage: minimaal 4 sec leesbaar, pas daarna volgende intro
+let bossDefeatedHoldToken = 0;
 function resetWaveInternal() {
+    // BOSS BONUS HOLD: een vroege reset (van waar dan ook) mag de bonus-score
+    // niet weghalen. De timeout in triggerBossStageDefeat wist de vlag eerst
+    // en roept resetWaveInternal pas daarna aan, dus die komt hier gewoon door.
+    try {
+        if (typeof isShowingBossDefeatedMessage !== 'undefined' && isShowingBossDefeatedMessage
+            && typeof bossDefeatedMessageStartTime !== 'undefined' && bossDefeatedMessageStartTime > 0
+            && Date.now() - bossDefeatedMessageStartTime < BOSS_DEFEATED_BONUS_HOLD_MS) {
+            console.log("[BOSS] resetWaveInternal geblokkeerd: bonus-hold nog actief");
+            return;
+        }
+    } catch(e) {}
     // --- FIX ONZICHTBARE VIJANDEN: volledige cleanup bij elke wave reset, essentieel voor level kiezer ---
     // 1. Clear alle timeouts en controllers
     if (typeof clearCSController === 'function') clearCSController();
@@ -1780,7 +1793,7 @@ function updateBossStageLogic(now) {
         return;
     }
     
-    if (isShowingBossDefeatedMessage && now - bossDefeatedMessageStartTime > 3000) { // FIX: altijd 3 sec
+    if (isShowingBossDefeatedMessage && Date.now() - bossDefeatedMessageStartTime >= BOSS_DEFEATED_BONUS_HOLD_MS) { // Bonus: altijd volle 4 sec
         isShowingBossDefeatedMessage = false;
     }
     
@@ -2266,11 +2279,16 @@ function triggerBossStageDefeat() {
     
     isShowingBossDefeatedMessage = true;
     bossDefeatedMessageStartTime = Date.now();
-    
+    const _defeatToken = ++bossDefeatedHoldToken;
+
     bossStageBoss = null;
-    
-    // FIX: Bonus text altijd exact 3000ms in beeld
+
+    // Bonus score blijft volle 4000ms in beeld, pas daarna volgende intro stage.
+    // Token-guard: een oude/stale timeout (bv. bij dubbele trigger) mag de
+    // hold nooit vroegtijdig afbreken of de volgende wave te vroeg starten.
     setTimeout(()=>{
+        if (_defeatToken !== bossDefeatedHoldToken) return;
+        if (Date.now() - bossDefeatedMessageStartTime < BOSS_DEFEATED_BONUS_HOLD_MS) return;
         isShowingBossDefeatedMessage = false;
         bossDefeatedMessageStartTime = 0;
         if (typeof resetWaveInternal === 'function') {
@@ -2279,7 +2297,7 @@ function triggerBossStageDefeat() {
             console.log("[BOSS] Defeated, going to level", level);
             resetWaveInternal();
         }
-    }, 3000);
+    }, BOSS_DEFEATED_BONUS_HOLD_MS);
 }
 
 window.updateBossStageLogic = updateBossStageLogic;
