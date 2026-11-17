@@ -397,7 +397,7 @@ function showMenuState() {
        isGridSoundPlaying = false;
 
        playerLives = 3; score = 0; level = 1;
-       player1Lives = 3; player2Lives = 3; player1Score = 0; player2Score = 0; player1ShotsFired = 0; player2ShotsFired = 0; player1EnemiesHit = 0; player2EnemiesHit = 0; player1MaxLevelReached = 1; player2MaxLevelReached = 1;
+       player1Lives = 3; player2Lives = 3; player1Score = 0; player2Score = 0; player1ShotsFired = 0; player2ShotsFired = 0; player1EnemiesHit = 0; player2EnemiesHit = 0; player1MaxLevelReached = 1; player2MaxLevelReached = 1; player1FrozenLevel = 0; player2FrozenLevel = 0;
        scoreEarnedThisCS = 0; enemies = []; bullets = []; enemyBullets = []; explosions = []; isShowingIntro = false; introStep = 0; isChallengingStage = false; challengingStageEnemiesHit = 0; currentGridOffsetX = 0; gridMoveDirection = 1; currentWaveDefinition = null; isEntrancePhaseActive = false; totalEnemiesScheduledForWave = 0; enemiesSpawnedThisWave = 0; if(typeof enemySpawnTimeouts !== 'undefined' && Array.isArray(enemySpawnTimeouts)){ enemySpawnTimeouts.forEach(clearTimeout); } enemySpawnTimeouts = []; lastEnemyDetachTime = 0; selectedButtonIndex = 0;
        joystickMovedVerticallyLastFrame = false; previousButtonStates = []; previousGameButtonStates = []; previousDemoButtonStates = []; previousGameButtonStatesP2 = [];
        isShowingResultsScreen = false;
@@ -1228,8 +1228,62 @@ if (typeof isBossStage !== 'undefined' && isBossStage && typeof bossStageBoss !=
         var _mbl = _mirrorRect(bl.x, bl.y, bl.width, bl.height);
         gameCtx.globalAlpha = 0.50 * _mbl.fade; // FINE-TUNE KOGELS SPELER: sterkte spiegeling
         if (gameCtx.globalAlpha <= 0.01) continue;
-        if (typeof bulletImage !== 'undefined' && bulletImage.complete) gameCtx.drawImage(bulletImage, Math.round(_mbl.x), Math.round(_mbl.y), _mbl.w, _mbl.h);
-        else { gameCtx.fillStyle = 'yellow'; gameCtx.fillRect(Math.round(_mbl.x), Math.round(_mbl.y), _mbl.w, _mbl.h); }
+        // SPIEGEL = zelfde kogel als boven: TRIPLE / PIERCING / BOUNCE krijgen hier
+        // dezelfde felle capsule-kleur en dezelfde dunne dikte als in het hoofdbeeld,
+        // RAPID / SPREAD krijgen dezelfde lichtblauwe gloed eromheen.
+        // Zonder upgrade: gewoon de standaardkogel, zoals voorheen.
+        if (bl.triple || bl.piercing || bl.bounce) {
+          var _mmainColor = bl.bounce ? BOUNCE_BULLET_COLOR : (bl.piercing ? PIERCING_BULLET_RING_COLOR : TRIPLE_BULLET_RING_COLOR);
+          var _mthinW = Math.max(2, _mbl.w * 0.6);
+          var _mthinH = _mbl.h * 0.95;
+          var _mcx = _mbl.x + _mbl.w / 2, _mcy = _mbl.y + _mbl.h / 2;
+          var _mx = _mcx - _mthinW / 2, _my = _mcy - _mthinH / 2;
+          var _mr = _mthinW / 2;
+          gameCtx.fillStyle = _mmainColor;
+          gameCtx.beginPath();
+          gameCtx.moveTo(_mx + _mr, _my);
+          gameCtx.lineTo(_mx + _mthinW - _mr, _my);
+          gameCtx.arc(_mx + _mthinW - _mr, _my + _mr, _mr, -Math.PI / 2, Math.PI / 2);
+          gameCtx.lineTo(_mx + _mr, _my + _mthinH);
+          gameCtx.arc(_mx + _mr, _my + _mthinH - _mr, _mr, Math.PI / 2, Math.PI * 1.5);
+          gameCtx.closePath();
+          gameCtx.fill();
+          gameCtx.fillStyle = 'rgba(255, 255, 255, 0.6)';
+          gameCtx.fillRect(_mcx - 0.5, _my + 1, 1, Math.max(1, _mthinH - 2));
+          if (bl.piercing && bl.triple) { gameCtx.fillStyle = TRIPLE_BULLET_RING_COLOR; gameCtx.fillRect(_mcx - 1.5, _my + 1, 1, Math.max(1, _mthinH - 2)); }
+        } else {
+          var _mhasGlow = false;
+          try {
+            var _mpid = bl.playerId ? bl.playerId.toString() : '';
+            var _mnow = Date.now();
+            if (typeof spreadActive !== 'undefined' && spreadActive && _mnow < spreadActiveUntil && bl.spread) {
+              if (typeof spreadActivePlayer === 'undefined' || spreadActivePlayer === null) _mhasGlow = true;
+              else if (_mpid.includes(String(spreadActivePlayer)) || _mpid === 'player' + spreadActivePlayer) _mhasGlow = true;
+              else if (!isTwoPlayerMode) _mhasGlow = true;
+            }
+            if (!_mhasGlow && typeof rapidActive !== 'undefined' && rapidActive && _mnow < rapidActiveUntil) {
+              if (typeof rapidActivePlayer !== 'undefined' && rapidActivePlayer !== null) {
+                if (_mpid.includes(String(rapidActivePlayer)) || _mpid === 'player' + rapidActivePlayer || _mpid === String(rapidActivePlayer)) _mhasGlow = true;
+              } else if (!isTwoPlayerMode && !bl.spread) _mhasGlow = true;
+            }
+            if (!_mhasGlow && !isTwoPlayerMode && ((typeof rapidActive !== 'undefined' && rapidActive && _mnow < rapidActiveUntil) || (typeof spreadActive !== 'undefined' && spreadActive && _mnow < spreadActiveUntil))) {
+              if (!bl.playerId) _mhasGlow = true;
+              if (bl.spread && spreadActive) _mhasGlow = true;
+            }
+          } catch (e) {}
+          if (_mhasGlow) {
+            gameCtx.save();
+            gameCtx.globalAlpha = 0.28 * _mbl.fade;
+            gameCtx.fillStyle = 'rgba(150, 210, 255, 0.55)';
+            gameCtx.beginPath();
+            gameCtx.arc(_mbl.x + _mbl.w / 2, _mbl.y + _mbl.h / 2, Math.max(_mbl.w, _mbl.h) * 0.85, 0, Math.PI * 2);
+            gameCtx.fill();
+            gameCtx.restore();
+            gameCtx.globalAlpha = 0.50 * _mbl.fade;
+          }
+          if (typeof bulletImage !== 'undefined' && bulletImage.complete) gameCtx.drawImage(bulletImage, Math.round(_mbl.x), Math.round(_mbl.y), _mbl.w, _mbl.h);
+          else { gameCtx.fillStyle = 'yellow'; gameCtx.fillRect(Math.round(_mbl.x), Math.round(_mbl.y), _mbl.w, _mbl.h); }
+        }
       }
     }
     if (typeof enemyBullets !== 'undefined' && enemyBullets) {
@@ -1852,22 +1906,41 @@ function drawActiveUpgradesUnderScore(pNum, label, labelAlign, labelX) {
             }
         };
 
+        // BEVRIEZEN LEVEL-ICOON: zodra een speler doodgaat (0 levens), zijn icoon
+        // meteen vastzetten op het level van dat moment. Blijft zichtbaar staan tot
+        // de game voorbij is / scores in beeld komen. Levende speler gaat gewoon door.
+        // Herleving via extra leven (levens > 0) heft het bevriezen weer op.
+        if (!isTwoPlayerMode) {
+            if (playerLives <= 0) { if (!player1FrozenLevel) player1FrozenLevel = level; }
+            else player1FrozenLevel = 0;
+        } else if (selectedGameMode === 'coop') {
+            if (player1Lives <= 0) { if (!player1FrozenLevel) player1FrozenLevel = level; } else player1FrozenLevel = 0;
+            if (player2Lives <= 0) { if (!player2FrozenLevel) player2FrozenLevel = level; } else player2FrozenLevel = 0;
+        } else if (selectedGameMode === 'normal') {
+            if (player1Lives <= 0) { if (!player1FrozenLevel) player1FrozenLevel = level; } else if (currentPlayer === 1 && playerLives > 0) player1FrozenLevel = 0;
+            if (player2Lives <= 0) { if (!player2FrozenLevel) player2FrozenLevel = level; } else if (currentPlayer === 2 && playerLives > 0) player2FrozenLevel = 0;
+            if (typeof playerLives !== 'undefined' && playerLives <= 0) {
+                if (currentPlayer === 1 && !player1FrozenLevel) player1FrozenLevel = level;
+                if (currentPlayer === 2 && !player2FrozenLevel) player2FrozenLevel = level;
+            }
+        }
+
         let p1LevelToDraw, p2LevelToDraw;
 
         if (isInGameState && !isShowingPlayerGameOverMessage && !isPlayer1ShowingGameOverMessage && !isPlayer2ShowingGameOverMessage && gameOverSequenceStartTime === 0) {
             if (isTwoPlayerMode && selectedGameMode === 'normal') {
-                p1LevelToDraw = (currentPlayer === 1) ? level : player1MaxLevelReached;
-                p2LevelToDraw = (currentPlayer === 2) ? level : player2MaxLevelReached;
+                p1LevelToDraw = player1FrozenLevel > 0 ? player1FrozenLevel : ((currentPlayer === 1) ? level : player1MaxLevelReached);
+                p2LevelToDraw = player2FrozenLevel > 0 ? player2FrozenLevel : ((currentPlayer === 2) ? level : player2MaxLevelReached);
             } else if (isTwoPlayerMode && selectedGameMode === 'coop') {
-                p1LevelToDraw = player1Lives > 0 ? level : player1MaxLevelReached;
-                p2LevelToDraw = player2Lives > 0 ? level : player2MaxLevelReached;
+                p1LevelToDraw = player1FrozenLevel > 0 ? player1FrozenLevel : (player1Lives > 0 ? level : player1MaxLevelReached);
+                p2LevelToDraw = player2FrozenLevel > 0 ? player2FrozenLevel : (player2Lives > 0 ? level : player2MaxLevelReached);
             } else { // 1P
                 p1LevelToDraw = level;
             }
         } else { // Menu, Game Over, Results
-            p1LevelToDraw = player1MaxLevelReached;
+            p1LevelToDraw = player1FrozenLevel > 0 ? player1FrozenLevel : player1MaxLevelReached;
             if (isEffectivelyTwoPlayerUI || isTwoPlayerMode) {
-                p2LevelToDraw = player2MaxLevelReached;
+                p2LevelToDraw = player2FrozenLevel > 0 ? player2FrozenLevel : player2MaxLevelReached;
             }
         }
 

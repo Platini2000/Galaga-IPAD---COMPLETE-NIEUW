@@ -121,6 +121,8 @@ let player2Score = 0;
 let player1CompletedLevel = -1;
 let player1MaxLevelReached = 1;
 let player2MaxLevelReached = 1;
+let player1FrozenLevel = 0;
+let player2FrozenLevel = 0; // 0 = niet bevroren, anders: level waarop deze speler doodging (icoon blijft daar staan)
 
 // Menu State Variabelen
 let isPlayerSelectMode = false;

@@ -792,6 +792,8 @@ function resetGameInternal() {
         player1CompletedLevel = -1;
         player1MaxLevelReached = level;
         player2MaxLevelReached = level;
+        player1FrozenLevel = 0;
+        player2FrozenLevel = 0;
         if (player1LifeThresholdsMet instanceof Set) player1LifeThresholdsMet.clear(); else player1LifeThresholdsMet = new Set();
         if (player2LifeThresholdsMet instanceof Set) player2LifeThresholdsMet.clear(); else player2LifeThresholdsMet = new Set();
 
@@ -863,6 +865,8 @@ function resetGameInternal() {
         player1Lives = 3;
         player1Score = 0;
         player1MaxLevelReached = level;
+        player1FrozenLevel = 0;
+        player2FrozenLevel = 0;
         if (player1LifeThresholdsMet instanceof Set) player1LifeThresholdsMet.clear(); else player1LifeThresholdsMet = new Set();
 
         if (!ship && gameCanvas && gameCanvas.width > 0 && gameCanvas.height > 0) {
@@ -5714,7 +5718,17 @@ function moveEntities(overrideP1Left = null, overrideP1Right = null) {
                 // FIX beamer: enemy3 onkwetsbaar zolang beamer actief is EN zolang hij net gecaptured heeft en weggaat met schip
                 // Pas weer kwetsbaar als hij terug in grid staat (in_grid) of aanvalt met schip
                 if (enemy.type === ENEMY3_TYPE) {
-                    if (enemy.state === 'capturing' || enemy.state === 'preparing_capture' || enemy.state === 'diving_to_capture_position') {
+                    // CAPTURE-BOSS tijdens het dalen (diving_to_capture_position):
+                    // - Nog NIET geraakt (nog niet blauw): WEL raakbaar, 1x schade.
+                    // - Al geraakt en blauw (isDamaged): WEL weer onkwetsbaar tijdens
+                    //   het dalen, zodat hij beneden nog aankomt. Helemaal kwetsbaar
+                    //   zou hij beneden nooit halen.
+                    // Tijdens preparing_capture en capturing (beamer) blijft hij
+                    // altijd onkwetsbaar, zoals voorheen.
+                    if (enemy.state === 'capturing' || enemy.state === 'preparing_capture') {
+                        continue;
+                    }
+                    if (enemy.state === 'diving_to_capture_position' && enemy.isDamaged) {
                         continue;
                     }
                     // GEEN door-vliegen meer: een kogel die deze boss raakt,
@@ -7898,6 +7912,20 @@ function runSingleGameUpdate(timestamp) {
                             }
                         }
 
+                        // BEVRIEZEN: dode speler vastzetten op het level waarin hij doodging, vóór level++.
+                        if (isTwoPlayerMode && selectedGameMode === 'coop') {
+                            if (player1Lives <= 0 && !player1FrozenLevel) player1FrozenLevel = level;
+                            if (player2Lives <= 0 && !player2FrozenLevel) player2FrozenLevel = level;
+                        } else if (isTwoPlayerMode && selectedGameMode === 'normal') {
+                            if (player1Lives <= 0 && !player1FrozenLevel) player1FrozenLevel = level;
+                            if (player2Lives <= 0 && !player2FrozenLevel) player2FrozenLevel = level;
+                            if (typeof playerLives !== 'undefined' && playerLives <= 0) {
+                                if (currentPlayer === 1 && !player1FrozenLevel) player1FrozenLevel = level;
+                                if (currentPlayer === 2 && !player2FrozenLevel) player2FrozenLevel = level;
+                            }
+                        } else if (!isTwoPlayerMode && typeof playerLives !== 'undefined' && playerLives <= 0 && !player1FrozenLevel) {
+                            player1FrozenLevel = level;
+                        }
                         if (advanceLevelGlobally) {
                             level++;
                             if (typeof window !== 'undefined' && typeof window.checkAndExpireDualShips === 'function') window.checkAndExpireDualShips(); else if (typeof checkAndExpireDualShips === 'function') checkAndExpireDualShips();
