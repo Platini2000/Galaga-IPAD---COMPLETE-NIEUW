@@ -63,7 +63,7 @@ const
     CHALLENGING_STAGE_SQUADRON_INTERVAL = 3000,
 
     PATH_T_OFFSET_PER_ENEMY = 0.05,
-    ENEMY2_MAX_HITS = 1, ENEMY3_MAX_HITS = 2,
+    ENEMY2_MAX_HITS = 1, ENEMY3_MAX_HITS = 3, // GRID enemy3: 3 hits (groen -> blauw -> rood -> dood)
     LEVEL_CAP_FOR_SCALING = 50,
     BASE_GRID_FIRE_INTERVAL = 2800, MIN_GRID_FIRE_INTERVAL = 700,
     BASE_GRID_FIRE_PROBABILITY = 0.04, MAX_GRID_FIRE_PROBABILITY = 0.18,
@@ -507,6 +507,11 @@ let isShowingBossStageMessage = false;
 let bossStageMessageStartTime = 0;
 let isShowingBossDefeatedMessage = false;
 let bossDefeatedMessageStartTime = 0;
+let isShowingMiniBossDefeatedMessage = false;
+let miniBossDefeatedMessageStartTime = 0;
+let miniBossDefeatedHoldToken = 0;
+const MINI_BOSS_DEFEATED_BONUS = 5000;
+const MINI_BOSS_DEFEATED_HOLD_MS = 4000;
 let bossStageTargetY = 0;
 let bossStageReturnCount = 0;
 let normalWaveEntrancePaths = {}; let challengingStagePaths = {};

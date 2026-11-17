@@ -959,6 +959,12 @@ function resetWaveInternal() {
             console.log("[BOSS] resetWaveInternal geblokkeerd: bonus-hold nog actief");
             return;
         }
+        if (typeof isShowingMiniBossDefeatedMessage !== 'undefined' && isShowingMiniBossDefeatedMessage
+            && typeof miniBossDefeatedMessageStartTime !== 'undefined' && miniBossDefeatedMessageStartTime > 0
+            && Date.now() - miniBossDefeatedMessageStartTime < MINI_BOSS_DEFEATED_HOLD_MS) {
+            console.log("[MINI-BOSS] resetWaveInternal geblokkeerd: bonus-hold nog actief");
+            return;
+        }
     } catch(e) {}
     // --- FIX ONZICHTBARE VIJANDEN: volledige cleanup bij elke wave reset, essentieel voor level kiezer ---
     // 1. Clear alle timeouts en controllers
@@ -2246,6 +2252,37 @@ function triggerBossStageDefeat() {
     }, BOSS_DEFEATED_BONUS_HOLD_MS);
 }
 
+function triggerMiniBossDefeat() {
+    if (isShowingMiniBossDefeatedMessage) return;
+    isShowingMiniBossDefeatedMessage = true;
+    miniBossDefeatedMessageStartTime = Date.now();
+    const _defeatToken = ++miniBossDefeatedHoldToken;
+    // Bonus: 5000 per verslagen mini-boss, zelfde verdeling als boss stage
+    const bonus = MINI_BOSS_DEFEATED_BONUS;
+    score += bonus;
+    if (isTwoPlayerMode && selectedGameMode === 'coop') { player1Score += bonus; player2Score += bonus; }
+    else if (isTwoPlayerMode && selectedGameMode === 'normal') { if (currentPlayer === 1) player1Score += bonus; else player2Score += bonus; }
+    // Scherm leegmaken, net als bij de boss stage: minions + kogels weg
+    enemies = enemies.filter(e => e && !e.isMiniBossMinion && !e.isMiniBoss);
+    enemyBullets = [];
+    if (typeof createFloatingScore === 'function') createFloatingScore(gameCanvas.width / 2, gameCanvas.height * 0.3, bonus);
+    // Volle 4000ms in beeld, pas daarna volgende intro stage. Zelfde token-guard als boss stage.
+    setTimeout(() => {
+        if (_defeatToken !== miniBossDefeatedHoldToken) return;
+        if (Date.now() - miniBossDefeatedMessageStartTime < MINI_BOSS_DEFEATED_HOLD_MS) return;
+        isShowingMiniBossDefeatedMessage = false;
+        miniBossDefeatedMessageStartTime = 0;
+        if (typeof resetWaveInternal === 'function') {
+            level++;
+            if (typeof window !== 'undefined' && typeof window.checkAndExpireDualShips === 'function') window.checkAndExpireDualShips();
+            else if (typeof checkAndExpireDualShips === 'function') checkAndExpireDualShips();
+            console.log("[MINI-BOSS] Defeated, going to level", level);
+            resetWaveInternal();
+        }
+    }, MINI_BOSS_DEFEATED_HOLD_MS);
+}
+window.triggerMiniBossDefeat = triggerMiniBossDefeat;
+
 window.updateBossStageLogic = updateBossStageLogic;
 window.handleBossStageBossHit = handleBossStageBossHit;
 window.triggerBossStageDefeat = triggerBossStageDefeat;
@@ -2823,7 +2860,7 @@ function handleEnemyHit(enemy, shootingPlayerId = null) {
     if (enemy && enemy.isMiniBossMinion){
       var _mbH = null;
       for (var _mhi = 0; _mhi < (typeof enemies !== 'undefined' ? enemies.length : 0); _mhi++){ if (enemies[_mhi] && enemies[_mhi].isMiniBoss){ _mbH = enemies[_mhi]; break; } }
-      var _maxH = _mbH ? (_mbH.maxHealthNew || _mbH.maxHealth || 20) : 20;
+      var _maxH = _mbH ? (_mbH.maxHealthNew || _mbH.maxHealth || 50) : 50;
       if (_mbH && _mbH.health > _maxH / 2) return false;
     }
     if (!enemy) return { destroyed: false, pointsAwarded: 0 };
@@ -2854,11 +2891,12 @@ function handleEnemyHit(enemy, shootingPlayerId = null) {
     const sparkX = enemy.x + enemyWidthForCalc / 2; const sparkY = enemy.y + enemyHeightForCalc * 0.2;
     createHitSparks(sparkX, sparkY);
     enemy.health--;
-    // BOSS MODE small enemies: enemy2=2 hits geen kleur, enemy3=3 hits blauw na 2e
+    // GRID + BOSS MODE enemy3: 3 hits. health 3=groen (geen tint), 2=blauw (1e hit), 1=rood (2e hit, boss-stage tint), 0=dood.
     if (typeof isBossStage !== 'undefined' && isBossStage) {
         if (enemy.type === ENEMY3_TYPE) {
-            enemy.isDamaged = (enemy.health === 1);
-            if (enemy.health <= 1) enemy.isBluePhase = true;
+            enemy.isDamaged = (enemy.health <= 2);
+            enemy.isBluePhase = (enemy.health === 2);
+            enemy.isRedPhase = (enemy.health === 1);
         } else if (enemy.type === ENEMY2_TYPE) {
             enemy.isDamaged = false;
             enemy.isBluePhase = false;
@@ -2866,7 +2904,14 @@ function handleEnemyHit(enemy, shootingPlayerId = null) {
             enemy.isDamaged = false;
         }
     } else {
-        if (enemy.type === ENEMY3_TYPE) { enemy.isDamaged = (enemy.health < ENEMY3_MAX_HITS); }
+        if (enemy.type === ENEMY3_TYPE) { enemy.isDamaged = (enemy.health <= 2); enemy.isBluePhase = (enemy.health === 2); enemy.isRedPhase = (enemy.health === 1); }
+    }
+    // MINI-BOSS enemy3: zelfde fase-logica als de gewone boss stage enemy3 (groen/blauw/rood, op /50).
+    // Groen: health > 50% | Blauw: 25-50% | Rood: <= 25% (tint in rendering_menu.js).
+    if (enemy.isMiniBoss && enemy.type === ENEMY3_TYPE) {
+      var _mbMax = enemy.maxHealthNew || enemy.maxHealth || 50;
+      enemy.isBluePhase = (enemy.health <= _mbMax / 2);
+      enemy.isDamaged = enemy.isBluePhase;
     }
 
     if (enemy.health <= 0) {
@@ -5767,7 +5812,7 @@ function moveEntities(overrideP1Left = null, overrideP1Right = null) {
                 if (enemy.isMiniBossMinion){
                   var _mbB = null;
                   for (var _mbi2 = 0; _mbi2 < enemies.length; _mbi2++){ if (enemies[_mbi2] && enemies[_mbi2].isMiniBoss){ _mbB = enemies[_mbi2]; break; } }
-                  var _maxB = _mbB ? (_mbB.maxHealthNew || _mbB.maxHealth || 20) : 20;
+                  var _maxB = _mbB ? (_mbB.maxHealthNew || _mbB.maxHealth || 50) : 50;
                   if (_mbB && _mbB.health > _maxB / 2) continue;
                 }
                 // INVLIEGENDE BOSS: AI-kogel vliegt er DOORHEEN, raakt hem niet.
@@ -5786,17 +5831,16 @@ function moveEntities(overrideP1Left = null, overrideP1Right = null) {
                 // Pas weer kwetsbaar als hij terug in grid staat (in_grid) of aanvalt met schip
                 if (enemy.type === ENEMY3_TYPE) {
                     // CAPTURE-BOSS tijdens het dalen (diving_to_capture_position):
-                    // - Nog NIET geraakt (nog niet blauw): WEL raakbaar, 1x schade.
-                    // - Al geraakt en blauw (isDamaged): WEL weer onkwetsbaar tijdens
-                    //   het dalen, zodat hij beneden nog aankomt. Helemaal kwetsbaar
-                    //   zou hij beneden nooit halen.
+                    // - Direct onkwetsbaar, OOK als hij nog groen is (nog niet geraakt).
+                    //   Vroeger pas onkwetsbaar bij blauw; nu meteen bij groen, zodat
+                    //   hij altijd beneden aankomt om te capturen.
                     // Tijdens preparing_capture en capturing (beamer) blijft hij
                     // altijd onkwetsbaar, zoals voorheen.
                     if (enemy.state === 'capturing' || enemy.state === 'preparing_capture') {
                         continue;
                     }
-                    if (enemy.state === 'diving_to_capture_position' && enemy.isDamaged) {
-                        continue;
+                    if (enemy.state === 'diving_to_capture_position') {
+                        continue; // capturer daalt: altijd onkwetsbaar, ook groen
                     }
                     // GEEN door-vliegen meer: een kogel die deze boss raakt,
                     // raakt hem GEWOON (1x geraakt = blauw, 4 bossen = geen ramp).
@@ -7842,6 +7886,7 @@ function runSingleGameUpdate(timestamp) {
             if (!isWaveTransitioning && activePlayersForLogic && !inNormalIntro && !isShowingCaptureMessage && !isEntrancePhaseActive) {
                 let allEnemiesGone = enemies.length === 0; let noFallingShips = fallingShips.length === 0; let waveConsideredComplete = false;
                 if (isBossStage) { waveConsideredComplete = false; } // Boss handled separately
+                else if (typeof isShowingMiniBossDefeatedMessage !== 'undefined' && isShowingMiniBossDefeatedMessage) { waveConsideredComplete = false; } // Mini-boss: 4 sec BOSS DEFEATED tonen, pas daarna volgende intro
                 else if (isChallengingStage) { if (allEnemiesGone && !isEntrancePhaseActive) { waveConsideredComplete = true; if (typeof clearCSController === 'function') clearCSController(); } }
                 else { if (allEnemiesGone && !isEntrancePhaseActive && noFallingShips) waveConsideredComplete = true; }
 
@@ -8230,7 +8275,7 @@ function checkAndAwardExtraLife(playerNumber = null) { // playerNumber kan null 
 // ================= BEHOUDEN: ALLEEN Mini Boss + Hot Challenge =================
 // Al het andere is verwijderd:
 // de originele wave-cyclus hieronder is weer het origineel zoals aangeleverd.
-var isMiniBossWave = false, isHotChallengeWave = false, miniBossSpawned = false, miniBossBonus = 2000;
+var isMiniBossWave = false, isHotChallengeWave = false, miniBossSpawned = false, miniBossBonus = 5000;
 // AFGESPROKEN REGELS (niet meer aanpassen zonder overleg):
 // - Mini boss spawnt 1 cm lager en daarna 20px hoger: 87 + 38 - 20 = 105. Minions mee.
 // - Minions: zelfde enemy-type als de boss, zelfde X-beweging als de boss,
@@ -8330,11 +8375,11 @@ function keptSpawnMiniBoss(){
     if (typeof isShowingIntro !== 'undefined' && isShowingIntro) return;
     if (typeof gameCanvas === 'undefined' || !gameCanvas || !gameCanvas.width) return;
     miniBossSpawned = true;
-    var hp = (level >= 9) ? 25 : 20;
+    var hp = 50; // Mini-boss: 50 hits, healthbar + tint rekenen met /50
     var w = Math.round(BOSS_WIDTH * 1.6), h = Math.round(BOSS_HEIGHT * 1.6);
     var cx = gameCanvas.width / 2 - w / 2;
     var bossType = keptMiniBossTypeForLevel(level);
-    enemies.push({ x: cx, y: MINI_BOSS_Y, width: w, height: h, targetGridX: cx, targetGridY: MINI_BOSS_Y, speed: 0, state: 'in_grid', gridRow: 0, gridCol: 4, type: bossType, health: hp, maxHealthNew: hp, isDamaged: false, velocityX: 0, velocityY: 0, attackPathStep: 0, initialY: MINI_BOSS_Y, initialX: cx, diveDirection: 1, lastFiredTime: 0, targetX1: 0, targetY1: 0, targetX2: 0, targetY2: 0, targetX3: 0, targetY3: 0, attackPathSegments: [], attackPathSegmentIndex: 0, attackPathT: 0, attackStartTime: 0, attackFormationOffsetX: 0, attackGroupId: null, entrancePathId: null, pathSegmentIndex: 0, pathT: 0, squadronId: 99, squadronEnemyIndex: 0, id: 'mini-boss-'+Date.now(), justReturned: false, canFireThisDive: true, attackType: 'normal', hasCapturedShip: false, capturedShipX: undefined, capturedShipY: undefined, capturedShipLastFiredTime: 0, capturedPlayerId: undefined, capturedPlayerNum: undefined, captureStartTime: 0, capturePrepareTimeout: null, pathSpeedMultiplier: 1.0, captureDiveInitiationTime: 0, isMiniBoss: true });
+    enemies.push({ x: cx, y: MINI_BOSS_Y, width: w, height: h, targetGridX: cx, targetGridY: MINI_BOSS_Y, speed: 0, state: 'in_grid', gridRow: 0, gridCol: 4, type: bossType, health: hp, maxHealthNew: hp, isDamaged: false, isBluePhase: false, velocityX: 0, velocityY: 0, attackPathStep: 0, initialY: MINI_BOSS_Y, initialX: cx, diveDirection: 1, lastFiredTime: 0, targetX1: 0, targetY1: 0, targetX2: 0, targetY2: 0, targetX3: 0, targetY3: 0, attackPathSegments: [], attackPathSegmentIndex: 0, attackPathT: 0, attackStartTime: 0, attackFormationOffsetX: 0, attackGroupId: null, entrancePathId: null, pathSegmentIndex: 0, pathT: 0, squadronId: 99, squadronEnemyIndex: 0, id: 'mini-boss-'+Date.now(), justReturned: false, canFireThisDive: true, attackType: 'normal', hasCapturedShip: false, capturedShipX: undefined, capturedShipY: undefined, capturedShipLastFiredTime: 0, capturedPlayerId: undefined, capturedPlayerNum: undefined, captureStartTime: 0, capturePrepareTimeout: null, pathSpeedMultiplier: 1.0, captureDiveInitiationTime: 0, isMiniBoss: true });
     var bcx = cx + w / 2, moff = w / 2 + 45;
     for (var i = 0; i < 2; i++){
       var mx = bcx + (i % 2 === 0 ? -moff : moff) - ENEMY_WIDTH / 2;
@@ -8345,7 +8390,7 @@ function keptSpawnMiniBoss(){
 
 // Mini-boss minions zijn ONKWETSBAAR zolang de healthbar van de grote boss nog boven
 // de helft staat. Pas als de healthbar op of onder de helft komt, worden ze kwetsbaar.
-// Healthbar in rendering_menu.js: health / (maxHealthNew || 20) -> exact diezelfde breuk.
+// Healthbar in rendering_menu.js: health / (maxHealthNew || 50) -> exact diezelfde breuk.
 function keptMiniBossMinionsProtected(){
   try{
     var mb = null;
@@ -8353,7 +8398,7 @@ function keptMiniBossMinionsProtected(){
       if (enemies[i] && enemies[i].isMiniBoss){ mb = enemies[i]; break; }
     }
     if (!mb) return false; // geen boss meer -> minions gewoon kwetsbaar
-    var max = mb.maxHealthNew || mb.maxHealth || 20; // zelfde noemer als de healthbar
+    var max = mb.maxHealthNew || mb.maxHealth || 50; // zelfde noemer als de healthbar
     return mb.health > max / 2;
   }catch(e){ return false; }
 }
@@ -8394,6 +8439,7 @@ function keptWaveTick(){
   try{
     if (typeof gameCanvas === 'undefined' || !gameCanvas || !gameCanvas.width) return;
     if (!isMiniBossWave && !isHotChallengeWave) return;
+    if (typeof isShowingMiniBossDefeatedMessage !== 'undefined' && isShowingMiniBossDefeatedMessage) return;
     var now = Date.now();
     if (isMiniBossWave){
       keptSpawnMiniBoss();
@@ -8518,6 +8564,65 @@ if (_origAiPickHuntTarget && !window.__miniBossHuntFixed){
   try { if (typeof window !== 'undefined') window.aiPickHuntTarget = _newAiPickHuntTarget; } catch(e){}
 }
 
+
+// MINI-BOSS AI: VOORUIT MIKKEN (predictive lead), geen waaier achter de boss aan.
+// Probleem: de AI mikte op de HUIDIGE boss-positie. Tegen de tijd dat het schip
+// erheen was gereden en de kogel omhoog was gevlogen, was de boss al verder
+// bewogen -> kogels vlak ACHTER de boss.
+// Oplossing: de mini-boss beweegt deterministisch (zie keptWaveTick):
+//   boss.x(t) = midden - w/2 + sin(t/700) * A,  A = min(140, canvasW*0.25)
+// Die beweging "kent" de AI dus. aiPickHuntTarget geeft nu een kopie van de
+// boss terug waarvan x al op de VOORSPELDE positie staat op het moment dat de
+// kogel daar aankomt. De bestaande AI-logica (erheen vliegen + schieten bij
+// uitlijning) doet de rest, maar nu op het juiste punt. De echte boss
+// (x, collision, health) blijft onaangetast; alleen de AI ziet hem vooruit.
+// Lead-tijd = tijd die het schip nog nodig heeft om naar het mikpunt te rijden
+// + vliegtijd van de kogel (afstand / PLAYER_BULLET_SPEED). Twee iteraties,
+// zodat het mikpunt zichzelf consistent maakt. Alleen in mini-boss stages.
+function miniBossPredictedTarget(boss){
+  try{
+    if (!boss || !boss.isMiniBoss) return boss;
+    if (typeof isMiniBossWave !== 'undefined' && !isMiniBossWave) return boss;
+    var now = Date.now();
+    var s = null;
+    try{
+      if (typeof isTwoPlayerMode !== 'undefined' && isTwoPlayerMode && typeof selectedGameMode !== 'undefined' && selectedGameMode === 'coop'){
+        if (typeof ship1 !== 'undefined' && ship1 && typeof player1Lives !== 'undefined' && player1Lives > 0) s = ship1;
+        else if (typeof ship2 !== 'undefined' && ship2 && typeof player2Lives !== 'undefined' && player2Lives > 0) s = ship2;
+      } else if (typeof ship !== 'undefined' && ship) s = ship;
+    }catch(e){}
+    var shipY = s ? s.y : ((typeof gameCanvas !== 'undefined' && gameCanvas) ? gameCanvas.height - 80 : 600);
+    var bulletSpeed = (typeof PLAYER_BULLET_SPEED !== 'undefined' ? PLAYER_BULLET_SPEED : 14) * 60; // px/sec
+    var shipSpeed = 260; // px/sec, conservatief: AI rijdt met smoothing naar het mikpunt
+    var W = (typeof gameCanvas !== 'undefined' && gameCanvas) ? gameCanvas.width : 800;
+    var A = Math.min(140, W * 0.25);
+    var aimX = boss.x + boss.width / 2; // start: huidige midden
+    for (var i = 0; i < 2; i++){
+      var shipDist = s ? Math.abs((s.x + s.width / 2) - aimX) : 0;
+      var leadMs = (shipDist / shipSpeed) * 1000 + Math.max(0, (shipY - (boss.y + boss.height / 2)) / bulletSpeed) * 1000;
+      aimX = (W / 2 - boss.width / 2 + Math.sin((now + leadMs) / 700) * A) + boss.width / 2;
+    }
+    // Klem: het boss-midden beweegt alleen tussen midden-A en midden+A.
+    aimX = Math.max(W / 2 - A, Math.min(W / 2 + A, aimX));
+    var copy = Object.assign({}, boss);
+    copy.x = aimX - boss.width / 2;
+    copy.targetGridX = copy.x;
+    copy.__aiLeadX = aimX; // debug: waar de AI op mikt
+    return copy;
+  }catch(e){ return boss; }
+}
+var _origAiPickHuntTargetLead = (typeof aiPickHuntTarget !== 'undefined') ? aiPickHuntTarget : null;
+if (_origAiPickHuntTargetLead && !window.__miniBossAiLeadFixed){
+  window.__miniBossAiLeadFixed = true;
+  var _leadAiPickHuntTarget = function(list, shipCenterX){
+    var tgt = _origAiPickHuntTargetLead(list, shipCenterX);
+    try{ if (tgt && tgt.isMiniBoss) return miniBossPredictedTarget(tgt); }catch(e){}
+    return tgt;
+  };
+  try { aiPickHuntTarget = _leadAiPickHuntTarget; } catch(e){}
+  try { if (typeof window !== 'undefined') window.aiPickHuntTarget = _leadAiPickHuntTarget; } catch(e){}
+}
+
 // Mini Boss bonus. Hot = gewone CS: geen dubbele punten meer. Verder originele hit-logica.
 var _origHandleEnemyHit = (typeof handleEnemyHit !== 'undefined') ? handleEnemyHit : null;
 if (_origHandleEnemyHit && !window.__keptHitWrapped){
@@ -8527,7 +8632,7 @@ if (_origHandleEnemyHit && !window.__keptHitWrapped){
     try{
       if (res && res.destroyed){
         if (enemy && enemy.isMiniBoss){
-          try { if (typeof score !== 'undefined') score += miniBossBonus; if (typeof floatingScores !== 'undefined') floatingScores.push({ text: 'MINI-BOSS +' + miniBossBonus, x: enemy.x, y: enemy.y, creationTime: Date.now(), durationMs: 2500 }); } catch(e){}
+          try { if (typeof triggerMiniBossDefeat === 'function') triggerMiniBossDefeat(); } catch(e){}
         }
         // Hot = gewone CS: geen dubbele punten meer.
       }
