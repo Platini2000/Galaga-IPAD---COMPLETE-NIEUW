@@ -239,6 +239,8 @@ window.beamerIsAIPlayer = beamerIsAIPlayer;
 function isProtectedBossForAI(enemy) {
     try {
         if (!enemy || enemy.type !== ENEMY3_TYPE || enemy.hasCapturedShip) return false;
+        if (enemy.isMiniBoss) return false; // MINI-BOSS (o.a. stage 13 enemy3): nooit beschermd, altijd vogelvrij
+        if (typeof isMiniBossWave !== 'undefined' && isMiniBossWave) return false; // mini-boss stage: geen capture-bescherming
         if (typeof isBossStage !== 'undefined' && isBossStage) return false;
         if (typeof isChallengingStage !== 'undefined' && isChallengingStage) return false;
         if (typeof isFullGridWave !== 'undefined' && isFullGridWave) return false;
@@ -1719,6 +1721,9 @@ function fireBossMinionShots(minion) {
     return;
 }
 function startBossMinionDive(minion) {
+    // MINI-BOSS MINIONS: nooit loskoppelen / duiken. Ze blijven vast aan de mini-boss.
+    // Boss-stage minions (zonder isMiniBossMinion) vallen hier NIET onder en blijven duiken.
+    if (minion && minion.isMiniBossMinion) return;
     try {
         fireBossMinionShots(minion);
         // MINION-UITWIJK, DEEL 1 (bij de start): kies NU al een vaste kant en
@@ -1761,7 +1766,7 @@ function startBossMinionDive(minion) {
             minion.state = 'attacking';
             minion.attackPathSegments = [];
         }
-    } catch (e) { console.error("[BOSS MINIONS] dive error", e); minion.state = 'attacking'; }
+    } catch (e) { console.error("[BOSS MINIONS] dive error", e); if (!(minion && minion.isMiniBossMinion)) minion.state = 'attacking'; }
 }
 
 function updateBossStageLogic(now) {
@@ -2297,7 +2302,10 @@ window.startBossStageWave = startBossStageWave;
 // --- DEEL 2      van 8 dit code blok    --- (<<< REVISE: REMOVED triggerImmediateCaptureDive call from startFullGridWave >>>)
 
 
-const createBulletSimple = (targetEnemy, overrideStartPos = null) => {
+const createBulletSimple = (targetEnemy, overrideStartPos = null, allowDuringEntrance = false) => {
+    // CLEAR UPGRADE: de ENIGE uitzondering — als CLEAR actief is, vuurt NIEMAND, ook de stage-2 boss niet.
+    // Deze check staat expres VOOR de entree-uitzondering hieronder.
+    try { if (typeof isClearBlocking === 'function' ? isClearBlocking() : (typeof isClearNoBulletsActive !== 'undefined' && isClearNoBulletsActive && typeof clearActiveUntil !== 'undefined' && Date.now() < clearActiveUntil)) { return false; } } catch(e) {}
     let currentTargetShip = null;
     let gameActiveForTargeting = false;
 
@@ -2327,7 +2335,10 @@ const createBulletSimple = (targetEnemy, overrideStartPos = null) => {
     }
 
     // --- FIX STAGE 4 ENTRANCE: absoluut geen kogels tijdens entree ---
-    if (typeof isEntrancePhaseActive !== 'undefined' && isEntrancePhaseActive) {
+    // UITZONDERING: het eenmalige stage-2 boss-schot (allowDuringEntrance) mag wel tijdens
+    // de entree: de boss staat dan al op zijn gridplaats, de rest vliegt nog in.
+    // CLEAR blijft erboven staan: als CLEAR actief is, is hierboven al false teruggegeven.
+    if (typeof isEntrancePhaseActive !== 'undefined' && isEntrancePhaseActive && !allowDuringEntrance) {
         if (typeof isSimultaneousAssaultWave !== 'undefined' && isSimultaneousAssaultWave) {
             // Tijdens simultaneous assault pas vuren als ALLE vijanden in grid staan
             if (typeof isAllEnemiesInGridForSimultaneous === 'function' && !isAllEnemiesInGridForSimultaneous()) {
@@ -4440,7 +4451,7 @@ function aiControl() {
                         currentScore = (canvasHeight - enemy.y) * 2 - Math.abs(dx) * 3 - dy;
                         if (enemy.state === 'attacking' || enemy.state === 'diving_to_capture_position') currentScore += 3000;
                         // BOSS STAGE ENEMY3 FIX: in boss stages met enemy3 kleine vijanden geen respect tonen, direct aanvallen
-                        const isBossEnemy3ModeForScore = (typeof isBossStage !== 'undefined' && isBossStage && typeof bossStageVariant !== 'undefined' && bossStageVariant === 'enemy3');
+                        const isBossEnemy3ModeForScore = ((typeof isBossStage !== 'undefined' && isBossStage && typeof bossStageVariant !== 'undefined' && bossStageVariant === 'enemy3') || (typeof isMiniBossWave !== 'undefined' && isMiniBossWave));
                         if (isBossEnemy3ModeForScore && enemy.type === ENEMY3_TYPE && !enemy.hasCapturedShip) {
                             // Geen penalty, juist bonus in grid zodat ze direct beschoten worden
                             currentScore += 2500;
@@ -4547,7 +4558,7 @@ function aiControl() {
                 if (targetEnemyForAI) {
                     if (typeof isProtectedBossForAI === 'function' && isProtectedBossForAI(targetEnemyForAI)) canActuallyShootTarget = false;
                     else if (typeof aiProtectedBossBlocksShot === 'function' && aiProtectedBossBlocksShot(shipCenterX, shipTopY, targetEnemyForAI)) canActuallyShootTarget = false; // boss in vuurlijn -> niet in die richting vuren
-                    const isBossEnemy3ModeForShoot = (typeof isBossStage !== 'undefined' && isBossStage && typeof bossStageVariant !== 'undefined' && bossStageVariant === 'enemy3');
+                    const isBossEnemy3ModeForShoot = ((typeof isBossStage !== 'undefined' && isBossStage && typeof bossStageVariant !== 'undefined' && bossStageVariant === 'enemy3') || (typeof isMiniBossWave !== 'undefined' && isMiniBossWave));
                     // BOSS-GRID-Fase: gridbijtjes zijn hier GEEN capture-boss, dus geen respect-regel.
                     // Zonder dit mikte de AI wel op de gridbijtjes maar mocht hij nooit vuren.
                     const _isBossGridShootPhase = (typeof isBossStage !== 'undefined' && isBossStage && ['bees_in_grid', 'waiting_grid_clear', 'waiting_for_grid_clear', 'waiting_grid', 'waiting_for_grid'].includes(bossStagePhase));
@@ -4565,7 +4576,7 @@ function aiControl() {
                             }
                             // NIEUW: Dualship + RAPID/SPREAD respect - speler schiet niet op capture boss in grid, behalve in boss stage enemy3
                             try {
-                                const isBossStageFree = (typeof isBossStage !== 'undefined' && isBossStage && typeof bossStageVariant !== 'undefined' && bossStageVariant === 'enemy3');
+                                const isBossStageFree = ((typeof isBossStage !== 'undefined' && isBossStage && typeof bossStageVariant !== 'undefined' && bossStageVariant === 'enemy3') || (typeof isMiniBossWave !== 'undefined' && isMiniBossWave));
                                 if (!isBossStageFree && targetEnemyForAI && !targetEnemyForAI.hasCapturedShip && targetEnemyForAI.state === 'in_grid') {
                                     const needsCap = (typeof captureAttemptMadeThisLevel !== 'undefined' && !captureAttemptMadeThisLevel);
                                     if (needsCap) {
@@ -5055,7 +5066,7 @@ function calculateAIDesiredState(currentShip, currentSmoothedX, isShipDual, game
                     let laneBonus=0; if(isThisACoopAIMode&&!(isCoopAIDemoActive&&aiPlayerActivelySeekingCaptureById&&aiPlayerActivelySeekingCaptureById!==shipIdentifier)){if(shipIdentifier==='p1'&&eCX<gameCanvas.width/2)laneBonus=5000;else if((shipIdentifier==='ai_p2'||shipIdentifier==='player2')&&eCX>=gameCanvas.width/2)laneBonus=5000;}
                     score=laneBonus+(canvasHeight-enemy.y)*2-Math.abs(dX)*3-dY;
                     if(enemy.state==='attacking'||enemy.state==='diving_to_capture_position')score+=3000;
-                    const isBossEnemy3ModeForCoopScore = (typeof isBossStage !== 'undefined' && isBossStage && typeof bossStageVariant !== 'undefined' && bossStageVariant === 'enemy3');
+                    const isBossEnemy3ModeForCoopScore = ((typeof isBossStage !== 'undefined' && isBossStage && typeof bossStageVariant !== 'undefined' && bossStageVariant === 'enemy3') || (typeof isMiniBossWave !== 'undefined' && isMiniBossWave));
                     if(isBossEnemy3ModeForCoopScore && enemy.type===ENEMY3_TYPE && !enemy.hasCapturedShip){
                         score+=2500;
                         if(enemy.state==='in_grid') score+=1500;
@@ -5125,7 +5136,7 @@ function calculateAIDesiredState(currentShip, currentSmoothedX, isShipDual, game
         if(targetEnemyForAI){
             if (typeof isProtectedBossForAI === 'function' && isProtectedBossForAI(targetEnemyForAI)) shouldTryShoot_AI_Calc = false;
             else if (typeof aiProtectedBossBlocksShot === 'function' && aiProtectedBossBlocksShot(shipCenterX, shipTopY, targetEnemyForAI)) shouldTryShoot_AI_Calc = false; // boss in vuurlijn -> niet in die richting vuren
-            const isBossEnemy3ModeForCoopShoot = (typeof isBossStage !== 'undefined' && isBossStage && typeof bossStageVariant !== 'undefined' && bossStageVariant === 'enemy3');
+            const isBossEnemy3ModeForCoopShoot = ((typeof isBossStage !== 'undefined' && isBossStage && typeof bossStageVariant !== 'undefined' && bossStageVariant === 'enemy3') || (typeof isMiniBossWave !== 'undefined' && isMiniBossWave));
             if(isBossEnemy3ModeForCoopShoot && targetEnemyForAI.type===ENEMY3_TYPE && !targetEnemyForAI.hasCapturedShip){
                 // BOSS STAGE enemy3: altijd vuren op kleine vijanden in grid, geen respect
                 // Alleen dodgen en kogels ontwijken blijft, vuren mag altijd
@@ -5156,7 +5167,7 @@ function calculateAIDesiredState(currentShip, currentSmoothedX, isShipDual, game
             }
             // NIEUW: Dualship + RAPID/SPREAD respect voor capture boss - alleen vogelvrij in boss stage enemy3
             try {
-                const isBossStageFreeDual = (typeof isBossStage !== 'undefined' && isBossStage && typeof bossStageVariant !== 'undefined' && bossStageVariant === 'enemy3');
+                const isBossStageFreeDual = ((typeof isBossStage !== 'undefined' && isBossStage && typeof bossStageVariant !== 'undefined' && bossStageVariant === 'enemy3') || (typeof isMiniBossWave !== 'undefined' && isMiniBossWave));
                 if (!isBossStageFreeDual && targetEnemyForAI && targetEnemyForAI.type===ENEMY3_TYPE && !targetEnemyForAI.hasCapturedShip && targetEnemyForAI.state==='in_grid') {
                     const needsCapDual = (typeof captureAttemptMadeThisLevel !== 'undefined' && !captureAttemptMadeThisLevel);
                     if (needsCapDual) {
@@ -5307,7 +5318,7 @@ function findAndDetachEnemy() {
         }
 
         if (!isFullGridWave && aShipIsCapturedInGame) {
-            const bossWithShip = enemies.find(e => e && e.type === ENEMY3_TYPE && e.hasCapturedShip && e.state === 'in_grid');
+            const bossWithShip = enemies.find(e => e && !e.isMiniBoss && !e.isMiniBossMinion && e.type === ENEMY3_TYPE && e.hasCapturedShip && e.state === 'in_grid');
             if (bossWithShip) {
                 bossWithShip.justReturned = true;
                 bossWithShip.attackType = 'normal';
@@ -5318,7 +5329,8 @@ function findAndDetachEnemy() {
         }
 
         if (isEntrancePhaseActive) { return null; }
-        let availableGridEnemies = enemies.filter(e => e && e.state === 'in_grid' && !e.justReturned); if (availableGridEnemies.length === 0) { availableGridEnemies = enemies.filter(e => e && e.state === 'in_grid'); if (availableGridEnemies.length === 0) { return null; } } if (availableGridEnemies.length === 0) { return null; }
+        // MINI-BOSS: mini-boss en zijn minions doen nooit mee aan een (groeps)duik, in geen enkele mini-boss stage.
+        let availableGridEnemies = enemies.filter(e => e && e.state === 'in_grid' && !e.justReturned && !e.isMiniBoss && !e.isMiniBossMinion); if (availableGridEnemies.length === 0) { availableGridEnemies = enemies.filter(e => e && e.state === 'in_grid' && !e.isMiniBoss && !e.isMiniBossMinion); if (availableGridEnemies.length === 0) { return null; } } if (availableGridEnemies.length === 0) { return null; }
         availableGridEnemies.sort((a, b) => (b.gridRow || 0) - (a.gridRow || 0)); const isForcedAttackScenario = availableGridEnemies.length <= 3; let attackGroup = []; const selectedAttackType = 'normal';
         if (gridJustCompleted) { gridJustCompleted = false; }
         let groupSelected = false;
@@ -5474,7 +5486,7 @@ function triggerImmediateCaptureDive() {
         // --- EINDE FAIR + 1UP ---
 
         const potentialCapturingBosses = enemies.filter(e =>
-            e && e.state === 'in_grid' && e.type === ENEMY3_TYPE && !e.hasCapturedShip && !e.isPreparingForImmediateCapture
+            e && e.state === 'in_grid' && e.type === ENEMY3_TYPE && !e.hasCapturedShip && !e.isPreparingForImmediateCapture && !e.isMiniBoss && !e.isMiniBossMinion
         );
 
         if (potentialCapturingBosses.length > 0) {
@@ -6042,7 +6054,7 @@ function moveEntities(overrideP1Left = null, overrideP1Right = null) {
         for (let i = enemies.length - 1; i >= 0; i--) {
              let enemy = enemies[i]; if (!enemy) { enemies.splice(i,1); continue; }
              // Boss-minions zijn eenmalig: na hun duik verdwijnen ze, ze keren NIET terug naar een grid
-             if (enemy.isBossMinion && enemy.state === 'returning') { enemies.splice(i,1); continue; }
+             if (enemy.isBossMinion && !enemy.isMiniBossMinion && enemy.state === 'returning') { enemies.splice(i,1); continue; } // mini-boss minions: nooit weggooien, ze blijven vast aan de boss
              const enemyId = enemy.id;
              if (enemy.capturePrepareTimeout && enemy.state !== 'preparing_capture') { clearTimeout(enemy.capturePrepareTimeout); const timeoutIndex = enemySpawnTimeouts.indexOf(enemy.capturePrepareTimeout); if (timeoutIndex > -1) enemySpawnTimeouts.splice(timeoutIndex, 1); enemy.capturePrepareTimeout = null; }
              const currentEnemyWidthCorrected = (enemy.type === ENEMY3_TYPE) ? BOSS_WIDTH : ((enemy.type === ENEMY1_TYPE) ? ENEMY1_WIDTH : ENEMY_WIDTH);
@@ -6947,6 +6959,45 @@ function triggerGridFiring() {
         const gridEnemies = enemies.filter(e => e && e.state === 'in_grid');
         if (gridEnemies.length === 0) { return; }
         const now = Date.now();
+
+        // STAGE 2 + SOORTGELIJKE STAGES (full_grid / entrance_flight_1 / entrance_flight_2):
+        // Zodra EEN enemy3 (boss) zelf op zijn gridplaats is aangekomen, vuurt DIE boss
+        // DIRECT 1x op de schepen. Niet wachten tot alle bosses er staan: elke boss
+        // krijgt zijn eigen moment, zodra hij zelf in de grid staat.
+        // 1x per boss per stage (vlag op de enemy zelf, nieuwe enemies = nieuwe stage).
+        // UITGESLOTEN: mini-boss stages blijven volledig onveranderd (eigen vuur-logica via keptWaveTick),
+        // net als boss_stage, challenging/hot stages en simultaneous_assault.
+        // ENIGE UITZONDERING: als de CLEAR upgrade actief is, vuurt de boss NIET.
+        // Dan wordt de vlag NIET gezet: zodra CLEAR verloopt, krijgt die boss zijn 1x alsnog
+        // (als hij dan nog in de grid staat). Tijdens CLEAR zelf komt er geen enkele kogel.
+        // Dit blok staat VOOR de interval-gate hieronder, zodat het schot echt direct
+        // bij aankomst komt en niet pas bij de volgende normale grid-vuurbeurt.
+        try {
+            var _clearBlocksStage2 = false;
+            try { _clearBlocksStage2 = (typeof isClearBlocking === 'function') ? isClearBlocking() : (typeof isClearNoBulletsActive !== 'undefined' && isClearNoBulletsActive && typeof clearActiveUntil !== 'undefined' && Date.now() < clearActiveUntil); } catch(e) {}
+            if (!_clearBlocksStage2) {
+                var _isStage2Like = false;
+                try { var _wt = (typeof getWaveTypeInternal === 'function') ? getWaveTypeInternal(level) : null; _isStage2Like = (_wt === 'full_grid' || _wt === 'entrance_flight_1' || _wt === 'entrance_flight_2'); } catch(e) {}
+                var _isMiniBoss = (typeof isMiniBossWave !== 'undefined' && isMiniBossWave);
+                if (_isStage2Like && !_isMiniBoss && !isChallengingStage && !(typeof isBossStage !== 'undefined' && isBossStage) && !(typeof isSimultaneousAssaultWave !== 'undefined' && isSimultaneousAssaultWave)) {
+                    var _anyBossFired = false;
+                    for (var _bi = 0; _bi < enemies.length; _bi++) {
+                        var _boss = enemies[_bi];
+                        if (!_boss || _boss.type !== ENEMY3_TYPE) continue;
+                        if (_boss._stage2BossOneShotFired) continue; // deze boss heeft zijn 1x al gehad
+                        if (_boss.state !== 'in_grid') continue; // nog niet op zijn gridplaats: nog niet vuren
+                        if (['capturing','preparing_capture','diving_to_capture_position','showing_capture_message'].indexOf(_boss.state) !== -1) continue;
+                        if (_boss.hasCapturedShip) { _boss._stage2BossOneShotFired = true; continue; } // met gevangen schip: geen schot, wel afvinken
+                        // allowDuringEntrance=true: anders blokkeert createBulletSimple elke kogel
+                        // tijdens de entree (die pas eindigt als de laatste vijand geland is).
+                        // CLEAR wordt in createBulletSimple alsnog als eerste gecheckt: als CLEAR
+                        // tussentijds aangaat, geeft die false en blijft de vlag uit.
+                        if (createBulletSimple(_boss, null, true)) { _boss._stage2BossOneShotFired = true; _boss.lastFiredTime = now; _anyBossFired = true; }
+                    }
+                    if (_anyBossFired) { try { playSound('enemyShootSound', false, 0.4); } catch(e){} }
+                }
+            }
+        } catch(e) { console.error('Stage2 boss one-shot error', e); }
 
         // --- NIEUW V10: Simultaneous Assault regels ---
         if (typeof isSimultaneousAssaultWave !== 'undefined' && isSimultaneousAssaultWave) {
@@ -8392,14 +8443,32 @@ function keptWaveTick(){
         var _mi2 = 0;
         for (var mni = 0; mni < enemies.length; mni++){
           var mn = enemies[mni];
+          // MINI-BOSS MINIONS: nooit loskoppelen, nooit duiken. Ook als een andere
+          // codeweg hun state al op attacking/preparing_*/capturing heeft gezet,
+          // zetten we ze hier elke tick terug vast aan de boss.
+          if (mn && mn.isMiniBossMinion){
+            mn.state = 'in_grid';
+            mn.attackPathSegments = []; mn.attackPathSegmentIndex = 0; mn.attackPathT = 0;
+            mn.attackFormationOffsetX = 0; mn.attackGroupId = null;
+            mn.captureDiveInitiationTime = 0; mn.isPreparingForImmediateCapture = false;
+            mn.justReturned = false; mn.canFireThisDive = false;
+            mn.velocityX = 0; mn.velocityY = 0;
+            if (mn.capturePrepareTimeout){ try { clearTimeout(mn.capturePrepareTimeout); } catch(e){} mn.capturePrepareTimeout = null; }
+          }
           if (mn && mn.isBossMinion && (mn.state === 'in_grid' || mn.state === 'returning' || mn.state === 'moving_to_grid')){
             var _side = (_mi2 % 2 === 0) ? -1 : 1;
             mn.x = _bcx + _side * _moff - mn.width / 2; // zelfde X-beweging als de boss, vaste offset links/rechts
             mn.y = MINI_BOSS_Y; mn.targetGridX = mn.x; mn.targetGridY = MINI_BOSS_Y;
-            // 1 kogel per minion, elke 3 sec, op het schip
+            // Mini-boss minions, elke 3 sec, op het schip:
+            // ENEMY1 = 1 kogel, ENEMY2 = 2 kogels, ENEMY3 = 3 kogels (burst, per minion)
             if (now - (mn.lastFiredTime || 0) >= MINI_BOSS_MINION_FIRE_INTERVAL_MS){
-              if (keptFireAimedEnemyBullet(mn)){ mn.lastFiredTime = now; try { playSound('enemyShootSound', false, 0.4); } catch(e){} }
-              else mn.lastFiredTime = now; // geen schip / geblokkeerd: timer wel door laten lopen
+              var _minionBurst = (mn.type === ENEMY3_TYPE) ? 3 : (mn.type === ENEMY2_TYPE) ? 2 : 1;
+              var _minionFired = false;
+              for (var _bi = 0; _bi < _minionBurst; _bi++) {
+                if (keptFireAimedEnemyBullet(mn)) _minionFired = true;
+              }
+              mn.lastFiredTime = now; // geen schip / geblokkeerd: timer wel door laten lopen
+              if (_minionFired) { try { playSound('enemyShootSound', false, 0.4); } catch(e){} }
             }
             _mi2++;
           }
