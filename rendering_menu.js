@@ -386,7 +386,7 @@ function showMenuState() {
        isTwoPlayerMode = false; currentPlayer = 1;
        showCsHitsMessage = false; csHitsMessageStartTime = 0; showPerfectMessage = false; perfectMessageStartTime = 0; showCsBonusScoreMessage = false; csBonusScoreMessageStartTime = 0; showCSClearMessage = false; csClearMessageStartTime = 0; showCsHitsForClearMessage = false; showCsScoreForClearMessage = false; showExtraLifeMessage = false; extraLifeMessageStartTime = 0;
        showReadyMessage = false; readyMessageStartTime = 0; readyForNextWave = false; readyForNextWaveReset = false; isCsCompletionDelayActive = false; csCompletionDelayStartTime = 0; csCompletionResultIsPerfect = false; csIntroSoundPlayed = false; isShowingPlayerGameOverMessage = false; playerGameOverMessageStartTime = 0; playerWhoIsGameOver = 0; nextActionAfterPlayerGameOver = '';
-       player1TriggeredHighScoreSound = false;
+       player1TriggeredHighScoreSound = false; highScore20000SoundPlayed = false;
        player2TriggeredHighScoreSound = false;
        isShowingCoopPlayersReady = false;
        coopPlayersReadyStartTime = 0;
@@ -427,7 +427,7 @@ function showMenuState() {
        isTwoPlayerMode = false; currentPlayer = 1; isShowingPlayerGameOverMessage = false;
        isCoopAIDemoActive = false; aiPlayerActivelySeekingCaptureById = null;
        coopStartSoundPlayedThisSession = false;
-       player1TriggeredHighScoreSound = false;
+       player1TriggeredHighScoreSound = false; highScore20000SoundPlayed = false;
        player2TriggeredHighScoreSound = false;
        isShowingCoopPlayersReady = false; coopPlayersReadyStartTime = 0;
        isTransitioningToDemoViaScoreScreen = false;
@@ -2612,9 +2612,10 @@ function drawActiveUpgradesUnderScore(pNum, label, labelAlign, labelX) {
                  }
 
                  if (!messageDrawnThisCycle) {
-                     if (showCsBonusScoreMessage || showPerfectMessage || showCsHitsMessage) { drawCanvasText(hitsText, midScreenX, midScreenY, INTRO_TEXT_FONT, CS_HITS_TEXT_COLOR, 'center', 'middle', true); messageDrawnThisCycle = true; if (showCsBonusScoreMessage || showPerfectMessage) { drawCanvasText("PERFECT!", midScreenX, midScreenY - CS_MESSAGE_VERTICAL_OFFSET, INTRO_TEXT_FONT, PERFECT_TEXT_COLOR, 'center', 'middle', true); } if (showCsBonusScoreMessage) { var _csPerfectBonusShown = (typeof window !== "undefined" && typeof window.csPerfectBonus === "number" && window.csPerfectBonus > 0) ? window.csPerfectBonus : ((typeof isHotChallengeWave !== "undefined" && isHotChallengeWave) ? 20000 : 10000); drawCanvasText("SPECIAL BONUS " + _csPerfectBonusShown + " PTS", midScreenX, midScreenY + CS_MESSAGE_VERTICAL_OFFSET, INTRO_TEXT_FONT, CS_BONUS_SCORE_TEXT_COLOR, 'center', 'middle', true); } } 
+                     if (showExtraLifeMessage) { drawCanvasText("EXTRA LIFE", midScreenX, midScreenY, INTRO_TEXT_FONT, EXTRA_LIFE_TEXT_COLOR, 'center', 'middle', true); messageDrawnThisCycle = true; }
+                     else if (showCsBonusScoreMessage || showPerfectMessage || showCsHitsMessage) { drawCanvasText(hitsText, midScreenX, midScreenY, INTRO_TEXT_FONT, CS_HITS_TEXT_COLOR, 'center', 'middle', true); messageDrawnThisCycle = true; if (showCsBonusScoreMessage || showPerfectMessage) { drawCanvasText("PERFECT!", midScreenX, midScreenY - CS_MESSAGE_VERTICAL_OFFSET, INTRO_TEXT_FONT, PERFECT_TEXT_COLOR, 'center', 'middle', true); } if (showCsBonusScoreMessage) { var _csPerfectBonusShown = (typeof window !== "undefined" && typeof window.csPerfectBonus === "number" && window.csPerfectBonus > 0) ? window.csPerfectBonus : ((typeof isHotChallengeWave !== "undefined" && isHotChallengeWave) ? 20000 : 10000); drawCanvasText("SPECIAL BONUS " + _csPerfectBonusShown + " PTS", midScreenX, midScreenY + CS_MESSAGE_VERTICAL_OFFSET, INTRO_TEXT_FONT, CS_BONUS_SCORE_TEXT_COLOR, 'center', 'middle', true); } } 
                      else if (showCSClearMessage) { drawCanvasText("STAGE CLEARED", midScreenX, midScreenY - CS_MESSAGE_VERTICAL_OFFSET, INTRO_TEXT_FONT, CS_CLEAR_TEXT_COLOR, 'center', 'middle', true); messageDrawnThisCycle = true; if (showCsHitsForClearMessage) { drawCanvasText(hitsText, midScreenX, midScreenY, INTRO_TEXT_FONT, CS_HITS_TEXT_COLOR, 'center', 'middle', true); } if (showCsScoreForClearMessage) { drawCanvasText(clearBonusText, midScreenX, midScreenY + CS_MESSAGE_VERTICAL_OFFSET, INTRO_TEXT_FONT, CS_CLEAR_SCORE_TEXT_COLOR, 'center', 'middle', true); } }
-                     else if (showExtraLifeMessage) { drawCanvasText("EXTRA LIFE", midScreenX, midScreenY, INTRO_TEXT_FONT, EXTRA_LIFE_TEXT_COLOR, 'center', 'middle', true); messageDrawnThisCycle = true; }
+                     /* EXTRA LIFE staat nu als eerste tak hierboven: altijd direct in beeld */
                      else if (isShowingIntro && !isShowingCoopPlayersReady) {
                         let introText = ""; let introColor = INTRO_TEXT_COLOR_NORMAL;
                         if (introStep === 1) {

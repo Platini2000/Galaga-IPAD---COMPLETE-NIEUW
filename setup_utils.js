@@ -558,6 +558,7 @@ let initialGameStartSoundPlayedThisSession = false;
 let coopStartSoundPlayedThisSession = false;
 let wasLastGameAIDemo = false;
 let player1TriggeredHighScoreSound = false;
+let highScore20000SoundPlayed = false; // 1x per spel: high score 20000 bereikt -> hiScoreSound 1 malig
 let player2TriggeredHighScoreSound = false;
 let isShowingCoopPlayersReady = false;
 let coopPlayersReadyStartTime = 0;

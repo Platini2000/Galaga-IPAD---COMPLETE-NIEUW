@@ -104,6 +104,7 @@ window.forceGameOverIfAllDead = forceGameOverIfAllDead;
 // scorerBefore <= other && scorerAfter > other = inhalen, EN de inhaler
 // moet daarbij de high score (20000) bereikt hebben: scorerAfter >= 20000.
 function playHiScoreOvertakeSound(scorerId, scorerBefore, scorerAfter) {
+    try { if (typeof playHighScoreReachedSoundOnce === 'function') playHighScoreReachedSoundOnce(); } catch(e) {}
     try {
         if (typeof isTwoPlayerMode === 'undefined' || !isTwoPlayerMode) return false;
         if (typeof scorerBefore !== 'number' || typeof scorerAfter !== 'number') return false;
@@ -123,12 +124,14 @@ function playHiScoreOvertakeSound(scorerId, scorerBefore, scorerAfter) {
     return false;
 }
 window.playHiScoreOvertakeSound = playHiScoreOvertakeSound;
+// 20000 bereikt? Dan 1 malig hiScoreSound, los van inhalen (zie helper hierboven).
 
 // CS Perfect Bonus in coop: BEIDE spelers krijgen dezelfde bonus. Een
 // tussentijdse check na alleen P1 zou vals inhalen melden (P2 krijgt de
 // bonus daarna nog). Vergelijk daarom de koploper VOOR alle bonussen met
 // de koploper ERNA. Gelijkspel voor + voorsprong erna = inhalen.
 function playHiScoreOvertakeSoundForCsCoop(p1Before, p2Before) {
+    try { if (typeof playHighScoreReachedSoundOnce === 'function') playHighScoreReachedSoundOnce(); } catch(e) {}
     try {
         if (typeof isTwoPlayerMode === 'undefined' || !isTwoPlayerMode) return false;
         var p1After = (typeof player1Score !== 'undefined') ? player1Score : 0;
@@ -146,6 +149,41 @@ function playHiScoreOvertakeSoundForCsCoop(p1Before, p2Before) {
     return false;
 }
 window.playHiScoreOvertakeSoundForCsCoop = playHiScoreOvertakeSoundForCsCoop;
+
+// --- EXTRA LIFE: ALTIJD DIRECT, tekst + geluid, geen delay / geen onderdrukking ---
+// Eén centrale helper: elke plek die een extra leven geeft (score-drempel EN 1UP-upgrade)
+// roept deze aan. Zo kan de melding nooit meer achter een andere melding of een
+// setTimeout blijven hangen.
+function showExtraLifeNow() {
+    try {
+        showExtraLifeMessage = true;
+        extraLifeMessageStartTime = Date.now();
+        if (typeof playSound === 'function') playSound('extraLifeSound', false, 0.8);
+    } catch(e) { console.error("showExtraLifeNow error", e); }
+}
+window.showExtraLifeNow = showExtraLifeNow;
+
+// --- HIGH SCORE 20000: 1 MALIG geluid ---
+// Zodra een speler (1P, 2P, coop, AI) 20000 bereikt, klinkt hiScoreSound 1x.
+// Daarna nooit meer in hetzelfde spel (flag). highScore zelf start al op 20000,
+// dus checken we alleen de echte speler-scores, niet highScore.
+function playHighScoreReachedSoundOnce() {
+    try {
+        if (typeof highScore20000SoundPlayed !== 'undefined' && highScore20000SoundPlayed) return false;
+        var best = Math.max(
+            (typeof score !== 'undefined' && isFinite(score)) ? score : 0,
+            (typeof player1Score !== 'undefined' && isFinite(player1Score)) ? player1Score : 0,
+            (typeof player2Score !== 'undefined' && isFinite(player2Score)) ? player2Score : 0
+        );
+        if (best < 20000) return false;
+        highScore20000SoundPlayed = true;
+        try { if (typeof window !== 'undefined') window.highScore20000SoundPlayed = true; } catch(e) {}
+        if (typeof playSound === 'function') playSound('hiScoreSound', false, 0.2);
+        return true;
+    } catch(e) {}
+    return false;
+}
+window.playHighScoreReachedSoundOnce = playHighScoreReachedSoundOnce;
 
 
 
@@ -1000,7 +1038,7 @@ function resetGameInternal() {
     p1FireInputWasDown = false; p2FireInputWasDown = false;
     p1JustFiredSingle = false; p2JustFiredSingle = false;
 
-    player1TriggeredHighScoreSound = false;
+    player1TriggeredHighScoreSound = false; highScore20000SoundPlayed = false;
     player2TriggeredHighScoreSound = false;
 
     isShowingCoopPlayersReady = false;
@@ -6377,21 +6415,9 @@ function moveEntities(overrideP1Left = null, overrideP1Right = null) {
                                             } else {
                                                 playerLives++;
                                             }
-                                            // FIX 1UP beamer: toon EXTRA LIFE tekst + geluid direct, net als bij score
-                                            try {
-                                                // Forceer extra life message direct zichtbaar
-                                                if (typeof showExtraLifeMessage !== 'undefined') {
-                                                    showExtraLifeMessage = true;
-                                                    extraLifeMessageStartTime = Date.now();
-                                                    console.log("[1UP BEAMER] EXTRA LIFE triggered for player " + pNum);
-                                                }
-                                                if (typeof playSound === 'function') {
-                                                    playSound('extraLifeSound', false, 0.8);
-                                                    // Nog een keer na korte delay voor zekerheid dat audio context actief is
-                                                    setTimeout(() => { try{ playSound('extraLifeSound', false, 0.8); }catch(e){} }, 100);
-                                                }
-                                                // Ook upgrade message laten zien als 1UP, maar extra life heeft prioriteit
-                                            } catch(e) { console.error("1UP beamer extraLife error", e); }
+                                            // 1UP beamer: EXTRA LIFE tekst + geluid ALTIJD direct (1x geluid, geen dubbele echo)
+                                            try { console.log("[1UP BEAMER] EXTRA LIFE triggered for player " + pNum); } catch(e) {}
+                                            if (typeof showExtraLifeNow === 'function') showExtraLifeNow();
                                         }
                                 } catch(e) {}
                                 try {
@@ -8340,18 +8366,15 @@ function checkAndAwardExtraLife(playerNumber = null) { // playerNumber kan null 
                  }
             }
 
-            if (awardedLifeNowForThisPlayer && !showExtraLifeMessage && !showCsBonusScoreMessage && !showPerfectMessage && !showCsHitsMessage && !showCSClearMessage && !showReadyMessage) {
-                 setTimeout(() => {
-                    if (isInGameState) {
-                        explosions = [];
-                        if(typeof updateExplosions === 'function') updateExplosions();
-                        showExtraLifeMessage = true;
-                        extraLifeMessageStartTime = Date.now();
-                        playSound('extraLifeSound', false, 0.5);
-                    }
-                 }, EXPLOSION_DURATION);
+            if (awardedLifeNowForThisPlayer) {
+                // ALTIJD direct: geen setTimeout (EXPLOSION_DURATION) en geen
+                // onderdrukking als er net een CS/perfect/clear/ready-melding staat.
+                // De render-volgorde geeft EXTRA LIFE voorrang, dus hij is meteen zichtbaar.
+                if (typeof showExtraLifeNow === 'function') showExtraLifeNow();
             }
         });
+        // High score 20000 bereikt? 1 malig geluid (flag in helper voorkomt herhaling).
+        try { if (typeof playHighScoreReachedSoundOnce === 'function') playHighScoreReachedSoundOnce(); } catch(e) {}
     } catch (e) { console.error("Error checking/awarding extra life:", e); }
 }
 
