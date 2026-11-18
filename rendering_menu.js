@@ -5,9 +5,11 @@
 const MENU_LOGO_APPROX_HEIGHT = 85;
 const MENU_SUBTITLE_TEXT = "Written By Platini2000(c)";
 const MENU_SUBTITLE_FONT = "18px 'Arial Black', Gadget, sans-serif"; // Groter
-// BOSS DEFEATED-kleur: #00FF00 (zie BOSS DEFEATED! hieronder). Platini2000-regels gebruiken exact dezelfde kleur.
+// BOSS DEFEATED-kleur: origineel #00FF00, NIET veranderen.
+// Platini2000-regels gebruiken een aparte, iets gedempte / transparante groen.
 const BOSS_DEFEATED_COLOR = "#00FF00";
-const MENU_SUBTITLE_COLOR = BOSS_DEFEATED_COLOR;
+const PLATINI_GREEN = "rgba(0, 220, 0, 0.78)"; // iets lichter donkergroen, iets transparant
+const MENU_SUBTITLE_COLOR = PLATINI_GREEN;
 const MENU_BUTTON_FONT = "22px 'Arial Black', Gadget, sans-serif";
 const MENU_BUTTON_COLOR = "white";
 const MENU_BUTTON_COLOR_HOVER = 'rgba(0, 191, 255, 0.9)'; // Deep sky blue hover
@@ -74,7 +76,7 @@ const RESULTS_LINE_V_SPACING_SINGLE = 35;
 const RESULTS_LINE_V_SPACING_DOUBLE = 90;
 const RESULTS_START_Y = 175;
 const RESULTS_FOOTER_FONT = MENU_SUBTITLE_FONT;
-const RESULTS_FOOTER_COLOR = BOSS_DEFEATED_COLOR;
+const RESULTS_FOOTER_COLOR = PLATINI_GREEN;
 
 // --- Verticale Offset voor CS berichten ---
 const CS_MESSAGE_VERTICAL_OFFSET = 30;
@@ -1344,7 +1346,7 @@ function renderGame() {
             const rotateFont = "bold 24px 'Press Start 2P'";
             const rotateColor = "rgba(0, 191, 255, 0.9)";
             const platiniFont = `normal ${cleanFontBaseSize - 4}px Arial, sans-serif`;
-            const platiniColor = BOSS_DEFEATED_COLOR;
+            const platiniColor = PLATINI_GREEN;
 
             const messageStructure = [
                 { text: "Disclaimer", font: disclaimerTitleFont, color: disclaimerTitleColor, skipAfter: 0.75 },
