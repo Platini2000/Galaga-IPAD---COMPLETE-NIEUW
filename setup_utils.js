@@ -1964,6 +1964,13 @@ function triggerFinalGameOverSequence() {
         if (typeof aiPlayerActivelySeekingCaptureById !== 'undefined') aiPlayerActivelySeekingCaptureById = null;
         if (typeof beamerClearDesignation === 'function') beamerClearDesignation();
         isShowingCaptureMessage = false;
+        // ALLES wissen bij laatste dood: schepen, respawn-timers, capture-respawn.
+        // Anders kan een lopende respawn-/capture-timer na de finale game-over alsnog
+        // een schip terugzetten en blijft de game hangen i.p.v. naar results te gaan.
+        try { ship = null; ship1 = null; ship2 = null; } catch(e) {}
+        try { isWaitingForRespawn = false; respawnTime = 0; isPlayer1WaitingForRespawn = false; player1RespawnTime = 0; isPlayer2WaitingForRespawn = false; player2RespawnTime = 0; } catch(e) {}
+        try { player1NeedsRespawnAfterCapture = false; player2NeedsRespawnAfterCapture = false; } catch(e) {}
+        try { if (typeof wipeEverythingForFinalGameOver === 'function') wipeEverythingForFinalGameOver(); } catch(e) {}
         isShowingCoopPlayersReady = false;
         isShipCaptured = false;
         isPlayer1ShipCaptured = false;

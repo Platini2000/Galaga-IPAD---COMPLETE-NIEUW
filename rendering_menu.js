@@ -2791,6 +2791,10 @@ function mainLoop(timestamp) {
         if (isInGameState && !isPaused && !isShowingPortraitMessage) {
             if (!isManualControl && connectedGamepadIndex !== null) { const gamepads = navigator.getGamepads(); if (gamepads?.[connectedGamepadIndex]) { const gamepad = gamepads[connectedGamepadIndex]; const currentDemoButtonStates = gamepad.buttons.map(b => b.pressed); let anyButtonPressedNow = false; for (let i = 0; i < currentDemoButtonStates.length; i++) { if (i === PS5_BUTTON_R1 || i === PS5_BUTTON_TRIANGLE) continue; if (currentDemoButtonStates[i] && !(previousDemoButtonStates[i] ?? false)) { anyButtonPressedNow = true; break; } } if (anyButtonPressedNow) { isCoopAIDemoActive = false; isPlayerTwoAI = false; showMenuState(); requestAnimationFrame(mainLoop); return; } previousDemoButtonStates = currentDemoButtonStates.slice(); } else { if(previousDemoButtonStates.length > 0) previousDemoButtonStates = []; } } else { if(previousDemoButtonStates.length > 0) previousDemoButtonStates = []; }
 
+            // WATCHDOG: laatste speler dood (incl. gecaptured zonder redder) -> NOOIT
+            // blijven hangen in een message / intro / CS-bonus / wave-transition.
+            // Forceer elke frame de finale game-over; dit is idempotent.
+            try { if (typeof forceGameOverIfAllDead === 'function') forceGameOverIfAllDead(); } catch(e) {}
             if(typeof window.runSingleGameUpdate === 'function') {
                 window.runSingleGameUpdate(timestamp);
             }

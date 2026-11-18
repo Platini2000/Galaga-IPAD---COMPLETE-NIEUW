@@ -49,22 +49,65 @@ window.shouldSkipShipCollisionForSimultaneous = shouldSkipShipCollisionForSimult
 // er geen enkele speler meer leeft.
 function allPlayersDeadForGameOver() {
     try {
+        if (typeof isTwoPlayerMode !== 'undefined' && isTwoPlayerMode && typeof selectedGameMode !== 'undefined' && selectedGameMode === 'coop') {
+            // COOP (mens / vs AI / demo): een speler is effectief dood als hij 0 levens heeft,
+            // OF als hij gecaptured is terwijl er geen levende, vrije partner meer is die hem
+            // kan redden. Dat laatste was DE hang: P1 gecaptured (levens > 0, capture = gratis)
+            // + P2 dood met laatste leven -> niemand kan P1 redden, boss blijft rondvliegen,
+            // respawn-na-capture komt nooit, finale game-over start nooit.
+            // Een gecapturede speler telt dus alleen als "levend" als de ANDERE speler
+            // leeft (levens > 0) EN niet zelf gecaptured is.
+            var p1L = (typeof player1Lives !== 'undefined') ? player1Lives : 0;
+            var p2L = (typeof player2Lives !== 'undefined') ? player2Lives : 0;
+            var p1Cap = (typeof isPlayer1ShipCaptured !== 'undefined') ? !!isPlayer1ShipCaptured : false;
+            var p2Cap = (typeof isPlayer2ShipCaptured !== 'undefined') ? !!isPlayer2ShipCaptured : false;
+            var p1NeedsCapRespawn = (typeof player1NeedsRespawnAfterCapture !== 'undefined') ? !!player1NeedsRespawnAfterCapture : false;
+            var p2NeedsCapRespawn = (typeof player2NeedsRespawnAfterCapture !== 'undefined') ? !!player2NeedsRespawnAfterCapture : false;
+            var p1CanRescue = p1L > 0 && !p1Cap && !p1NeedsCapRespawn;
+            var p2CanRescue = p2L > 0 && !p2Cap && !p2NeedsCapRespawn;
+            var p1EffectivelyDead = p1L <= 0 || (!p1CanRescue && !p2CanRescue);
+            var p2EffectivelyDead = p2L <= 0 || (!p2CanRescue && !p1CanRescue);
+            // Als niemand kan redden, zijn beide effectief dood (ook een gecapturede
+            // speler met levens over). Als er wel een redder is, telt alleen levens <= 0.
+            if (!p1CanRescue && !p2CanRescue) return true;
+            return p1L <= 0 && p2L <= 0;
+        }
         if (typeof isTwoPlayerMode !== 'undefined' && isTwoPlayerMode) {
-            // 2P: coop én normal (mens, vs AI, coop-demo) -> pas game over als BEIDE pools leeg zijn.
-            // playerLives spiegelt alleen de actieve speler en loopt dus niet synchroon; gebruik
-            // daarom altijd player1Lives / player2Lives. In 2P normal is een speler met 0 levens
-            // pas echt dood als ook de ander 0 heeft (anders volgt een beurtwissel).
+            // 2P normal (beurtwissel): pas game over als BEIDE pools leeg zijn.
             const p1 = (typeof player1Lives !== 'undefined') ? player1Lives : 0;
             const p2 = (typeof player2Lives !== 'undefined') ? player2Lives : 0;
             return p1 <= 0 && p2 <= 0;
         }
-        // 1P: classic, 1P demo (AI), 1P vs AI single ship -> één pool.
-        // player1Lives wordt in 1P bij de dood ook op 0 gezet; eis beide zodat een
-        // niet-gesynchroniseerde pool de game over nooit kan blokkeren of vervroegen.
+        // 1P (classic, 1P demo / single player demo, 1P vs AI single ship): EEN pool op 0
+        // is al dood. De oude code eiste playerLives <= 0 AND player1Lives <= 0; als die
+        // twee pools ooit uit sync raakten (beurtwissel / extra life / capture-respawn),
+        // bleef de game hangen met 1 pool op 0 en de andere op > 0. OR fixt dat definitief.
         const main = (typeof playerLives !== 'undefined') ? playerLives : 0;
         const p1 = (typeof player1Lives !== 'undefined') ? player1Lives : main;
-        return main <= 0 && p1 <= 0;
+        // In 1P is een gecaptured schip geen hang: na de capture-message spawnt er een
+        // nieuw schip zolang er levens zijn, dus capture telt hier NIET als dood.
+        return main <= 0 || p1 <= 0;
     } catch(e) { return false; }
+}
+function wipeEverythingForFinalGameOver() {
+    // Alles wissen wat een hang / respawn / herstart na de laatste dood kan veroorzaken.
+    try { enemies = []; } catch(e) {}
+    try { bullets = []; enemyBullets = []; } catch(e) {}
+    try { explosions = []; fallingShips = []; floatingScores = []; } catch(e) {}
+    try { ship = null; ship1 = null; ship2 = null; } catch(e) {}
+    try { isDualShipActive = false; player1IsDualShipActive = false; player2IsDualShipActive = false; } catch(e) {}
+    try { isShipCaptured = false; isPlayer1ShipCaptured = false; isPlayer2ShipCaptured = false; captureBeamActive = false; capturingBossId = null; capturedBossIdWithMessage = null; } catch(e) {}
+    try { isShowingCaptureMessage = false; captureMessageStartTime = 0; } catch(e) {}
+    try { player1NeedsRespawnAfterCapture = false; player2NeedsRespawnAfterCapture = false; } catch(e) {}
+    try { isWaitingForRespawn = false; respawnTime = 0; isPlayer1WaitingForRespawn = false; player1RespawnTime = 0; isPlayer2WaitingForRespawn = false; player2RespawnTime = 0; } catch(e) {}
+    try { isShowingPlayerGameOverMessage = false; isPlayer1ShowingGameOverMessage = false; isPlayer2ShowingGameOverMessage = false; playerWhoIsGameOver = 0; nextActionAfterPlayerGameOver = ''; } catch(e) {}
+    try { isShowingIntro = false; isShowingCoopPlayersReady = false; coopPlayersReadyStartTime = 0; isWaveTransitioning = false; isCsCompletionDelayActive = false; isEntrancePhaseActive = false; } catch(e) {}
+    try { showCsHitsMessage = false; showPerfectMessage = false; showCSClearMessage = false; showCsBonusScoreMessage = false; showExtraLifeMessage = false; showReadyMessage = false; } catch(e) {}
+    try { if (typeof bossStageBoss !== 'undefined') bossStageBoss = null; if (typeof isBossStage !== 'undefined') isBossStage = false; } catch(e) {}
+    try { if (typeof clearCSController === 'function') clearCSController(); } catch(e) {}
+    try { if (typeof enemySpawnTimeouts !== 'undefined' && Array.isArray(enemySpawnTimeouts)) { enemySpawnTimeouts.forEach(clearTimeout); enemySpawnTimeouts = []; } } catch(e) {}
+    try { if (typeof aiPlayerActivelySeekingCaptureById !== 'undefined') aiPlayerActivelySeekingCaptureById = null; } catch(e) {}
+    try { if (typeof beamerClearDesignation === 'function') beamerClearDesignation(); } catch(e) {}
 }
 function forceGameOverIfAllDead() {
     try {
@@ -81,7 +124,9 @@ function forceGameOverIfAllDead() {
         try { isPlayer1WaitingForRespawn = false; player1RespawnTime = 0; } catch(e) {}
         try { isPlayer2WaitingForRespawn = false; player2RespawnTime = 0; } catch(e) {}
         try { player1NeedsRespawnAfterCapture = false; player2NeedsRespawnAfterCapture = false; } catch(e) {}
-        try { isShipCaptured = false; isPlayer1ShipCaptured = false; isPlayer2ShipCaptured = false; captureBeamActive = false; } catch(e) {}
+        try { if (typeof wipeEverythingForFinalGameOver === 'function') wipeEverythingForFinalGameOver(); } catch(e) {}
+        // 1P: pools synchroniseren zodat de eindscore / results nooit een "levende" pool tonen.
+        try { if (!(typeof isTwoPlayerMode !== 'undefined' && isTwoPlayerMode)) { playerLives = 0; player1Lives = 0; } } catch(e) {}
         try { if (typeof triggerFinalGameOverSequence === 'function') triggerFinalGameOverSequence(); } catch(e) {}
         return true;
     } catch(e) { console.error("forceGameOverIfAllDead error", e); }
@@ -6821,6 +6866,13 @@ function handlePlayerShipCollision(playerNumber, hitDualPart, collisionTime, was
                         player1GameOverMessageStartTime = now;
                         playSound('gameOverSound', false, 0.4);
                     }
+                } else if (player2Lives <= 0 || isPlayer2ShipCaptured) {
+                    // GEEN redder meer: P2 is dood of zelf gecaptured -> P1 kan nooit
+                    // gered worden. Niet op respawn-na-capture wachten (hang!), direct final.
+                    player1NeedsRespawnAfterCapture = false;
+                    ship1 = null;
+                    if (typeof forceGameOverIfAllDead === 'function') forceGameOverIfAllDead();
+                    else if (gameOverSequenceStartTime === 0) triggerFinalGameOverSequence();
                 } else {
                     player1NeedsRespawnAfterCapture = true;
                     ship1 = null;
@@ -6887,6 +6939,13 @@ function handlePlayerShipCollision(playerNumber, hitDualPart, collisionTime, was
                         player2GameOverMessageStartTime = now;
                         playSound('gameOverSound', false, 0.4);
                     }
+                } else if (player1Lives <= 0 || isPlayer1ShipCaptured) {
+                    // GEEN redder meer: P1 is dood of zelf gecaptured -> P2 kan nooit
+                    // gered worden. Niet op respawn-na-capture wachten (hang!), direct final.
+                    player2NeedsRespawnAfterCapture = false;
+                    ship2 = null;
+                    if (typeof forceGameOverIfAllDead === 'function') forceGameOverIfAllDead();
+                    else if (gameOverSequenceStartTime === 0) triggerFinalGameOverSequence();
                 } else {
                     player2NeedsRespawnAfterCapture = true;
                     ship2 = null;
