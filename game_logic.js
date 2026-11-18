@@ -3412,7 +3412,66 @@ function handleEnemyHit(enemy, shootingPlayerId = null) {
         destroyed = false;
         // MINI-BOSS: zelfde hit-explosie + geluid als de gewone boss-stage
         // (handleBossStageBossHit: createExplosion op willekeurige plek op de boss + bossHit1Sound)
+        // + ZELFDE SCORE PER HIT als de gewone boss stage: enemy1 = 10, enemy2 = 20, enemy3 = 30,
+        // met vliegende score. Voorheen gaf een niet-dodelijke mini-boss hit 0 punten en geen
+        // vliegende score (points = 0, geen floatingScores.push in deze tak).
         if (enemy.isMiniBoss) {
+            try {
+                let miniHitPoints = 10;
+                // SCORE-UP: net als in handleBossStageBossHit eerst verdubbelen ...
+                try {
+                    const _mbp = (typeof playerNumFromShooterId === 'function') ? playerNumFromShooterId(shootingPlayerId) : 1;
+                    if (typeof isUpgradeActiveForPlayer === 'function' && isUpgradeActiveForPlayer('SCORE-UP', _mbp)) miniHitPoints *= 2;
+                } catch(e) {}
+                // ... en daarna, net als in handleBossStageBossHit, overschrijven per type.
+                if (enemy.type === ENEMY2_TYPE) miniHitPoints = 20;
+                else if (enemy.type === ENEMY3_TYPE) miniHitPoints = 30;
+                else if (enemy.type === ENEMY1_TYPE) miniHitPoints = 10;
+                points = miniHitPoints;
+                // Score-verdeling: zelfde als handleBossStageBossHit.
+                if (isTwoPlayerMode && selectedGameMode === 'coop') {
+                    if (shootingPlayerId === 'player2' || shootingPlayerId === 'ai_p2') {
+                        player2Score += miniHitPoints;
+                        if (player2Score > highScore) { highScore = player2Score; highScoreHolderId = shootingPlayerId || 'player2'; }
+                    } else {
+                        player1Score += miniHitPoints;
+                        if (player1Score > highScore) { highScore = player1Score; highScoreHolderId = shootingPlayerId || 'player1'; }
+                    }
+                    score = Math.max(player1Score, player2Score);
+                } else if (isTwoPlayerMode && selectedGameMode === 'normal') {
+                    if (currentPlayer === 1) {
+                        player1Score += miniHitPoints;
+                        score = player1Score;
+                        if (player1Score > highScore) { highScore = player1Score; highScoreHolderId = 'player1'; }
+                    } else {
+                        player2Score += miniHitPoints;
+                        score = player2Score;
+                        if (player2Score > highScore) { highScore = player2Score; highScoreHolderId = shootingPlayerId || 'player2'; }
+                    }
+                } else {
+                    score += miniHitPoints;
+                    player1Score = score;
+                    if (score > highScore) { highScore = score; highScoreHolderId = shootingPlayerId || 'player1'; }
+                }
+                if (typeof checkAndAwardExtraLife === 'function') {
+                    if (shootingPlayerId === 'player2' || (isTwoPlayerMode && selectedGameMode === 'normal' && currentPlayer === 2)) checkAndAwardExtraLife(2);
+                    else checkAndAwardExtraLife(1);
+                }
+                // VLIEGENDE SCORE: zelfde als handleBossStageBossHit (GEEL + 1 sec bij SCORE-UP).
+                const _mbScoreUp = (typeof isUpgradeActiveForPlayer === 'function' && typeof playerNumFromShooterId === 'function') ? isUpgradeActiveForPlayer('SCORE-UP', playerNumFromShooterId(shootingPlayerId)) : false;
+                const _mbScoreColor = _mbScoreUp ? "#FFD700" : ((typeof FLOATING_SCORE_COLOR_ACTIVE !== 'undefined') ? FLOATING_SCORE_COLOR_ACTIVE : "red");
+                if (typeof floatingScores !== 'undefined') {
+                    floatingScores.push({
+                        text: miniHitPoints.toString(),
+                        x: enemy.x + enemy.width / 2,
+                        y: enemy.y + enemy.height * 0.2,
+                        color: _mbScoreColor,
+                        creationTime: now,
+                        displayStartTime: now + (typeof FLOATING_SCORE_APPEAR_DELAY !== 'undefined' ? FLOATING_SCORE_APPEAR_DELAY : 0),
+                        durationMs: _mbScoreUp ? 1000 : undefined
+                    });
+                }
+            } catch(e) { console.error("Mini-boss hit score error", e); }
             if (typeof createExplosion === 'function') {
                 const hx = enemy.x + enemy.width / 2 + (Math.random() - 0.5) * enemy.width * 0.4;
                 const hy = enemy.y + enemy.height / 2 + (Math.random() - 0.5) * enemy.height * 0.4;
