@@ -73,6 +73,14 @@ const RESULTS_VALUE_COLOR_CYAN = INTRO_TEXT_COLOR_NORMAL;
 const RESULTS_LINE_V_SPACING_SINGLE = 35;
 const RESULTS_LINE_V_SPACING_DOUBLE = 90;
 const RESULTS_START_Y = 175;
+// PC: hele eindscore-blok 1,5 cm + 2 px hoger (ongeveer 59 px bij 96 dpi). iPhone blijft op 175.
+const RESULTS_PC_Y_OFFSET = -59; // alleen op PC, iPhone: 0 — 1,5 cm + 2 px hoger dan origineel
+// PC vs iPhone via SCHERMBREEDTE — dit liegt niet.
+// iPhone landscape: max ~900 px breed. PC-monitor/laptop: 1000+ px breed.
+// userAgent liegt in desktop-modus, touch liegt bij een touchscreen-laptop.
+// Breedte liegt niet. Twijfel (geen gameCanvas / smal scherm) = GEEN offset.
+function isDesktopPC() { try { if (typeof gameCanvas !== 'undefined' && gameCanvas && gameCanvas.width > 0) return gameCanvas.width >= 1000; if (typeof window !== 'undefined' && window.innerWidth > 0) return window.innerWidth >= 1000; return false; } catch (e) { return false; } }
+function getResultsStartY() { return isDesktopPC() ? RESULTS_START_Y + RESULTS_PC_Y_OFFSET : RESULTS_START_Y; }
 const RESULTS_FOOTER_FONT = MENU_SUBTITLE_FONT;
 const RESULTS_FOOTER_COLOR = PLATINI_COLOR;
 
@@ -2665,7 +2673,7 @@ function drawActiveUpgradesUnderScore(pNum, label, labelAlign, labelX) {
                          drawCanvasText("GAME OVER", gameCanvas.width / 2, gameCanvas.height / 2, GAME_OVER_FONT, GAME_OVER_COLOR, 'center', 'middle', GAME_OVER_SHADOW);
                     }
                     else if (isShowingResultsScreenActive) {
-                        gameCtx.save(); const centerX = gameCanvas.width / 2; const canvasWidth = gameCanvas.width; let initialY = RESULTS_START_Y + RESULTS_LINE_V_SPACING_SINGLE;
+                        gameCtx.save(); const centerX = gameCanvas.width / 2; const canvasWidth = gameCanvas.width; let initialY = getResultsStartY() + RESULTS_LINE_V_SPACING_SINGLE;
                         const drawPlayerResultsColumn = (playerIdentifier, scoreVal, shotsVal, hitsVal, ratioVal, lastLevel, columnX, startY) => {
                             let currentColumnY = startY; const STAGE_LABEL_COLOR = RESULTS_VALUE_COLOR_YELLOW; const LEVEL_NUMBER_COLOR = RESULTS_VALUE_COLOR_CYAN;
                             drawCanvasText("- RESULTS -", columnX, currentColumnY, INTRO_TEXT_FONT, RESULTS_HEADER_COLOR, 'center', 'top', true); currentColumnY += getSubtitleApproxHeight(INTRO_TEXT_FONT) + RESULTS_LINE_V_SPACING_SINGLE;
