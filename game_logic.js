@@ -89,6 +89,58 @@ function forceGameOverIfAllDead() {
 }
 window.forceGameOverIfAllDead = forceGameOverIfAllDead;
 
+// --- HIGH SCORE GELUID: ALLEEN BIJ INHALEN (OVERTAKE) ---
+// Het hi-score geluid klinkt ALLEEN als de ene speler de andere VOORBIJ GAAT
+// in de scores: de scorer stond voor deze scorewijziging nog achter of gelijk,
+// en staat erna voor de andere speler. Het verslaan van de oude globale
+// highScore (20000 bij start) is dus GEEN trigger meer.
+//  - 2-player modes (mens 2P, 1P vs AI, coop demo): wel mogelijk.
+//  - Single player (classic EN single player demo): NOOIT. Er is geen tweede
+//    speler om voorbij te gaan, dus kan het geluid daar ook nooit (meerdere
+//    keren) klinken. De oude code triggerde op "nieuwe highScore", waardoor
+//    de ene demo-speler het bij elke nieuwe highScore opnieuw hoorde.
+// Alle call sites geven de score van de scorer VOOR en NA de wijziging mee;
+// de score van de andere speler is op dat moment onveranderd, dus
+// scorerBefore <= other && scorerAfter > other = inhalen.
+function playHiScoreOvertakeSound(scorerId, scorerBefore, scorerAfter) {
+    try {
+        if (typeof isTwoPlayerMode === 'undefined' || !isTwoPlayerMode) return false;
+        if (typeof scorerBefore !== 'number' || typeof scorerAfter !== 'number') return false;
+        if (!isFinite(scorerBefore) || !isFinite(scorerAfter)) return false;
+        var otherScore = (scorerId === 'player1')
+            ? ((typeof player2Score !== 'undefined') ? player2Score : 0)
+            : ((typeof player1Score !== 'undefined') ? player1Score : 0);
+        if (typeof otherScore !== 'number' || !isFinite(otherScore)) otherScore = 0;
+        if (scorerBefore <= otherScore && scorerAfter > otherScore) {
+            if (typeof playSound === 'function') playSound('hiScoreSound', false, 0.2);
+            return true;
+        }
+    } catch (e) {}
+    return false;
+}
+window.playHiScoreOvertakeSound = playHiScoreOvertakeSound;
+
+// CS Perfect Bonus in coop: BEIDE spelers krijgen dezelfde bonus. Een
+// tussentijdse check na alleen P1 zou vals inhalen melden (P2 krijgt de
+// bonus daarna nog). Vergelijk daarom de koploper VOOR alle bonussen met
+// de koploper ERNA. Gelijkspel voor + voorsprong erna = inhalen.
+function playHiScoreOvertakeSoundForCsCoop(p1Before, p2Before) {
+    try {
+        if (typeof isTwoPlayerMode === 'undefined' || !isTwoPlayerMode) return false;
+        var p1After = (typeof player1Score !== 'undefined') ? player1Score : 0;
+        var p2After = (typeof player2Score !== 'undefined') ? player2Score : 0;
+        var leaderBefore = (p1Before > p2Before) ? 'player1' : (p2Before > p1Before) ? 'player2' : null;
+        var leaderAfter = (p1After > p2After) ? 'player1' : (p2After > p1After) ? 'player2' : null;
+        if (leaderAfter && leaderAfter !== leaderBefore) {
+            if (typeof playSound === 'function') playSound('hiScoreSound', false, 0.2);
+            return true;
+        }
+    } catch (e) {}
+    return false;
+}
+window.playHiScoreOvertakeSoundForCsCoop = playHiScoreOvertakeSoundForCsCoop;
+
+
 
 // --- NIEUW: Shield helpers voor coop bescherming ---
 function getShieldOwnerShip() {
@@ -3183,27 +3235,16 @@ function handleEnemyHit(enemy, shootingPlayerId = null) {
                 checkAndAwardExtraLife(currentPlayer);
             }
 
-            // <<< START GEWIJZIGDE High Score Geluidslogica >>>
-            // Speel geluid als de high score is verbeterd OF als de houder is veranderd (en het niet de eerste keer is dat HS is gezet)
-            if (newHighScoreAchievedByCurrentShooter || (newHighScoreHolderSetThisHit && oldHighScore > 0 && highScoreHolderId !== oldHighScoreHolderId) ) {
-                 let previouslyTriggeredFlag = false;
-                 if (highScoreHolderId === 'player1') previouslyTriggeredFlag = player1TriggeredHighScoreSound;
-                 else if (highScoreHolderId === 'player2' || highScoreHolderId === 'ai_p2') previouslyTriggeredFlag = player2TriggeredHighScoreSound;
-
-                 // Alleen spelen als deze specifieke speler het geluid nog niet getriggerd heeft *voor deze score reeks*
-                 // OF als de houder is veranderd (wat impliceert dat iemand anders de score heeft gepakt/geÃ«venaard)
-                 if (!previouslyTriggeredFlag || (highScoreHolderId !== oldHighScoreHolderId && oldHighScore > 0)) {
-                    playSound('hiScoreSound', false, 0.2);
-                    if (highScoreHolderId === 'player1') player1TriggeredHighScoreSound = true;
-                    else if (highScoreHolderId === 'player2' || highScoreHolderId === 'ai_p2') player2TriggeredHighScoreSound = true;
-                 }
+            // <<< HIGH SCORE GELUID: ALLEEN BIJ INHALEN >>>
+            // playerLocalScore = score van de scorer NA deze hit, points = wat erbij kwam.
+            // De andere speler verandert in deze hit niet. Alleen als de scorer
+            // hiermee de andere speler VOORBIJ gaat, klinkt het geluid.
+            // In single player (ook single player demo) doet de helper niets:
+            // isTwoPlayerMode is daar false, er is niemand om in te halen.
+            if (typeof playHiScoreOvertakeSound === 'function') {
+                playHiScoreOvertakeSound(playerLocalIdentifier, playerLocalScore - points, playerLocalScore);
             }
-            // Reset vlaggen als iemand anders de HS pakt
-            if (newHighScoreHolderSetThisHit && highScoreHolderId !== oldHighScoreHolderId && oldHighScore > 0) {
-                if (oldHighScoreHolderId === 'player1') player1TriggeredHighScoreSound = false;
-                else if (oldHighScoreHolderId === 'player2' || oldHighScoreHolderId === 'ai_p2') player2TriggeredHighScoreSound = false;
-            }
-            // <<< EINDE GEWIJZIGDE High Score Geluidslogica >>>
+            // <<< EINDE HIGH SCORE GELUID: ALLEEN BIJ INHALEN >>>
 
 
             if (playerSpecificEnemiesHitIncrementer && !isChallengingStage) {
@@ -7985,16 +8026,19 @@ function runSingleGameUpdate(timestamp) {
                              let perfectBonus = (typeof isHotChallengeWave !== 'undefined' && isHotChallengeWave) ? 20000 : 10000;
                              try { window.csPerfectBonus = perfectBonus; } catch(e) {}
                              if (isTwoPlayerMode && selectedGameMode === 'coop') {
+                             // Snapshot VOOR beide bonussen (zie helper): beide spelers krijgen dezelfde bonus, dus alleen de koploper voor vs. na telt.
+                             let _csCoopP1ScoreBefore = player1Score;
+                             let _csCoopP2ScoreBefore = player2Score;
                                  if (player1Lives > 0 || ((isCoopAIDemoActive || (isPlayerTwoAI && selectedOnePlayerGameVariant === '1P_VS_AI_COOP')) && ship1)) {
                                      player1Score += perfectBonus;
                                      // <<< GEWIJZIGD: High score check en geluid voor P1 na CS Perfect Bonus >>>
                                      if (player1Score > highScore) {
                                          highScore = player1Score;
                                          highScoreHolderId = 'player1';
-                                         if (!player1TriggeredHighScoreSound) { player1TriggeredHighScoreSound = true; playSound('hiScoreSound', false, 0.2); }
+                                         // geluid: zie playHiScoreOvertakeSoundForCsCoop na de P2-bonus
                                      } else if (player1Score === highScore && highScoreHolderId !== 'player1' && highScore > 0) {
                                          highScoreHolderId = 'player1';
-                                         if (!player1TriggeredHighScoreSound) { player1TriggeredHighScoreSound = true; playSound('hiScoreSound', false, 0.2); }
+                                         // geluid: zie playHiScoreOvertakeSoundForCsCoop na de P2-bonus
                                      }
                                      // <<< EINDE GEWIJZIGD >>>
                                  }
@@ -8005,15 +8049,22 @@ function runSingleGameUpdate(timestamp) {
                                      if (player2Score > highScore) {
                                          highScore = player2Score;
                                          highScoreHolderId = p2IdForHS;
-                                         if (!player2TriggeredHighScoreSound) { player2TriggeredHighScoreSound = true; playSound('hiScoreSound', false, 0.2); }
+                                         // geluid: zie playHiScoreOvertakeSoundForCsCoop na de P2-bonus
                                      } else if (player2Score === highScore && highScoreHolderId !== p2IdForHS && highScore > 0) {
                                          highScoreHolderId = p2IdForHS;
-                                         if (!player2TriggeredHighScoreSound) { player2TriggeredHighScoreSound = true; playSound('hiScoreSound', false, 0.2); }
+                                         // geluid: zie playHiScoreOvertakeSoundForCsCoop na de P2-bonus
                                      }
                                      // <<< EINDE GEWIJZIGD >>>
                                  }
                                  // highScore = Math.max(highScore, player1Score, player2Score); // Nu afgehandeld binnen de if-blokken
-                                 checkAndAwardExtraLife(null);
+                                 // Geluid ALLEEN als de koploper door de (gelijke) bonussen wisselt.
+                                  // Bij gelijke bonussen kan dat alleen als een speler met 0 levens /
+                                  // zonder schip geen bonus kreeg. In coop demo telt dit gewoon mee:
+                                  // daar zijn het twee spelers.
+                                  if (typeof playHiScoreOvertakeSoundForCsCoop === 'function') {
+                                      playHiScoreOvertakeSoundForCsCoop(_csCoopP1ScoreBefore, _csCoopP2ScoreBefore);
+                                  }
+                                  checkAndAwardExtraLife(null);
                              } else { // 1P Classic, 1P_VS_AI_NORMAL, 2P_NORMAL
                                  score += perfectBonus;
                                  if (!isTwoPlayerMode) player1Score = score;
@@ -8028,11 +8079,16 @@ function runSingleGameUpdate(timestamp) {
                                  if (score > highScore) {
                                      highScore = score;
                                      highScoreHolderId = currentScorerId;
-                                     if (!currentTriggerFlag) { setTriggerFlag(); playSound('hiScoreSound', false, 0.2); }
-                                 } else if (score === highScore && highScoreHolderId !== currentScorerId && highScore > 0) {
-                                     highScoreHolderId = currentScorerId;
-                                     if (!currentTriggerFlag) { setTriggerFlag(); playSound('hiScoreSound', false, 0.2); }
-                                 }
+                                     // geluid: zie playHiScoreOvertakeSound hieronder
+                                  } else if (score === highScore && highScoreHolderId !== currentScorerId && highScore > 0) {
+                                      highScoreHolderId = currentScorerId;
+                                  }
+                                  // Geluid ALLEEN bij inhalen. In 1P (ook 1P demo) doet de helper
+                                  // niets: isTwoPlayerMode is false. In 2P normal / 1P vs AI normal
+                                  // gaat de actieve speler hiermee de ander wel/niet voorbij.
+                                  if (typeof playHiScoreOvertakeSound === 'function') {
+                                      playHiScoreOvertakeSound(currentScorerId, score - perfectBonus, score);
+                                  }
                                  // highScore = Math.max(highScore, score, player1Score, player2Score); // Nu afgehandeld
                                  // <<< EINDE GEWIJZIGD >>>
                                  checkAndAwardExtraLife(currentPlayer);
