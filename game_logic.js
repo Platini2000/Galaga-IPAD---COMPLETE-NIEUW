@@ -101,7 +101,8 @@ window.forceGameOverIfAllDead = forceGameOverIfAllDead;
 //    de ene demo-speler het bij elke nieuwe highScore opnieuw hoorde.
 // Alle call sites geven de score van de scorer VOOR en NA de wijziging mee;
 // de score van de andere speler is op dat moment onveranderd, dus
-// scorerBefore <= other && scorerAfter > other = inhalen.
+// scorerBefore <= other && scorerAfter > other = inhalen, EN de inhaler
+// moet daarbij de high score (20000) bereikt hebben: scorerAfter >= 20000.
 function playHiScoreOvertakeSound(scorerId, scorerBefore, scorerAfter) {
     try {
         if (typeof isTwoPlayerMode === 'undefined' || !isTwoPlayerMode) return false;
@@ -111,7 +112,10 @@ function playHiScoreOvertakeSound(scorerId, scorerBefore, scorerAfter) {
             ? ((typeof player2Score !== 'undefined') ? player2Score : 0)
             : ((typeof player1Score !== 'undefined') ? player1Score : 0);
         if (typeof otherScore !== 'number' || !isFinite(otherScore)) otherScore = 0;
-        if (scorerBefore <= otherScore && scorerAfter > otherScore) {
+        // NIEUW: wissel telt pas als de high score bereikt is (20000). Een
+        // inhaalmanoeuvre op bijv. 15000 tegen 14000 klinkt dus NIET, ook al
+        // gaat de ene speler de andere daar voorbij. Pas vanaf 20000 klinkt het.
+        if (scorerBefore <= otherScore && scorerAfter > otherScore && scorerAfter >= 20000) {
             if (typeof playSound === 'function') playSound('hiScoreSound', false, 0.2);
             return true;
         }
@@ -131,7 +135,10 @@ function playHiScoreOvertakeSoundForCsCoop(p1Before, p2Before) {
         var p2After = (typeof player2Score !== 'undefined') ? player2Score : 0;
         var leaderBefore = (p1Before > p2Before) ? 'player1' : (p2Before > p1Before) ? 'player2' : null;
         var leaderAfter = (p1After > p2After) ? 'player1' : (p2After > p1After) ? 'player2' : null;
-        if (leaderAfter && leaderAfter !== leaderBefore) {
+        // Zelfde regel als hierboven: pas vanaf 20000 (high score bereikt).
+        // Wisselt de koploper onder de 20000, dan geen geluid.
+        var leaderAfterScore = (leaderAfter === 'player1') ? p1After : p2After;
+        if (leaderAfter && leaderAfter !== leaderBefore && leaderAfterScore >= 20000) {
             if (typeof playSound === 'function') playSound('hiScoreSound', false, 0.2);
             return true;
         }
