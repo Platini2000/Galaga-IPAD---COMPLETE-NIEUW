@@ -8636,9 +8636,12 @@ function keptSpawnMiniBoss(){
     if (typeof gameCanvas === 'undefined' || !gameCanvas || !gameCanvas.width) return;
     miniBossSpawned = true;
     var hp = 50; // Mini-boss: 50 hits, healthbar + tint rekenen met /50
-    var w = Math.round(BOSS_WIDTH * 1.6), h = Math.round(BOSS_HEIGHT * 1.6);
-    var cx = gameCanvas.width / 2 - w / 2;
     var bossType = keptMiniBossTypeForLevel(level);
+    // Mini-boss = precies halverwege zijn eigen minions (40 px) en de gewone eindbaas:
+    // E1/E2: (40 + 106) / 2 = 73 px | E3: (40 + 132) / 2 = 86 px. Gewone eindbaas onaangeroerd.
+    var _bossStageW = (bossType === ENEMY3_TYPE) ? Math.round(BOSS_WIDTH * 2.2) : Math.round(ENEMY1_WIDTH * 2.0);
+    var w = Math.round((ENEMY_WIDTH + _bossStageW) / 2), h = w;
+    var cx = gameCanvas.width / 2 - w / 2;
     enemies.push({ x: cx, y: MINI_BOSS_Y, width: w, height: h, targetGridX: cx, targetGridY: MINI_BOSS_Y, speed: 0, state: 'in_grid', gridRow: 0, gridCol: 4, type: bossType, health: hp, maxHealthNew: hp, isDamaged: false, isBluePhase: false, velocityX: 0, velocityY: 0, attackPathStep: 0, initialY: MINI_BOSS_Y, initialX: cx, diveDirection: 1, lastFiredTime: 0, targetX1: 0, targetY1: 0, targetX2: 0, targetY2: 0, targetX3: 0, targetY3: 0, attackPathSegments: [], attackPathSegmentIndex: 0, attackPathT: 0, attackStartTime: 0, attackFormationOffsetX: 0, attackGroupId: null, entrancePathId: null, pathSegmentIndex: 0, pathT: 0, squadronId: 99, squadronEnemyIndex: 0, id: 'mini-boss-'+Date.now(), justReturned: false, canFireThisDive: true, attackType: 'normal', hasCapturedShip: false, capturedShipX: undefined, capturedShipY: undefined, capturedShipLastFiredTime: 0, capturedPlayerId: undefined, capturedPlayerNum: undefined, captureStartTime: 0, capturePrepareTimeout: null, pathSpeedMultiplier: 1.0, captureDiveInitiationTime: 0, isMiniBoss: true });
     var bcx = cx + w / 2, moff = w / 2 + 45;
     for (var i = 0; i < 2; i++){
