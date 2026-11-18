@@ -4,13 +4,10 @@
 // --- Menu/UI Constanten ---
 const MENU_LOGO_APPROX_HEIGHT = 85;
 const MENU_SUBTITLE_TEXT = "Written By Platini2000(c)";
-const MENU_SUBTITLE_FONT = "18px 'Arial Black', Gadget, sans-serif"; // Groter
-// BOSS DEFEATED-kleur: #00FF00 (zie BOSS DEFEATED! hieronder). Platini2000-regels gebruiken exact dezelfde kleur.
-// BOSS DEFEATED blijft origineel #00FF00, NIET veranderen.
-// Platini2000-regels gebruiken een aparte koraalrode kleur.
+const MENU_SUBTITLE_FONT = "22px 'Arial Black', Gadget, sans-serif";
 const BOSS_DEFEATED_COLOR = "#00FF00";
-const PLATINI_CORAL_RED = "rgba(255, 90, 80, 0.78)"; // koraalrood, iets transparant
-const MENU_SUBTITLE_COLOR = PLATINI_CORAL_RED;
+const PLATINI_COLOR = "red";
+const MENU_SUBTITLE_COLOR = PLATINI_COLOR;
 const MENU_BUTTON_FONT = "22px 'Arial Black', Gadget, sans-serif";
 const MENU_BUTTON_COLOR = "white";
 const MENU_BUTTON_COLOR_HOVER = 'rgba(0, 191, 255, 0.9)'; // Deep sky blue hover
@@ -77,7 +74,7 @@ const RESULTS_LINE_V_SPACING_SINGLE = 35;
 const RESULTS_LINE_V_SPACING_DOUBLE = 90;
 const RESULTS_START_Y = 175;
 const RESULTS_FOOTER_FONT = MENU_SUBTITLE_FONT;
-const RESULTS_FOOTER_COLOR = PLATINI_CORAL_RED;
+const RESULTS_FOOTER_COLOR = PLATINI_COLOR;
 
 // --- Verticale Offset voor CS berichten ---
 const CS_MESSAGE_VERTICAL_OFFSET = 30;
@@ -1346,8 +1343,8 @@ function renderGame() {
             const disclaimerTextColor = "lime";
             const rotateFont = "bold 24px 'Press Start 2P'";
             const rotateColor = "rgba(0, 191, 255, 0.9)";
-            const platiniFont = `normal ${cleanFontBaseSize - 4}px Arial, sans-serif`;
-            const platiniColor = PLATINI_CORAL_RED;
+            const platiniFont = disclaimerTextFont;
+            const platiniColor = PLATINI_COLOR;
 
             const messageStructure = [
                 { text: "Disclaimer", font: disclaimerTitleFont, color: disclaimerTitleColor, skipAfter: 0.75 },
