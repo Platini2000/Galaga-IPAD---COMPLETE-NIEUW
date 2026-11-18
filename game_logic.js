@@ -741,7 +741,7 @@ function generateAttackPathInternal(enemy) { // Hernoemd naar Internal
         // --- NIEUW: Spiegel-logica voor hoofd-bossen (ENEMY3 en BOSS_STAGE_BOSS) ---
         // Om en om spiegelen voor beter schermgebruik
         let diveDirection = baseDiveDirection;
-        const isMainBoss = (enemy.type === ENEMY3_TYPE || enemy.type === BOSS_STAGE_BOSS_TYPE);
+        const isMainBoss = (enemy.type === ENEMY3_TYPE || enemy.type === BOSS_STAGE_BOSS_TYPE || !!enemy.isMiniBoss);
         if (isMainBoss) {
             if (typeof enemy._mirrorToggle === 'undefined') {
                 enemy._mirrorToggle = false;
@@ -8752,21 +8752,26 @@ function keptWaveTick(){
             var _homeX = gameCanvas.width / 2 - mb.width / 2, _homeY = MINI_BOSS_Y;
             if (!miniBossFightActive){
               miniBossFightActive = true;
-              mb.state = 'in_grid_boss';
+              mb.state = 'mini_boss_returning';
               var _d0 = miniBossDifficultyForType(mb.type);
               miniBossNextAttackTime = now + (_d0.bossNextAttackDelay || 1500);
-              mb.x = _homeX; mb.y = _homeY;
             }
-            // Generic 'returning' in moveEntities stuurt naar targetGridX/Y:
-            // die zetten we op de home-positie, zodat hij terugkeert als de
-            // boss-stage boss (midden, MINI_BOSS_Y) en niet naar een grid-slot.
-            // Is hij net gearriveerd (generic code zette hem op 'in_grid'),
-            // dan weer terug naar hover + volgende aanval plannen.
-            if (mb.state === 'in_grid'){
-              mb.state = 'in_grid_boss';
-              var _dR = miniBossDifficultyForType(mb.type);
-              miniBossNextAttackTime = now + (_dR.bossNextAttackDelay || 1500);
-              mb.x = _homeX; mb.y = _homeY;
+            // TERUGKEREN ALS DE EINDBAAS: dx*0.08 / dy*0.08 tot dist <= 5.
+            // NOOIT generieke returning: rechte lijn naar het veel hogere
+            // grid-slot = uitschieter omhoog.
+            if (mb.state === 'returning' || mb.state === 'in_grid') mb.state = 'mini_boss_returning';
+            if (mb.state === 'mini_boss_returning'){
+              var _rdx = _homeX - mb.x, _rdy = _homeY - mb.y;
+              var _rdist = Math.sqrt(_rdx*_rdx + _rdy*_rdy);
+              if (_rdist > 5){
+                mb.x += _rdx * 0.08;
+                mb.y += _rdy * 0.08;
+              } else {
+                mb.x = _homeX; mb.y = _homeY;
+                mb.state = 'in_grid_boss';
+                var _dR = miniBossDifficultyForType(mb.type);
+                miniBossNextAttackTime = now + (_dR.bossNextAttackDelay || 1500);
+              }
             }
             mb.targetGridX = _homeX; mb.targetGridY = _homeY;
             if (mb.state === 'preparing_capture' || mb.state === 'diving_to_capture_position' || mb.state === 'capturing' || mb.state === 'showing_capture_message'){
@@ -8777,7 +8782,6 @@ function keptWaveTick(){
             // Hover: stil op home, tot de volgende duik (precies als boss-stage:
             // daar staat de boss ook stil in 'in_grid_boss' tot nextAttackTime).
             if (mb.state === 'in_grid_boss'){
-              mb.x = _homeX; mb.y = _homeY;
               if (now >= miniBossNextAttackTime){
                 try{
                   var _path = (typeof generateAttackPathInternal === 'function') ? generateAttackPathInternal(mb) : null;
@@ -8802,9 +8806,10 @@ function keptWaveTick(){
                 }catch(e){ miniBossNextAttackTime = now + 500; }
               }
             }
-            // 'attacking' beweegt moveEntities al via het Bezier-pad (zelfde
-            // code als voor gewone vijanden / boss-stage boss).
-            // 'returning' beweegt moveEntities al naar targetGridX/Y (= home).
+            // 'attacking' beweegt moveEntities al via het Bezier-pad.
+            // 'returning' komt nooit meer als generieke returning aan:
+            // pre-move zet hem om naar 'mini_boss_returning', lerp hierboven
+            // doet de rest (zelfde als de eindbaas).
           }
           miniBossPrevX = mb.x; miniBossPrevY = mb.y;
         }
@@ -9002,7 +9007,16 @@ if (_origHandleEnemyHit && !window.__keptHitWrapped){
 var _origMoveEntities = (typeof moveEntities !== 'undefined') ? moveEntities : null;
 if (_origMoveEntities && !window.__keptMoveWrapped){
   window.__keptMoveWrapped = true;
-  var _keptMoveEntities = function(){ var r = _origMoveEntities.apply(this, arguments); try { keptWaveTick(); } catch(e){} return r; };
+  var _keptMoveEntities = function(){
+    try{
+      if (typeof miniBossFightActive !== 'undefined' && miniBossFightActive && typeof enemies !== 'undefined'){
+        for (var _pm = 0; _pm < enemies.length; _pm++){
+          var _pe = enemies[_pm];
+          if (_pe && _pe.isMiniBoss && _pe.state === 'returning') _pe.state = 'mini_boss_returning';
+        }
+      }
+    }catch(e){}
+    var r = _origMoveEntities.apply(this, arguments); try { keptWaveTick(); } catch(e){} return r; };
   try { moveEntities = _keptMoveEntities; } catch(e){}
   try { if (typeof window !== 'undefined') window.moveEntities = _keptMoveEntities; } catch(e){}
 }
