@@ -150,6 +150,7 @@ let isFullGridWave = false;
 let isWaveTransitioning = false;
 let showCsHitsMessage = false; let csHitsMessageStartTime = 0;
 let showExtraLifeMessage = false; let extraLifeMessageStartTime = 0;
+let extraLifeSoundPending = false; // EXTRA LIFE in de wachtrij: geluid pas als hij echt getoond wordt (na bonus-scherm)
 let showPerfectMessage = false; let perfectMessageStartTime = 0;
 let showCSClearMessage = false; let csClearMessageStartTime = 0;
 let showCsHitsForClearMessage = false; showCsScoreForClearMessage = false;

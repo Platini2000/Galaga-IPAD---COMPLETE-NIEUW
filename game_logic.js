@@ -158,9 +158,36 @@ function showExtraLifeNow() {
     try {
         showExtraLifeMessage = true;
         extraLifeMessageStartTime = Date.now();
-        if (typeof playSound === 'function') playSound('extraLifeSound', false, 0.8);
+        // Bonus-scherm (CS/PERFECT/CLEAR) heeft voorrang en MOET blijven tonen:
+        // staat zo'n melding nog aan, dan nog GEEN geluid. Het geluid staat dan
+        // in de wachtrij en klinkt pas als EXTRA LIFE zelf echt in beeld komt
+        // (zie flush in de update-keten + in de render-tak hieronder).
+        // Staat er geen bonus-melding aan, dan klinkt hij gewoon direct.
+        var _bonusBusy = false;
+        try {
+            _bonusBusy = !!(typeof showCsBonusScoreMessage !== 'undefined' && showCsBonusScoreMessage)
+                || !!(typeof showPerfectMessage !== 'undefined' && showPerfectMessage)
+                || !!(typeof showCsHitsMessage !== 'undefined' && showCsHitsMessage)
+                || !!(typeof showCSClearMessage !== 'undefined' && showCSClearMessage);
+        } catch(e) {}
+        if (_bonusBusy) {
+            extraLifeSoundPending = true;
+        } else {
+            extraLifeSoundPending = false;
+            if (typeof playSound === 'function') playSound('extraLifeSound', false, 0.8);
+        }
     } catch(e) { console.error("showExtraLifeNow error", e); }
 }
+// Speelt het in de wachtrij staande EXTRA LIFE-geluid 1x af, op het moment dat
+// EXTRA LIFE daadwerkelijk getoond wordt (na het bonus-scherm, voor de volgende intro).
+function flushPendingExtraLifeSound() {
+    try {
+        if (!extraLifeSoundPending) return;
+        extraLifeSoundPending = false;
+        if (typeof playSound === 'function') playSound('extraLifeSound', false, 0.8);
+    } catch(e) {}
+}
+window.flushPendingExtraLifeSound = flushPendingExtraLifeSound;
 window.showExtraLifeNow = showExtraLifeNow;
 
 // --- HIGH SCORE 20000: 1 MALIG geluid ---
@@ -7662,6 +7689,13 @@ function runSingleGameUpdate(timestamp) {
                 shouldExitEarly = true;
             }
             else if (showExtraLifeMessage) {
+                // Bonus-scherm is nu klaar: dit is de beurt van EXTRA LIFE -> wachtrij-geluid afspelen.
+                // Timer pas vanaf nu laten lopen, zodat de melding niet al tijdens het
+                // bonus-scherm 'verlopen' is: starttijd opnieuw zetten als het geluid nog in de wachtrij stond.
+                if (typeof extraLifeSoundPending !== 'undefined' && extraLifeSoundPending) {
+                    extraLifeMessageStartTime = Date.now();
+                    if (typeof flushPendingExtraLifeSound === 'function') flushPendingExtraLifeSound();
+                }
                 if (Date.now() - extraLifeMessageStartTime > EXTRA_LIFE_MESSAGE_DURATION) {
                      showExtraLifeMessage = false;
                 }
