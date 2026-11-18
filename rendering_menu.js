@@ -73,11 +73,6 @@ const RESULTS_VALUE_COLOR_CYAN = INTRO_TEXT_COLOR_NORMAL;
 const RESULTS_LINE_V_SPACING_SINGLE = 35;
 const RESULTS_LINE_V_SPACING_DOUBLE = 90;
 const RESULTS_START_Y = 175;
-// PC: hele eindscore-blok 1,5 cm + 2 px hoger (ongeveer 59 px bij 96 dpi). iPhone blijft op 175.
-const RESULTS_PC_Y_OFFSET = -59; // alleen op PC, iPhone: 0 — 1,5 cm + 2 px hoger dan origineel
-// iPhone herkennen: userAgent / platform. Alles wat geen iPhone is, krijgt de PC-offset.
-function isIPhoneDevice() { try { if (typeof navigator === 'undefined') return false; const ua = navigator.userAgent || ''; const platform = navigator.platform || ''; if (/iPhone/i.test(ua)) return true; if (/iPhone/i.test(platform)) return true; return false; } catch (e) { return false; } }
-function getResultsStartY() { return isIPhoneDevice() ? RESULTS_START_Y : RESULTS_START_Y + RESULTS_PC_Y_OFFSET; }
 const RESULTS_FOOTER_FONT = MENU_SUBTITLE_FONT;
 const RESULTS_FOOTER_COLOR = PLATINI_COLOR;
 
@@ -2670,7 +2665,7 @@ function drawActiveUpgradesUnderScore(pNum, label, labelAlign, labelX) {
                          drawCanvasText("GAME OVER", gameCanvas.width / 2, gameCanvas.height / 2, GAME_OVER_FONT, GAME_OVER_COLOR, 'center', 'middle', GAME_OVER_SHADOW);
                     }
                     else if (isShowingResultsScreenActive) {
-                        gameCtx.save(); const centerX = gameCanvas.width / 2; const canvasWidth = gameCanvas.width; let initialY = getResultsStartY() + RESULTS_LINE_V_SPACING_SINGLE;
+                        gameCtx.save(); const centerX = gameCanvas.width / 2; const canvasWidth = gameCanvas.width; let initialY = RESULTS_START_Y + RESULTS_LINE_V_SPACING_SINGLE;
                         const drawPlayerResultsColumn = (playerIdentifier, scoreVal, shotsVal, hitsVal, ratioVal, lastLevel, columnX, startY) => {
                             let currentColumnY = startY; const STAGE_LABEL_COLOR = RESULTS_VALUE_COLOR_YELLOW; const LEVEL_NUMBER_COLOR = RESULTS_VALUE_COLOR_CYAN;
                             drawCanvasText("- RESULTS -", columnX, currentColumnY, INTRO_TEXT_FONT, RESULTS_HEADER_COLOR, 'center', 'top', true); currentColumnY += getSubtitleApproxHeight(INTRO_TEXT_FONT) + RESULTS_LINE_V_SPACING_SINGLE;
