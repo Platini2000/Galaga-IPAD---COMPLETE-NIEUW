@@ -8695,6 +8695,21 @@ function keptFireAimedEnemyBullet(enemy){
   }catch(e){ console.error('keptFireAimedEnemyBullet', e); return false; }
 }
 
+// Mini-boss fight: pas als de HELE grid binnen is, beweegt de mini-boss als de
+// gewone boss-stage boss (in_grid_boss -> attacking via Bezier-pad -> returning).
+// Tot die tijd blijft de bestaande geparkeerde beweging (sinus-sway) staan.
+var miniBossFightActive = false;
+var miniBossNextAttackTime = 0;
+var miniBossPrevX = 0, miniBossPrevY = 0;
+function miniBossDifficultyForType(t){
+  try{
+    if (typeof getBossStageDifficulty === 'function'){
+      if (t === ENEMY2_TYPE) return getBossStageDifficulty('enemy2');
+      if (t === ENEMY3_TYPE) return getBossStageDifficulty('enemy3');
+    }
+  }catch(e){}
+  return { bossNextAttackDelay: 1500, bossSpeedFactor: 1.0 };
+}
 function keptWaveTick(){
   try{
     if (typeof gameCanvas === 'undefined' || !gameCanvas || !gameCanvas.width) return;
@@ -8703,21 +8718,95 @@ function keptWaveTick(){
     var now = Date.now();
     if (isMiniBossWave){
       keptSpawnMiniBoss();
+      // GATE: hele grid binnen? Alleen niet-miniboss vijanden die nog
+      // invliegen (entrance-pad / naar grid) houden de fight tegen.
+      // isEntrancePhaseActive dekt hetzelfde af voor de gewone waves.
+      var _gridReady = true;
+      if (typeof isEntrancePhaseActive !== 'undefined' && isEntrancePhaseActive) _gridReady = false;
+      for (var _gi = 0; _gi < enemies.length; _gi++){
+        var _ge = enemies[_gi];
+        if (!_ge || _ge.isMiniBoss || _ge.isMiniBossMinion) continue;
+        if (_ge.state === 'following_entrance_path' || _ge.state === 'moving_to_grid') { _gridReady = false; break; }
+      }
       var _mb = null;
       for (var mi = 0; mi < enemies.length; mi++){
         var mb = enemies[mi];
         if (mb && mb.isMiniBoss){
           _mb = mb;
-          mb.x = gameCanvas.width / 2 - mb.width / 2 + Math.sin(now / 700) * Math.min(140, gameCanvas.width * 0.25);
-          mb.targetGridX = mb.x;
-          mb.y = MINI_BOSS_Y; mb.targetGridY = MINI_BOSS_Y;
-          if (mb.state === 'preparing_capture' || mb.state === 'diving_to_capture_position' || mb.state === 'capturing' || mb.state === 'showing_capture_message'){
-            mb.state = 'in_grid'; mb.captureDiveInitiationTime = 0; mb.isPreparingForImmediateCapture = false;
-            if (typeof capturingBossId !== 'undefined' && capturingBossId === mb.id) capturingBossId = null;
-            if (typeof captureBeamActive !== 'undefined') captureBeamActive = false;
+          // --- TOT DE GRID BINNEN IS: beweging exact zoals het nu is ---
+          if (!_gridReady){
+            miniBossFightActive = false;
+            mb.x = gameCanvas.width / 2 - mb.width / 2 + Math.sin(now / 700) * Math.min(140, gameCanvas.width * 0.25);
+            mb.targetGridX = mb.x;
+            mb.y = MINI_BOSS_Y; mb.targetGridY = MINI_BOSS_Y;
+            if (mb.state === 'preparing_capture' || mb.state === 'diving_to_capture_position' || mb.state === 'capturing' || mb.state === 'showing_capture_message'){
+              mb.state = 'in_grid'; mb.captureDiveInitiationTime = 0; mb.isPreparingForImmediateCapture = false;
+              if (typeof capturingBossId !== 'undefined' && capturingBossId === mb.id) capturingBossId = null;
+              if (typeof captureBeamActive !== 'undefined') captureBeamActive = false;
+            }
+          } else {
+            // --- GRID BINNEN: boss-stage fight ---
+            var _homeX = gameCanvas.width / 2 - mb.width / 2, _homeY = MINI_BOSS_Y;
+            if (!miniBossFightActive){
+              miniBossFightActive = true;
+              mb.state = 'in_grid_boss';
+              var _d0 = miniBossDifficultyForType(mb.type);
+              miniBossNextAttackTime = now + (_d0.bossNextAttackDelay || 1500);
+              mb.x = _homeX; mb.y = _homeY;
+            }
+            // Generic 'returning' in moveEntities stuurt naar targetGridX/Y:
+            // die zetten we op de home-positie, zodat hij terugkeert als de
+            // boss-stage boss (midden, MINI_BOSS_Y) en niet naar een grid-slot.
+            // Is hij net gearriveerd (generic code zette hem op 'in_grid'),
+            // dan weer terug naar hover + volgende aanval plannen.
+            if (mb.state === 'in_grid'){
+              mb.state = 'in_grid_boss';
+              var _dR = miniBossDifficultyForType(mb.type);
+              miniBossNextAttackTime = now + (_dR.bossNextAttackDelay || 1500);
+              mb.x = _homeX; mb.y = _homeY;
+            }
+            mb.targetGridX = _homeX; mb.targetGridY = _homeY;
+            if (mb.state === 'preparing_capture' || mb.state === 'diving_to_capture_position' || mb.state === 'capturing' || mb.state === 'showing_capture_message'){
+              mb.state = 'in_grid_boss'; mb.captureDiveInitiationTime = 0; mb.isPreparingForImmediateCapture = false;
+              if (typeof capturingBossId !== 'undefined' && capturingBossId === mb.id) capturingBossId = null;
+              if (typeof captureBeamActive !== 'undefined') captureBeamActive = false;
+            }
+            // Hover: stil op home, tot de volgende duik (precies als boss-stage:
+            // daar staat de boss ook stil in 'in_grid_boss' tot nextAttackTime).
+            if (mb.state === 'in_grid_boss'){
+              mb.x = _homeX; mb.y = _homeY;
+              if (now >= miniBossNextAttackTime){
+                try{
+                  var _path = (typeof generateAttackPathInternal === 'function') ? generateAttackPathInternal(mb) : null;
+                  if (_path && _path.length > 0){
+                    var _maxY = gameCanvas.height * 0.75;
+                    for (var _si = 0; _si < _path.length; _si++){
+                      var _seg = _path[_si];
+                      if (_seg.p0 && _seg.p0.y > _maxY) _seg.p0.y = _maxY;
+                      if (_seg.p1 && _seg.p1.y > _maxY) _seg.p1.y = _maxY;
+                      if (_seg.p2 && _seg.p2.y > _maxY) _seg.p2.y = _maxY;
+                      if (_seg.p3 && _seg.p3.y > _maxY) _seg.p3.y = _maxY;
+                    }
+                    mb.attackPathSegments = _path;
+                    mb.attackPathSegmentIndex = 0; mb.attackPathT = 0;
+                    mb.state = 'attacking';
+                    var _diff = miniBossDifficultyForType(mb.type);
+                    mb.speed = BASE_ENEMY_ATTACK_SPEED * (_diff.bossSpeedFactor || 1.0);
+                    mb.canFireThisDive = true;
+                  } else {
+                    miniBossNextAttackTime = now + 500; // geen pad: kort later opnieuw proberen
+                  }
+                }catch(e){ miniBossNextAttackTime = now + 500; }
+              }
+            }
+            // 'attacking' beweegt moveEntities al via het Bezier-pad (zelfde
+            // code als voor gewone vijanden / boss-stage boss).
+            // 'returning' beweegt moveEntities al naar targetGridX/Y (= home).
           }
+          miniBossPrevX = mb.x; miniBossPrevY = mb.y;
         }
       }
+      if (!_mb) miniBossFightActive = false;
       if (_mb){
         var _bcx = _mb.x + _mb.width / 2;
         var _moff = _mb.width / 2 + 45;
@@ -8738,8 +8827,12 @@ function keptWaveTick(){
           }
           if (mn && mn.isBossMinion && (mn.state === 'in_grid' || mn.state === 'returning' || mn.state === 'moving_to_grid')){
             var _side = (_mi2 % 2 === 0) ? -1 : 1;
-            mn.x = _bcx + _side * _moff - mn.width / 2; // zelfde X-beweging als de boss, vaste offset links/rechts
-            mn.y = MINI_BOSS_Y; mn.targetGridX = mn.x; mn.targetGridY = MINI_BOSS_Y;
+            // VAST AAN DE BOSS: vaste offset links/rechts EN dezelfde Y als de
+            // boss. Voor de grid-gate is boss.y == MINI_BOSS_Y (zelfde als
+            // vroeger); tijdens de fight volgt de minion de boss dus ook
+            // omhoog/omlaag en door zijn duik, als één starre formatie.
+            mn.x = _bcx + _side * _moff - mn.width / 2;
+            mn.y = _mb.y; mn.targetGridX = mn.x; mn.targetGridY = mn.y;
             // Mini-boss minions, elke 3 sec, op het schip:
             // ENEMY1 = 1 kogel, ENEMY2 = 2 kogels, ENEMY3 = 3 kogels (burst, per minion)
             if (now - (mn.lastFiredTime || 0) >= MINI_BOSS_MINION_FIRE_INTERVAL_MS){
