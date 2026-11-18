@@ -212,8 +212,8 @@ let clearActiveUntil = 0;
 let isClearNoBulletsActive = false;
 let clearActivePlayer = null; // wie CLEAR gepakt heeft, anders weten we niet onder welke score hij hoort
 // --- NIEUWE BEAMER UPGRADES: TRIPLE / PIERCING / BOUNCE / SCORE-UP / LUCKY 7 ---
-// Zelfde patroon als RAPID/SPREAD: Active + Until + Player + StagesRemaining (2 stages).
-// Alleen DUAL (dualship) heeft 3 stages. Upgrades stapelen: ze werken naast elkaar
+// Zelfde patroon als RAPID/SPREAD: Active + Until + Player + StagesRemaining (3 stages).
+// Alle upgrades, incl. DUAL (dualship), duren 3 stages. Upgrades stapelen: ze werken naast elkaar
 // en naast DUALSHIP, omdat de schiet-logica ze onafhankelijk van elkaar checkt.
 let tripleActive = false;
 let tripleActiveUntil = 0;
@@ -1025,6 +1025,26 @@ function scaleValue(currentLevel, baseValue, maxValue) { const levelForCalc = Ma
 function setupInitialEventListeners() { /* ... ongewijzigd ... */ try { window.addEventListener("gamepadconnected", handleGamepadConnected); window.addEventListener("gamepaddisconnected", handleGamepadDisconnected); window.addEventListener('resize', resizeCanvases); } catch(e) { console.error("Error setting up initial event listeners:", e); } }
 
 
+// Max. horizontale grid-offset vanuit het midden, zodat de VOLLEDIGE grid binnen het
+// scherm blijft (nooit half buiten beeld). Berekend met de ACTUELE breedte incl. ademhaling
+// en met de breedste vijand als veiligheidsmarge. Als de grid breder is dan het scherm
+// minus marges, is de enige veilige offset 0 (gecentreerd, nergens naartoe bewegen).
+function getMaxGridOffsetX() {
+    try {
+        if (!gameCanvas || gameCanvas.width === 0) return 0;
+        // Beweegruimte op de grid ZONDER ademhaling. De ademhaling mag de grid nooit
+        // stilzetten: als hij de grid breder maakt, wordt de extra breedte per vijand
+        // afgekapt (zie getCurrentGridSlotPosition), niet de beweging.
+        // Grens is de schermrand zelf, NIET de 18%-marge: met die marge eraf bleef er
+        // op een normaal scherm geen enkele beweegruimte over (negatief -> 0 -> grid stond stil).
+        // De breedste vijand steekt (BOSS_WIDTH - ENEMY_WIDTH)/2 aan weerszijden uit zijn slot.
+        const widest = (typeof BOSS_WIDTH !== 'undefined' ? BOSS_WIDTH : ENEMY_WIDTH);
+        const gridWidth = GRID_COLS * ENEMY_WIDTH + (GRID_COLS - 1) * ENEMY_H_SPACING_FIXED + (widest - ENEMY_WIDTH);
+        return Math.max(0, (gameCanvas.width - gridWidth) / 2);
+    } catch(e) { return 0; }
+}
+window.getMaxGridOffsetX = getMaxGridOffsetX;
+
 function getCurrentGridSlotPosition(gridRow, gridCol, enemyWidth) {
     if (!gameCanvas || gameCanvas.width === 0 || gridRow < 0 || gridCol < 0) {
         // console.warn(`[DEBUG] getCurrentGridSlotPosition called with invalid params or zero canvas width. Row: ${gridRow}, Col: ${gridCol}, CanvasW: ${gameCanvas?.width}`);
@@ -1043,12 +1063,18 @@ function getCurrentGridSlotPosition(gridRow, gridCol, enemyWidth) {
 
     const actualGridWidth = GRID_COLS * baseEnemyWidthForCalc + (GRID_COLS - 1) * currentHorizontalSpacing;
     const initialGridStartX = Math.round((gameCanvas.width - actualGridWidth) / 2);
+    const _maxOff = getMaxGridOffsetX();
+    if (typeof currentGridOffsetX === 'number') currentGridOffsetX = Math.max(-_maxOff, Math.min(_maxOff, currentGridOffsetX));
     const currentStartX = initialGridStartX + currentGridOffsetX;
     const colStartX = currentStartX + gridCol * (baseEnemyWidthForCalc + currentHorizontalSpacing);
     const centeringOffset = (baseEnemyWidthForCalc - enemyWidth) / 2;
-    const targetX = Math.round(colStartX + centeringOffset);
+    let targetX = Math.round(colStartX + centeringOffset);
+    // Laatste veiligheid: geen enkele vijand buiten het scherm, ook niet als de ademhaling
+    // de grid tijdelijk breder maakt. Dit kapt alleen uitstekende randvijanden af,
+    // de grid als geheel blijft gewoon heen en weer bewegen.
     const targetY = Math.round(ENEMY_TOP_MARGIN + gridRow * (ENEMY_HEIGHT + ENEMY_V_SPACING));
 
+    if (gameCanvas && gameCanvas.width > 0 && typeof enemyWidth === 'number') targetX = Math.max(0, Math.min(gameCanvas.width - enemyWidth, targetX));
     return { x: targetX, y: targetY };
 }
 

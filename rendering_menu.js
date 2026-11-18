@@ -1475,7 +1475,7 @@ function renderGame() {
 // --- Actieve beamer-upgrades onder de score ---
 // 1UP zit hier bewust NIET bij: die is meteen weg.
 // Volgorde = pak-volgorde. Verdwijnt vanzelf als de upgrade verloopt:
-// 2 stages voor alles, 3 stages voor DUALSHIP (dat regelt de bestaande stages-logica al).
+// 3 stages voor alle upgrades, incl. DUALSHIP (dat regelt de bestaande stages-logica al).
 let _activeUpgradeDisplay = { 1: [], 2: [] };
 function getActiveUpgradesForPlayer(pNum) {
     const isDual = (isTwoPlayerMode && selectedGameMode === 'coop')

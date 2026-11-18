@@ -42,39 +42,48 @@ function shouldSkipShipCollisionForSimultaneous(enemy) {
 
 window.shouldSkipShipCollisionForSimultaneous = shouldSkipShipCollisionForSimultaneous;
 
-// FIX: Centrale check - als alle levens op zijn, forceer direct game over ongeacht aanvallende vijanden
+// FIX: Centrale check - als alle levens op zijn, forceer direct game over ongeacht aanvallende vijanden.
+// Geldt voor ALLE modes (mens / AI / demo / coop / normal / vs AI): de check kijkt naar de
+// levens-pools die voor die mode tellen, niet naar wie er toevallig een message toont of
+// gecaptured is. Zo kan de game nooit blijven hangen met vijanden die rondvliegen terwijl
+// er geen enkele speler meer leeft.
+function allPlayersDeadForGameOver() {
+    try {
+        if (typeof isTwoPlayerMode !== 'undefined' && isTwoPlayerMode) {
+            // 2P: coop én normal (mens, vs AI, coop-demo) -> pas game over als BEIDE pools leeg zijn.
+            // playerLives spiegelt alleen de actieve speler en loopt dus niet synchroon; gebruik
+            // daarom altijd player1Lives / player2Lives. In 2P normal is een speler met 0 levens
+            // pas echt dood als ook de ander 0 heeft (anders volgt een beurtwissel).
+            const p1 = (typeof player1Lives !== 'undefined') ? player1Lives : 0;
+            const p2 = (typeof player2Lives !== 'undefined') ? player2Lives : 0;
+            return p1 <= 0 && p2 <= 0;
+        }
+        // 1P: classic, 1P demo (AI), 1P vs AI single ship -> één pool.
+        // player1Lives wordt in 1P bij de dood ook op 0 gezet; eis beide zodat een
+        // niet-gesynchroniseerde pool de game over nooit kan blokkeren of vervroegen.
+        const main = (typeof playerLives !== 'undefined') ? playerLives : 0;
+        const p1 = (typeof player1Lives !== 'undefined') ? player1Lives : main;
+        return main <= 0 && p1 <= 0;
+    } catch(e) { return false; }
+}
 function forceGameOverIfAllDead() {
     try {
-        if (isTwoPlayerMode && selectedGameMode === 'coop') {
-            if (player1Lives <= 0 && player2Lives <= 0) {
-                if (gameOverSequenceStartTime === 0) {
-                    console.log("[FIX] Coop both dead - force final game over");
-                    isPlayer1ShowingGameOverMessage = false;
-                    isPlayer2ShowingGameOverMessage = false;
-                    triggerFinalGameOverSequence();
-                }
-                return true;
-            }
-        } else if (isTwoPlayerMode && selectedGameMode === 'normal') {
-            if (player1Lives <= 0 && player2Lives <= 0) {
-                if (gameOverSequenceStartTime === 0) {
-                    console.log("[FIX] 2P Normal both dead - force final");
-                    isShowingPlayerGameOverMessage = false;
-                    triggerFinalGameOverSequence();
-                }
-                return true;
-            }
-        } else {
-            // 1P Classic, 1P vs AI, etc - single pool playerLives
-            if (playerLives <= 0) {
-                if (gameOverSequenceStartTime === 0) {
-                    console.log("[FIX] Single player dead - force final");
-                    isShowingPlayerGameOverMessage = false;
-                    triggerFinalGameOverSequence();
-                }
-                return true;
-            }
-        }
+        if (typeof isInGameState !== 'undefined' && !isInGameState) return false;
+        if (typeof gameOverSequenceStartTime !== 'undefined' && gameOverSequenceStartTime > 0) return true;
+        if (!allPlayersDeadForGameOver()) return false;
+        // Laatste speler dood: geen per-speler message meer tonen / afwachten, geen respawn,
+        // geen capture-respawn. Die timers/messages waren precies de paden waarop de game
+        // bleef hangen (vijanden bleven vliegen, finale sequence startte nooit).
+        try { isShowingPlayerGameOverMessage = false; } catch(e) {}
+        try { isPlayer1ShowingGameOverMessage = false; } catch(e) {}
+        try { isPlayer2ShowingGameOverMessage = false; } catch(e) {}
+        try { isWaitingForRespawn = false; respawnTime = 0; } catch(e) {}
+        try { isPlayer1WaitingForRespawn = false; player1RespawnTime = 0; } catch(e) {}
+        try { isPlayer2WaitingForRespawn = false; player2RespawnTime = 0; } catch(e) {}
+        try { player1NeedsRespawnAfterCapture = false; player2NeedsRespawnAfterCapture = false; } catch(e) {}
+        try { isShipCaptured = false; isPlayer1ShipCaptured = false; isPlayer2ShipCaptured = false; captureBeamActive = false; } catch(e) {}
+        try { if (typeof triggerFinalGameOverSequence === 'function') triggerFinalGameOverSequence(); } catch(e) {}
+        return true;
     } catch(e) { console.error("forceGameOverIfAllDead error", e); }
     return false;
 }
@@ -1002,7 +1011,7 @@ function resetWaveInternal() {
     captureAttemptMadeThisLevel = false;
     try { if (typeof currentSubWave !== 'undefined') currentSubWave = 1; if (typeof beamerUpgradeAttemptsThisLevel !== 'undefined') beamerUpgradeAttemptsThisLevel = 0; if (typeof isNextWaveMessageActive !== 'undefined') isNextWaveMessageActive = false; } catch(e) {}
     try { if (typeof currentSubWave !== 'undefined') currentSubWave = 1; if (typeof beamerUpgradeAttemptsThisLevel !== 'undefined') beamerUpgradeAttemptsThisLevel = 0; if (typeof isNextWaveMessageActive !== 'undefined') isNextWaveMessageActive = false; } catch(e) {}
-    // NIEUW: upgrades gaan 2 stages mee, dual 3 stages mee
+    // NIEUW: alle upgrades gaan 3 stages mee (incl. dual) mee
     try {
         let expiredTypes = [];
         if (typeof decrementUpgradeStagesOnNewStage === 'function') {
@@ -1021,15 +1030,15 @@ function resetWaveInternal() {
             if (typeof lucky7StagesRemaining !== 'undefined' && lucky7StagesRemaining>0) { lucky7StagesRemaining--; if(lucky7StagesRemaining<=0) expiredTypes.push('LUCKY 7'); }
         }
         // Expire alleen wat echt op is
-        if (expiredTypes.includes('SHIELD')) { if (typeof shieldActive !== 'undefined') shieldActive = false; if (typeof shieldActivePlayer !== 'undefined') shieldActivePlayer = null; shieldStagesRemaining = 0; console.log("[UPGRADE PERSIST] SHIELD expired na 2 stages"); }
+        if (expiredTypes.includes('SHIELD')) { if (typeof shieldActive !== 'undefined') shieldActive = false; if (typeof shieldActivePlayer !== 'undefined') shieldActivePlayer = null; shieldStagesRemaining = 0; console.log("[UPGRADE PERSIST] SHIELD expired na 3 stages"); }
         if (expiredTypes.includes('RAPID')) { if (typeof rapidActive !== 'undefined') rapidActive = false; if (typeof rapidActiveUntil !== 'undefined') rapidActiveUntil = 0; if (typeof rapidActivePlayer !== 'undefined') rapidActivePlayer = null; rapidStagesRemaining = 0; console.log("[UPGRADE PERSIST] RAPID expired"); }
         if (expiredTypes.includes('SPREAD')) { if (typeof spreadActive !== 'undefined') spreadActive = false; if (typeof spreadActiveUntil !== 'undefined') spreadActiveUntil = 0; if (typeof spreadActivePlayer !== 'undefined') spreadActivePlayer = null; spreadStagesRemaining = 0; console.log("[UPGRADE PERSIST] SPREAD expired"); }
         if (expiredTypes.includes('CLEAR')) { if (typeof isClearNoBulletsActive !== 'undefined') isClearNoBulletsActive = false; if (typeof clearActiveUntil !== 'undefined') clearActiveUntil = 0; clearStagesRemaining = 0; if (typeof clearActivePlayer !== 'undefined') clearActivePlayer = null; console.log("[UPGRADE PERSIST] CLEAR expired"); }
-        if (expiredTypes.includes('TRIPLE')) { if (typeof tripleActive !== 'undefined') tripleActive = false; if (typeof tripleActiveUntil !== 'undefined') tripleActiveUntil = 0; if (typeof tripleActivePlayer !== 'undefined') tripleActivePlayer = null; tripleStagesRemaining = 0; console.log("[UPGRADE PERSIST] TRIPLE expired na 2 stages"); }
-        if (expiredTypes.includes('PIERCING')) { if (typeof piercingActive !== 'undefined') piercingActive = false; if (typeof piercingActiveUntil !== 'undefined') piercingActiveUntil = 0; if (typeof piercingActivePlayer !== 'undefined') piercingActivePlayer = null; piercingStagesRemaining = 0; console.log("[UPGRADE PERSIST] PIERCING expired na 2 stages"); }
-        if (expiredTypes.includes('BOUNCE')) { if (typeof bounceActive !== 'undefined') bounceActive = false; if (typeof bounceActiveUntil !== 'undefined') bounceActiveUntil = 0; if (typeof bounceActivePlayer !== 'undefined') bounceActivePlayer = null; bounceStagesRemaining = 0; console.log("[UPGRADE PERSIST] BOUNCE expired na 2 stages"); }
-        if (expiredTypes.includes('SCORE-UP')) { if (typeof scoreUpActive !== 'undefined') scoreUpActive = false; if (typeof scoreUpActiveUntil !== 'undefined') scoreUpActiveUntil = 0; if (typeof scoreUpActivePlayer !== 'undefined') scoreUpActivePlayer = null; scoreUpStagesRemaining = 0; console.log("[UPGRADE PERSIST] SCORE-UP expired na 2 stages"); }
-        if (expiredTypes.includes('LUCKY 7')) { if (typeof lucky7Active !== 'undefined') lucky7Active = false; if (typeof lucky7ActiveUntil !== 'undefined') lucky7ActiveUntil = 0; if (typeof lucky7ActivePlayer !== 'undefined') lucky7ActivePlayer = null; lucky7StagesRemaining = 0; if (typeof lucky7KillCounts !== 'undefined') lucky7KillCounts = { 1: 0, 2: 0 }; console.log("[UPGRADE PERSIST] LUCKY 7 expired na 2 stages"); }
+        if (expiredTypes.includes('TRIPLE')) { if (typeof tripleActive !== 'undefined') tripleActive = false; if (typeof tripleActiveUntil !== 'undefined') tripleActiveUntil = 0; if (typeof tripleActivePlayer !== 'undefined') tripleActivePlayer = null; tripleStagesRemaining = 0; console.log("[UPGRADE PERSIST] TRIPLE expired na 3 stages"); }
+        if (expiredTypes.includes('PIERCING')) { if (typeof piercingActive !== 'undefined') piercingActive = false; if (typeof piercingActiveUntil !== 'undefined') piercingActiveUntil = 0; if (typeof piercingActivePlayer !== 'undefined') piercingActivePlayer = null; piercingStagesRemaining = 0; console.log("[UPGRADE PERSIST] PIERCING expired na 3 stages"); }
+        if (expiredTypes.includes('BOUNCE')) { if (typeof bounceActive !== 'undefined') bounceActive = false; if (typeof bounceActiveUntil !== 'undefined') bounceActiveUntil = 0; if (typeof bounceActivePlayer !== 'undefined') bounceActivePlayer = null; bounceStagesRemaining = 0; console.log("[UPGRADE PERSIST] BOUNCE expired na 3 stages"); }
+        if (expiredTypes.includes('SCORE-UP')) { if (typeof scoreUpActive !== 'undefined') scoreUpActive = false; if (typeof scoreUpActiveUntil !== 'undefined') scoreUpActiveUntil = 0; if (typeof scoreUpActivePlayer !== 'undefined') scoreUpActivePlayer = null; scoreUpStagesRemaining = 0; console.log("[UPGRADE PERSIST] SCORE-UP expired na 3 stages"); }
+        if (expiredTypes.includes('LUCKY 7')) { if (typeof lucky7Active !== 'undefined') lucky7Active = false; if (typeof lucky7ActiveUntil !== 'undefined') lucky7ActiveUntil = 0; if (typeof lucky7ActivePlayer !== 'undefined') lucky7ActivePlayer = null; lucky7StagesRemaining = 0; if (typeof lucky7KillCounts !== 'undefined') lucky7KillCounts = { 1: 0, 2: 0 }; console.log("[UPGRADE PERSIST] LUCKY 7 expired na 3 stages"); }
         if (expiredTypes.includes('DUAL')) {
             // dual ship verloopt na 3 stages
             if (typeof isDualShipActive !== 'undefined') isDualShipActive = false;
@@ -1058,7 +1067,7 @@ function resetWaveInternal() {
             if (typeof enemyBullets !== 'undefined') enemyBullets = [];
             console.log("[UPGRADE PERSIST] CLEAR blijft actief, nog "+clearStagesRemaining+" stage(s)");
         }
-        // NIEUW: timers verversen zodat de nieuwe upgrades de volle 2 stages blijven duren
+        // NIEUW: timers verversen zodat de nieuwe upgrades de volle 3 stages blijven duren
         if (typeof tripleStagesRemaining !== 'undefined' && tripleStagesRemaining > 0 && typeof tripleActive !== 'undefined' && tripleActive) {
             if (typeof tripleActiveUntil !== 'undefined') tripleActiveUntil = Date.now() + 999999999;
             console.log("[UPGRADE PERSIST] TRIPLE blijft actief, nog "+tripleStagesRemaining+" stage(s)");
@@ -5602,6 +5611,10 @@ function updateExplosions() { if (isPaused) return; try { const now = Date.now()
 
 // --- Functie moveEntities: Update posities en states van alle entiteiten ---
 function moveEntities(overrideP1Left = null, overrideP1Right = null) {
+
+    // WATCHDOG: ook als moveEntities via een ander pad (wave transition, CS-delay, intro,
+    // per-speler message) wordt bereikt, mag een dode game nooit vijanden blijven bewegen.
+    try { if (typeof forceGameOverIfAllDead === 'function' && forceGameOverIfAllDead()) { return; } } catch(e) {}
     if (typeof gameOverSequenceStartTime !== 'undefined' && gameOverSequenceStartTime > 0) { try { enemies = []; enemyBullets = []; } catch(e) {} return; }
     if (isPaused) return;
     try {
@@ -6056,7 +6069,16 @@ function moveEntities(overrideP1Left = null, overrideP1Right = null) {
         }
 
         // Grid Movement
-        let gridHorizontalShift = 0; const gridEnemiesPresent = enemies.some(e => e?.state === 'in_grid'); const gridShouldBeMoving = !isChallengingStage && !isWaveTransitioning && gridEnemiesPresent && !isShowingPlayerGameOverMessage && !(isTwoPlayerMode && selectedGameMode === 'coop' && (isPlayer1ShowingGameOverMessage || isPlayer2ShowingGameOverMessage)); if (gridShouldBeMoving) { if (!isGridSoundPlaying) { isGridSoundPlaying = true; playSound('gridBackgroundSound', true, 0.1); } const gridEnemiesList = enemies.filter(e => e?.state === 'in_grid'); if (gridEnemiesList.length > 0) { let minX = gameCanvas.width, maxX = 0; gridEnemiesList.forEach(enemy => { if (enemy) { minX = Math.min(minX, enemy.x); maxX = Math.max(maxX, enemy.x + enemy.width); } }); const leftBoundary = gameCanvas.width * GRID_HORIZONTAL_MARGIN_PERCENT; const rightBoundary = gameCanvas.width * (1 - GRID_HORIZONTAL_MARGIN_PERCENT); if (gridMoveDirection === 1 && maxX >= rightBoundary) gridMoveDirection = -1; else if (gridMoveDirection === -1 && minX <= leftBoundary) gridMoveDirection = 1; const effectiveGridMoveSpeed = scaleValue(level, BASE_GRID_MOVE_SPEED, MAX_GRID_MOVE_SPEED); gridHorizontalShift = effectiveGridMoveSpeed * gridMoveDirection; currentGridOffsetX += gridHorizontalShift; enemies.forEach(e => { if (e && (e.state === 'returning' || e.state === 'in_grid' || e.state === 'moving_to_grid')) { try { const enemyWidthForGrid = (e.type === ENEMY3_TYPE) ? BOSS_WIDTH : ((e.type === ENEMY1_TYPE) ? ENEMY1_WIDTH : ENEMY_WIDTH); const { x: newTargetX, y: newTargetY } = getCurrentGridSlotPosition(e.gridRow, e.gridCol, enemyWidthForGrid); e.targetGridX = newTargetX; e.targetGridY = newTargetY; } catch (gridPosError) { console.error(`Error updating target grid pos for enemy ${e?.id} (state: ${e?.state}) during shift:`, gridPosError); } } }); } } else { if (isGridSoundPlaying) { stopSound('gridBackgroundSound'); isGridSoundPlaying = false; } gridHorizontalShift = 0; }
+        let gridHorizontalShift = 0; const gridEnemiesPresent = enemies.some(e => e?.state === 'in_grid'); const gridShouldBeMoving = !isChallengingStage && !isWaveTransitioning && gridEnemiesPresent && !isShowingPlayerGameOverMessage && !(isTwoPlayerMode && selectedGameMode === 'coop' && (isPlayer1ShowingGameOverMessage || isPlayer2ShowingGameOverMessage)); if (gridShouldBeMoving) { if (!isGridSoundPlaying) { isGridSoundPlaying = true; playSound('gridBackgroundSound', true, 0.1); } const gridEnemiesList = enemies.filter(e => e?.state === 'in_grid'); if (gridEnemiesList.length > 0) { let minX = gameCanvas.width, maxX = 0; gridEnemiesList.forEach(enemy => { if (enemy) { minX = Math.min(minX, enemy.x); maxX = Math.max(maxX, enemy.x + enemy.width); } }); // Harde klem vanuit het midden: de VOLLEDIGE grid (incl. ademhaling) moet binnen het
+                // scherm blijven. De oude grenzen (18%..82% van de breedte) konden nooit kloppen:
+                // de grid zelf is al ~670px breed (met ademhaling ~805px), dus minX/maxX van de
+                // overgebleven vijanden zeggen niets over waar de gridranden uitkomen. Klem de
+                // offset zelf, keer om op de klem, en laat de offset nooit verder lopen.
+                const effectiveGridMoveSpeed = scaleValue(level, BASE_GRID_MOVE_SPEED, MAX_GRID_MOVE_SPEED);
+                const maxGridOffset = (typeof getMaxGridOffsetX === 'function') ? getMaxGridOffsetX() : 0;
+                gridHorizontalShift = effectiveGridMoveSpeed * gridMoveDirection; currentGridOffsetX += gridHorizontalShift;
+                if (currentGridOffsetX >= maxGridOffset) { currentGridOffsetX = maxGridOffset; gridMoveDirection = -1; }
+                else if (currentGridOffsetX <= -maxGridOffset) { currentGridOffsetX = -maxGridOffset; gridMoveDirection = 1; } enemies.forEach(e => { if (e && (e.state === 'returning' || e.state === 'in_grid' || e.state === 'moving_to_grid')) { try { const enemyWidthForGrid = (e.type === ENEMY3_TYPE) ? BOSS_WIDTH : ((e.type === ENEMY1_TYPE) ? ENEMY1_WIDTH : ENEMY_WIDTH); const { x: newTargetX, y: newTargetY } = getCurrentGridSlotPosition(e.gridRow, e.gridCol, enemyWidthForGrid); e.targetGridX = newTargetX; e.targetGridY = newTargetY; } catch (gridPosError) { console.error(`Error updating target grid pos for enemy ${e?.id} (state: ${e?.state}) during shift:`, gridPosError); } } }); } } else { if (isGridSoundPlaying) { stopSound('gridBackgroundSound'); isGridSoundPlaying = false; } gridHorizontalShift = 0; }
 
         // Enemy State Machine and Movement
         for (let i = enemies.length - 1; i >= 0; i--) {
@@ -6240,67 +6262,67 @@ function moveEntities(overrideP1Left = null, overrideP1Right = null) {
                                     if (upgradeTypeForBeam === 'CLEAR') {
                                             isClearNoBulletsActive = true;
                                             clearActivePlayer = pNum;
-                                            clearActiveUntil = Date.now() + 999999999; // 2 stages lang
-                                            if (typeof clearStagesRemaining !== 'undefined') clearStagesRemaining = 2;
-                                            if (typeof setUpgradeStages === 'function') setUpgradeStages('CLEAR', 2);
+                                            clearActiveUntil = Date.now() + 999999999; // 3 stages lang
+                                            if (typeof clearStagesRemaining !== 'undefined') clearStagesRemaining = 3;
+                                            if (typeof setUpgradeStages === 'function') setUpgradeStages('CLEAR', 3);
                                             enemyBullets = [];
-                                            console.log("[UPGRADE] CLEAR gepakt - 2 stages actief");
+                                            console.log("[UPGRADE] CLEAR gepakt - 3 stages actief");
                                         } else if (upgradeTypeForBeam === 'SHIELD') {
                                             shieldActive = true;
                                             shieldActivePlayer = pNum;
-                                            if (typeof shieldStagesRemaining !== 'undefined') shieldStagesRemaining = 2;
-                                            if (typeof setUpgradeStages === 'function') setUpgradeStages('SHIELD', 2);
-                                            console.log("[UPGRADE] SHIELD gepakt - 2 stages actief");
+                                            if (typeof shieldStagesRemaining !== 'undefined') shieldStagesRemaining = 3;
+                                            if (typeof setUpgradeStages === 'function') setUpgradeStages('SHIELD', 3);
+                                            console.log("[UPGRADE] SHIELD gepakt - 3 stages actief");
                                         } else if (upgradeTypeForBeam === 'RAPID') {
                                             rapidActive = true;
-                                            rapidActiveUntil = Date.now() + 999999999; // 2 stages lang ipv 15 sec
+                                            rapidActiveUntil = Date.now() + 999999999; // 3 stages lang ipv 15 sec
                                             rapidActivePlayer = pNum;
-                                            if (typeof rapidStagesRemaining !== 'undefined') rapidStagesRemaining = 2;
-                                            if (typeof setUpgradeStages === 'function') setUpgradeStages('RAPID', 2);
-                                            console.log("[UPGRADE] RAPID gepakt - 2 stages actief");
+                                            if (typeof rapidStagesRemaining !== 'undefined') rapidStagesRemaining = 3;
+                                            if (typeof setUpgradeStages === 'function') setUpgradeStages('RAPID', 3);
+                                            console.log("[UPGRADE] RAPID gepakt - 3 stages actief");
                                         } else if (upgradeTypeForBeam === 'SPREAD') {
                                             spreadActive = true;
-                                            spreadActiveUntil = Date.now() + 999999999; // 2 stages lang
+                                            spreadActiveUntil = Date.now() + 999999999; // 3 stages lang
                                             spreadActivePlayer = pNum;
-                                            if (typeof spreadStagesRemaining !== 'undefined') spreadStagesRemaining = 2;
-                                            if (typeof setUpgradeStages === 'function') setUpgradeStages('SPREAD', 2);
-                                            console.log("[UPGRADE] SPREAD gepakt - 2 stages actief");
+                                            if (typeof spreadStagesRemaining !== 'undefined') spreadStagesRemaining = 3;
+                                            if (typeof setUpgradeStages === 'function') setUpgradeStages('SPREAD', 3);
+                                            console.log("[UPGRADE] SPREAD gepakt - 3 stages actief");
                                         } else if (upgradeTypeForBeam === 'TRIPLE') {
                                             tripleActive = true;
-                                            tripleActiveUntil = Date.now() + 999999999; // 2 volle stages
+                                            tripleActiveUntil = Date.now() + 999999999; // 3 volle stages
                                             tripleActivePlayer = pNum;
-                                            if (typeof tripleStagesRemaining !== 'undefined') tripleStagesRemaining = 2;
-                                            if (typeof setUpgradeStages === 'function') setUpgradeStages('TRIPLE', 2);
-                                            console.log("[UPGRADE] TRIPLE gepakt - 2 stages actief");
+                                            if (typeof tripleStagesRemaining !== 'undefined') tripleStagesRemaining = 3;
+                                            if (typeof setUpgradeStages === 'function') setUpgradeStages('TRIPLE', 3);
+                                            console.log("[UPGRADE] TRIPLE gepakt - 3 stages actief");
                                         } else if (upgradeTypeForBeam === 'PIERCING') {
                                             piercingActive = true;
-                                            piercingActiveUntil = Date.now() + 999999999; // 2 volle stages
+                                            piercingActiveUntil = Date.now() + 999999999; // 3 volle stages
                                             piercingActivePlayer = pNum;
-                                            if (typeof piercingStagesRemaining !== 'undefined') piercingStagesRemaining = 2;
-                                            if (typeof setUpgradeStages === 'function') setUpgradeStages('PIERCING', 2);
-                                            console.log("[UPGRADE] PIERCING gepakt - 2 stages actief");
+                                            if (typeof piercingStagesRemaining !== 'undefined') piercingStagesRemaining = 3;
+                                            if (typeof setUpgradeStages === 'function') setUpgradeStages('PIERCING', 3);
+                                            console.log("[UPGRADE] PIERCING gepakt - 3 stages actief");
                                         } else if (upgradeTypeForBeam === 'BOUNCE') {
                                             bounceActive = true;
-                                            bounceActiveUntil = Date.now() + 999999999; // 2 volle stages
+                                            bounceActiveUntil = Date.now() + 999999999; // 3 volle stages
                                             bounceActivePlayer = pNum;
-                                            if (typeof bounceStagesRemaining !== 'undefined') bounceStagesRemaining = 2;
-                                            if (typeof setUpgradeStages === 'function') setUpgradeStages('BOUNCE', 2);
-                                            console.log("[UPGRADE] BOUNCE gepakt - 2 stages actief");
+                                            if (typeof bounceStagesRemaining !== 'undefined') bounceStagesRemaining = 3;
+                                            if (typeof setUpgradeStages === 'function') setUpgradeStages('BOUNCE', 3);
+                                            console.log("[UPGRADE] BOUNCE gepakt - 3 stages actief");
                                         } else if (upgradeTypeForBeam === 'SCORE-UP') {
                                             scoreUpActive = true;
-                                            scoreUpActiveUntil = Date.now() + 999999999; // 2 volle stages
+                                            scoreUpActiveUntil = Date.now() + 999999999; // 3 volle stages
                                             scoreUpActivePlayer = pNum;
-                                            if (typeof scoreUpStagesRemaining !== 'undefined') scoreUpStagesRemaining = 2;
-                                            if (typeof setUpgradeStages === 'function') setUpgradeStages('SCORE-UP', 2);
-                                            console.log("[UPGRADE] SCORE-UP gepakt - 2 stages actief");
+                                            if (typeof scoreUpStagesRemaining !== 'undefined') scoreUpStagesRemaining = 3;
+                                            if (typeof setUpgradeStages === 'function') setUpgradeStages('SCORE-UP', 3);
+                                            console.log("[UPGRADE] SCORE-UP gepakt - 3 stages actief");
                                         } else if (upgradeTypeForBeam === 'LUCKY 7') {
                                             lucky7Active = true;
-                                            lucky7ActiveUntil = Date.now() + 999999999; // 2 volle stages
+                                            lucky7ActiveUntil = Date.now() + 999999999; // 3 volle stages
                                             lucky7ActivePlayer = pNum;
                                             if (typeof lucky7KillCounts !== 'undefined') lucky7KillCounts[pNum] = 0; // tellen start vers
-                                            if (typeof lucky7StagesRemaining !== 'undefined') lucky7StagesRemaining = 2;
-                                            if (typeof setUpgradeStages === 'function') setUpgradeStages('LUCKY 7', 2);
-                                            console.log("[UPGRADE] LUCKY 7 gepakt - 2 stages actief");
+                                            if (typeof lucky7StagesRemaining !== 'undefined') lucky7StagesRemaining = 3;
+                                            if (typeof setUpgradeStages === 'function') setUpgradeStages('LUCKY 7', 3);
+                                            console.log("[UPGRADE] LUCKY 7 gepakt - 3 stages actief");
                                         } else if (upgradeTypeForBeam === '1UP') {
                                             if (isTwoPlayerMode && selectedGameMode === 'coop') {
                                                 if (pNum === 1) player1Lives++; else player2Lives++;
