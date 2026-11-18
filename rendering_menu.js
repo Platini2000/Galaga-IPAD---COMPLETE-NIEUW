@@ -73,14 +73,6 @@ const RESULTS_VALUE_COLOR_CYAN = INTRO_TEXT_COLOR_NORMAL;
 const RESULTS_LINE_V_SPACING_SINGLE = 35;
 const RESULTS_LINE_V_SPACING_DOUBLE = 90;
 const RESULTS_START_Y = 175;
-// PC: hele eindscore-blok 1,5 cm + 2 px hoger (ongeveer 59 px bij 96 dpi). iPhone blijft op 175.
-const RESULTS_PC_Y_OFFSET = -59; // alleen op PC, iPhone: 0 — 1,5 cm + 2 px hoger dan origineel
-// PC vs iPhone via SCHERMBREEDTE — dit liegt niet.
-// iPhone landscape: max ~900 px breed. PC-monitor/laptop: 1000+ px breed.
-// userAgent liegt in desktop-modus, touch liegt bij een touchscreen-laptop.
-// Breedte liegt niet. Twijfel (geen gameCanvas / smal scherm) = GEEN offset.
-function isDesktopPC() { try { if (typeof gameCanvas !== 'undefined' && gameCanvas && gameCanvas.width > 0) return gameCanvas.width >= 1000; if (typeof window !== 'undefined' && window.innerWidth > 0) return window.innerWidth >= 1000; return false; } catch (e) { return false; } }
-function getResultsStartY() { return isDesktopPC() ? RESULTS_START_Y + RESULTS_PC_Y_OFFSET : RESULTS_START_Y; }
 const RESULTS_FOOTER_FONT = MENU_SUBTITLE_FONT;
 const RESULTS_FOOTER_COLOR = PLATINI_COLOR;
 
@@ -89,6 +81,32 @@ const CS_MESSAGE_VERTICAL_OFFSET = 30;
 
 // --- Helper Functie voor Hoogte ---
 function getSubtitleApproxHeight(font) { const sizeMatch = font.match(/(\d+)px/); return sizeMatch?.[1] ? parseInt(sizeMatch[1], 10) : 25; }
+
+// --- PC-ANKER: onderkant Platini-regel = vloer-horizon - 2px (alleen PC) ---
+// Vloer-horizon = bovenkant van de vloer = gameCanvas.height * GRID_HORIZON_Y_FACTOR (0.74).
+// iPhone 12 Pro Max: CSS-breedte max 926 (landscape) / 428 (portrait), dus >= 1000 + landscape = PC.
+// iPhone = 0 lift, niets verandert. Lift wordt afgekapt op 0: een blok dat al boven de
+// vloer staat, schuift NOOIT naar beneden, alleen omhoog.
+const PC_MENU_MIN_WIDTH = 1000;
+function isPcMenuLayout(canvasWidth, canvasHeight) {
+    return !!canvasWidth && !!canvasHeight && canvasWidth >= PC_MENU_MIN_WIDTH && canvasWidth > canvasHeight;
+}
+function getFloorHorizonY(canvasHeight) {
+    const f = (typeof GRID_HORIZON_Y_FACTOR !== 'undefined' && GRID_HORIZON_Y_FACTOR) ? GRID_HORIZON_Y_FACTOR : 0.74;
+    return canvasHeight * f;
+}
+// platiniCenterY = midden-Y van de Platini-regel (drawCanvasText met 'middle').
+// fontPx = 22 voor MENU_SUBTITLE_FONT / RESULTS_FOOTER_FONT -> onderkant = midden + 11.
+// Doel: onderkant = vloerY - 2  =>  midden = vloerY - 2 - 11 = vloerY - 13.
+// Retour: lift (negatief of 0). Alleen omhoog, nooit omlaag.
+function getPcPlatiniAnchorLift(platiniCenterY, fontPx) {
+    if (!gameCanvas || !gameCanvas.height) return 0;
+    if (!isPcMenuLayout(gameCanvas.width, gameCanvas.height)) return 0;
+    const halfFont = (typeof fontPx === 'number' ? fontPx : 22) / 2;
+    const currentBottom = platiniCenterY + halfFont;
+    const targetBottom = getFloorHorizonY(gameCanvas.height) - 2;
+    return Math.min(0, targetBottom - currentBottom);
+}
 
 // --- Helper Functie voor Tijd Formattering ---
 /** Formatteert milliseconden naar een "MM:SS" string. */
@@ -119,6 +137,14 @@ function getMenuButtonRect(buttonIndex) {
 
     let groupStartY = (canvasHeight - totalContentHeight) / 2 - 70;
     groupStartY += MENU_GENERAL_Y_OFFSET; // Hier wordt de algemene offset toegepast
+
+    // PC-anker (hoofdmenu): bereken eerst de Platini-regel ZONDER lift, dan pas de lift.
+    // Platini-midden = knop 1 onderkant + MENU_BUTTON_SUBTITLE_V_GAP + subtitleHeight/2.
+    // Daarna het hele blok (logo + knoppen + Platini) met die lift omhoog.
+    const baseFirstButtonTopY = groupStartY + actualLogoHeight + MENU_LOGO_BOTTOM_TO_START_GAP;
+    const baseButton1Y = baseFirstButtonTopY + 1 * (MENU_BUTTON_HEIGHT + MENU_BUTTON_V_GAP);
+    const basePlatiniCenterY = baseButton1Y + MENU_BUTTON_HEIGHT + MENU_BUTTON_SUBTITLE_V_GAP + (subtitleHeight / 2);
+    groupStartY += getPcPlatiniAnchorLift(basePlatiniCenterY, getSubtitleApproxHeight(MENU_SUBTITLE_FONT));
 
     const firstButtonTopY = groupStartY + actualLogoHeight + MENU_LOGO_BOTTOM_TO_START_GAP;
     const buttonY = firstButtonTopY + buttonIndex * (MENU_BUTTON_HEIGHT + MENU_BUTTON_V_GAP);
@@ -2133,6 +2159,9 @@ function drawActiveUpgradesUnderScore(pNum, label, labelAlign, labelX) {
                     gameCtx.save();
                     const centerX = gameCanvas.width / 2;
                     let scoreScreenBaseY = gameCanvas.height * 0.25 + SCORE_SCREEN_VERTICAL_OFFSET + SCORE_SCREEN_LINE_V_SPACING;
+                    // PC-anker (subscore): Platini-midden = baseY + 224 (yPos1..yPos5) + 30.
+                    // Hele blok (PUSH START + bonussen + Platini) schuift met die lift mee.
+                    scoreScreenBaseY += getPcPlatiniAnchorLift(scoreScreenBaseY + 224 + 30, getSubtitleApproxHeight(MENU_SUBTITLE_FONT));
                     let alignedIconStartX = 0;
                     let yPos1 = scoreScreenBaseY + 0;
                     drawCanvasText("PUSH START BUTTON", centerX, yPos1 - 30, SCORE_SCREEN_TEXT_FONT, SCORE_SCREEN_TEXT_COLOR_TOP, 'center', 'middle', true);
@@ -2170,7 +2199,7 @@ function drawActiveUpgradesUnderScore(pNum, label, labelAlign, labelX) {
                     selectedButtonIndex = 0;
                 }
 
-                let actualLogoHeight = MENU_LOGO_APPROX_HEIGHT; let actualLogoWidth = actualLogoHeight * (logoImage.naturalWidth / logoImage.naturalHeight || 1); if (typeof logoImage !== 'undefined' && logoImage.complete && logoImage.naturalHeight !== 0) { actualLogoHeight = logoImage.naturalHeight * LOGO_SCALE_FACTOR; actualLogoWidth = logoImage.naturalWidth * LOGO_SCALE_FACTOR; } const subtitleHeight = getSubtitleApproxHeight(MENU_SUBTITLE_FONT); const totalContentHeightForLayout = actualLogoHeight + MENU_LOGO_BOTTOM_TO_START_GAP + (2 * MENU_BUTTON_HEIGHT) + MENU_BUTTON_V_GAP + MENU_BUTTON_SUBTITLE_V_GAP + subtitleHeight; let groupStartYForLayout = (canvasHeight - totalContentHeightForLayout) / 2 - 70; groupStartYForLayout += MENU_GENERAL_Y_OFFSET; const logoDrawX = canvasCenterX - actualLogoWidth / 2; const logoDrawY = groupStartYForLayout + MENU_LOGO_EXTRA_Y_OFFSET; if (typeof logoImage !== 'undefined' && logoImage.complete && logoImage.naturalHeight !== 0) { gameCtx.drawImage(logoImage, Math.round(logoDrawX), Math.round(logoDrawY), actualLogoWidth, actualLogoHeight); } else { drawCanvasText("LOGO", canvasCenterX, logoDrawY + actualLogoHeight / 2, "30px Arial", "grey"); }
+                let actualLogoHeight = MENU_LOGO_APPROX_HEIGHT; let actualLogoWidth = actualLogoHeight * (logoImage.naturalWidth / logoImage.naturalHeight || 1); if (typeof logoImage !== 'undefined' && logoImage.complete && logoImage.naturalHeight !== 0) { actualLogoHeight = logoImage.naturalHeight * LOGO_SCALE_FACTOR; actualLogoWidth = logoImage.naturalWidth * LOGO_SCALE_FACTOR; } const subtitleHeight = getSubtitleApproxHeight(MENU_SUBTITLE_FONT); const totalContentHeightForLayout = actualLogoHeight + MENU_LOGO_BOTTOM_TO_START_GAP + (2 * MENU_BUTTON_HEIGHT) + MENU_BUTTON_V_GAP + MENU_BUTTON_SUBTITLE_V_GAP + subtitleHeight; let groupStartYForLayout = (canvasHeight - totalContentHeightForLayout) / 2 - 70; groupStartYForLayout += MENU_GENERAL_Y_OFFSET; { const _r1 = getMenuButtonRect(1); if (_r1) { const _basePlatini = groupStartYForLayout + actualLogoHeight + MENU_LOGO_BOTTOM_TO_START_GAP + (2 * MENU_BUTTON_HEIGHT) + MENU_BUTTON_V_GAP + MENU_BUTTON_SUBTITLE_V_GAP + (subtitleHeight / 2); groupStartYForLayout += getPcPlatiniAnchorLift(_basePlatini, getSubtitleApproxHeight(MENU_SUBTITLE_FONT)); } } const logoDrawX = canvasCenterX - actualLogoWidth / 2; const logoDrawY = groupStartYForLayout + MENU_LOGO_EXTRA_Y_OFFSET; if (typeof logoImage !== 'undefined' && logoImage.complete && logoImage.naturalHeight !== 0) { gameCtx.drawImage(logoImage, Math.round(logoDrawX), Math.round(logoDrawY), actualLogoWidth, actualLogoHeight); } else { drawCanvasText("LOGO", canvasCenterX, logoDrawY + actualLogoHeight / 2, "30px Arial", "grey"); }
 
                 if (isPlayerSelectMode) {
                     drawCanvasButton("PLAYER 1", 0, selectedButtonIndex === 0);
@@ -2673,7 +2702,10 @@ function drawActiveUpgradesUnderScore(pNum, label, labelAlign, labelX) {
                          drawCanvasText("GAME OVER", gameCanvas.width / 2, gameCanvas.height / 2, GAME_OVER_FONT, GAME_OVER_COLOR, 'center', 'middle', GAME_OVER_SHADOW);
                     }
                     else if (isShowingResultsScreenActive) {
-                        gameCtx.save(); const centerX = gameCanvas.width / 2; const canvasWidth = gameCanvas.width; let initialY = getResultsStartY() + RESULTS_LINE_V_SPACING_SINGLE;
+                        gameCtx.save(); const centerX = gameCanvas.width / 2; const canvasWidth = gameCanvas.width; let initialY = RESULTS_START_Y + RESULTS_LINE_V_SPACING_SINGLE;
+                        // PC-anker (eindscore): Platini-midden = initialY + 410.5.
+                        // Hele blok (RESULTS-kolommen + Platini) schuift met die lift mee.
+                        initialY += getPcPlatiniAnchorLift(initialY + 410.5, getSubtitleApproxHeight(RESULTS_FOOTER_FONT));
                         const drawPlayerResultsColumn = (playerIdentifier, scoreVal, shotsVal, hitsVal, ratioVal, lastLevel, columnX, startY) => {
                             let currentColumnY = startY; const STAGE_LABEL_COLOR = RESULTS_VALUE_COLOR_YELLOW; const LEVEL_NUMBER_COLOR = RESULTS_VALUE_COLOR_CYAN;
                             drawCanvasText("- RESULTS -", columnX, currentColumnY, INTRO_TEXT_FONT, RESULTS_HEADER_COLOR, 'center', 'top', true); currentColumnY += getSubtitleApproxHeight(INTRO_TEXT_FONT) + RESULTS_LINE_V_SPACING_SINGLE;
