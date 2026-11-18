@@ -2,13 +2,10 @@
 // --- DEEL 1      van 3 dit code blok    ---
 
 // --- Menu/UI Constanten ---
-// Platini2000-accent: gedempt koraalrood, niet fel, wel goed leesbaar op donker.
-// Eén bron voor hoofdmenu, subscores, eindscores en portret-mode.
-const PLATINI2000_COLOR = "#E2574C";
 const MENU_LOGO_APPROX_HEIGHT = 85;
 const MENU_SUBTITLE_TEXT = "Written By Platini2000(c)";
 const MENU_SUBTITLE_FONT = "18px 'Arial Black', Gadget, sans-serif"; // Groter
-const MENU_SUBTITLE_COLOR = PLATINI2000_COLOR; // zelfde kleur als HIGH SCORE
+const MENU_SUBTITLE_COLOR = "red"; // zelfde kleur als HIGH SCORE
 const MENU_BUTTON_FONT = "22px 'Arial Black', Gadget, sans-serif";
 const MENU_BUTTON_COLOR = "white";
 const MENU_BUTTON_COLOR_HOVER = 'rgba(0, 191, 255, 0.9)'; // Deep sky blue hover
@@ -19,7 +16,7 @@ const MENU_BUTTON_V_GAP = -15;
 const MENU_BUTTON_SUBTITLE_V_GAP = -0;
 const MENU_SCORE_FONT = "20px 'Press Start 2P'";
 const MENU_SCORE_COLOR = "white";
-const MENU_SCORE_LABEL_COLOR = PLATINI2000_COLOR;
+const MENU_SCORE_LABEL_COLOR = "red";
 const GAME_OVER_FONT = "bold 18px 'Press Start 2P'";
 const GAME_OVER_COLOR = "rgba(0, 191, 255, 0.9)"; // Cyaan
 const GAME_OVER_SHADOW = true;
@@ -35,7 +32,7 @@ const INTRO_TEXT_FONT = "bold 18px 'Press Start 2P'";
 const INTRO_TEXT_COLOR_NORMAL = "rgba(0, 191, 255, 0.9)"; // Cyaan
 const INTRO_TEXT_COLOR_DARK_YELLOW = "yellow";
 const INTRO_TEXT_COLOR_CS_TEXT = INTRO_TEXT_COLOR_NORMAL;
-const PERFECT_TEXT_COLOR = PLATINI2000_COLOR;
+const PERFECT_TEXT_COLOR = "red";
 const EXTRA_LIFE_TEXT_COLOR = INTRO_TEXT_COLOR_NORMAL;
 const READY_TEXT_COLOR = INTRO_TEXT_COLOR_NORMAL;
 const CS_BONUS_SCORE_TEXT_COLOR = INTRO_TEXT_COLOR_DARK_YELLOW;
@@ -67,7 +64,7 @@ const SCORE_SCREEN_ICON_TEXT_H_SPACING = 15;
 const SCORE_SCREEN_VERTICAL_OFFSET = 75;
 
 // --- Resultaten Scherm Kleuren & Layout ---
-const RESULTS_HEADER_COLOR = PLATINI2000_COLOR;
+const RESULTS_HEADER_COLOR = "red";
 const RESULTS_VALUE_COLOR_YELLOW = INTRO_TEXT_COLOR_DARK_YELLOW;
 const RESULTS_LABEL_COLOR = "white";
 const RESULTS_VALUE_COLOR_CYAN = INTRO_TEXT_COLOR_NORMAL;
@@ -75,7 +72,7 @@ const RESULTS_LINE_V_SPACING_SINGLE = 35;
 const RESULTS_LINE_V_SPACING_DOUBLE = 90;
 const RESULTS_START_Y = 175;
 const RESULTS_FOOTER_FONT = MENU_SUBTITLE_FONT;
-const RESULTS_FOOTER_COLOR = PLATINI2000_COLOR; // zelfde kleur als HIGH SCORE
+const RESULTS_FOOTER_COLOR = "red"; // zelfde kleur als HIGH SCORE
 
 // --- Verticale Offset voor CS berichten ---
 const CS_MESSAGE_VERTICAL_OFFSET = 30;
@@ -1345,7 +1342,7 @@ function renderGame() {
             const rotateFont = "bold 24px 'Press Start 2P'";
             const rotateColor = "rgba(0, 191, 255, 0.9)";
             const platiniFont = `normal ${cleanFontBaseSize - 4}px Arial, sans-serif`;
-            const platiniColor = PLATINI2000_COLOR; // zelfde kleur als HIGH SCORE
+            const platiniColor = "red"; // zelfde kleur als HIGH SCORE
 
             const messageStructure = [
                 { text: "Disclaimer", font: disclaimerTitleFont, color: disclaimerTitleColor, skipAfter: 0.75 },
@@ -1409,7 +1406,7 @@ function renderGame() {
             // --- BEGIN VASTE UI VOOR PORTRETMODUS ---
             gameCtx.save();
             const PORTRAIT_UI_FONT = "20px 'Press Start 2P'";
-            const PORTRAIT_LABEL_COLOR = PLATINI2000_COLOR;
+            const PORTRAIT_LABEL_COLOR = "red";
             const PORTRAIT_SCORE_COLOR = "white";
             const PORTRAIT_MARGIN_TOP_BASE = 15;
             const PORTRAIT_MARGIN_SIDE = 20;
@@ -1528,7 +1525,7 @@ function drawActiveUpgradesUnderScore(pNum, label, labelAlign, labelX) {
 
         // --- STAP 1: Teken UI (Score, Levens, Level) ---
         gameCtx.save();
-        const UI_FONT="20px 'Press Start 2P'"; const LABEL_COLOR=PLATINI2000_COLOR; const SCORE_COLOR="white";
+        const UI_FONT="20px 'Press Start 2P'"; const LABEL_COLOR="red"; const SCORE_COLOR="white";
         const maxLivesIcons = 5;
         const defaultReserveLives = 2;
         gameCtx.font=UI_FONT; gameCtx.textBaseline="top";
@@ -1549,7 +1546,7 @@ function drawActiveUpgradesUnderScore(pNum, label, labelAlign, labelX) {
             const name = getHighScoreHolderName();
             if(!name || !(sessionHighScore > 0)) return;
             gameCtx.save();
-            gameCtx.font=UI_FONT; gameCtx.textBaseline='top'; gameCtx.textAlign='center'; gameCtx.fillStyle=PLATINI2000_COLOR;
+            gameCtx.font=UI_FONT; gameCtx.textBaseline='top'; gameCtx.textAlign='center'; gameCtx.fillStyle='red';
             gameCtx.fillText(name, gameCanvas.width/2, MARGIN_TOP+SCORE_OFFSET_Y+5+28);
             gameCtx.restore();
         };
