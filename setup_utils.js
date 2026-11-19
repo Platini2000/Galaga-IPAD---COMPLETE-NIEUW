@@ -1042,7 +1042,17 @@ function getMaxGridOffsetX() {
         // De breedste vijand steekt (BOSS_WIDTH - ENEMY_WIDTH)/2 aan weerszijden uit zijn slot.
         const widest = (typeof BOSS_WIDTH !== 'undefined' ? BOSS_WIDTH : ENEMY_WIDTH);
         const gridWidth = GRID_COLS * ENEMY_WIDTH + (GRID_COLS - 1) * ENEMY_H_SPACING_FIXED + (widest - ENEMY_WIDTH);
-        return Math.max(0, (gameCanvas.width - gridWidth) / 2);
+        // Max 1/3 van de weg naar de rand, vanuit het midden.
+        // WAAROM NIET gameCanvas.width / 3: de grid zelf is al ~690px breed
+        // (10 x 40 + 9 x 30 + boss-marge). Op een scherm van bv. 1200px is de
+        // ruimte tot de rand maar (1200 - 690) / 2 = 255px. Dan was
+        // min(W/3 = 400, 255) = 255 en raakte de grid dus nog steeds de rand:
+        // de vorige limiet deed op een normaal scherm helemaal niets.
+        // Nu: 1/3 van die 255px = 85px uit het midden. De buitenste vijand
+        // blijft dan nog ~170px van de rand (255 - 85), dus duidelijk niet
+        // meer dicht tegen de kant aan.
+        const edgeLimit = Math.max(0, (gameCanvas.width - gridWidth) / 2);
+        return edgeLimit / 3;
     } catch(e) { return 0; }
 }
 window.getMaxGridOffsetX = getMaxGridOffsetX;
@@ -1916,6 +1926,14 @@ function processSingleController(gamepad, previousButtonStates) { const currentB
  */
 function triggerFinalGameOverSequence() {
     if (isInGameState && gameOverSequenceStartTime === 0) {
+        // HARDE GARANTIE (hang-fix): timer als EERSTE zetten, VOOR saveHighScore()
+        // / stopSound() / playSound() hieronder. Als een van die calls throwt,
+        // brak de functie vroeger af VOOR gameOverSequenceStartTime gezet werd:
+        // dan liep de mainLoop-watchdog nooit naar results en bleven vijanden
+        // voor eeuwig rondvliegen. Nu staat de cyclus al aan, ook bij een
+        // exception verderop. De latere toekenning gameOverSequenceStartTime = now
+        // blijft staan (zelfde waarde, idempotent).
+        try { gameOverSequenceStartTime = Date.now(); } catch(e) {}
         isPaused = false; isShowingDemoText = false; isShowingIntro = false; isWaveTransitioning = false; showCsHitsMessage = false; showExtraLifeMessage = false; showPerfectMessage = false; showCSClearMessage = false; showCsHitsForClearMessage = false; showCsScoreForClearMessage = false; showReadyMessage = false; showCsBonusScoreMessage = false; 
         isShowingPlayerGameOverMessage = false; 
         isPlayer1ShowingGameOverMessage = false;

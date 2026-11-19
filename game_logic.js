@@ -111,9 +111,25 @@ function wipeEverythingForFinalGameOver() {
 }
 function forceGameOverIfAllDead() {
     try {
-        if (typeof isInGameState !== 'undefined' && !isInGameState) return false;
+        // HARDE GARANTIE (hang-fix): deze functie is de enige plek die de finale
+        // game-over cyclus MOET starten als beide spelers dood zijn. Vroeger
+        // vertrouwde hij volledig op triggerFinalGameOverSequence() uit een
+        // ander bestand: als die functie vroegtijdig afbrak (demo-mode,
+        // capture/message-pad, al een message actief), werd
+        // gameOverSequenceStartTime nooit gezet en bleven vijanden voor
+        // eeuwig rondvliegen zonder dat ooit de eindscore kwam.
+        // Daarom zetten we gameOverSequenceStartTime hier ZELF, VOOR we
+        // triggerFinalGameOverSequence() aanroepen, en controleren we
+        // erna of hij nog steeds gezet is. trigger... mag hem dus nooit
+        // meer (per ongeluk) ongedaan maken.
         if (typeof gameOverSequenceStartTime !== 'undefined' && gameOverSequenceStartTime > 0) return true;
+        if (typeof isInGameState !== 'undefined' && !isInGameState) return false;
         if (!allPlayersDeadForGameOver()) return false;
+        // LET OP: gameOverSequenceStartTime hier NIET al zetten. triggerFinalGameOverSequence()
+        // in setup_utils.js start alleen als die timer nog 0 is; zou je hem hier al zetten,
+        // dan doet de trigger niets meer (geen saveHighScore, geen sounds stoppen).
+        // De post-check na de trigger (hieronder) is de echte garantie: als de trigger
+        // door een exception halverwege afbreekt, wordt de timer daar alsnog gezet.
         // Laatste speler dood: geen per-speler message meer tonen / afwachten, geen respawn,
         // geen capture-respawn. Die timers/messages waren precies de paden waarop de game
         // bleef hangen (vijanden bleven vliegen, finale sequence startte nooit).
@@ -128,8 +144,24 @@ function forceGameOverIfAllDead() {
         // 1P: pools synchroniseren zodat de eindscore / results nooit een "levende" pool tonen.
         try { if (!(typeof isTwoPlayerMode !== 'undefined' && isTwoPlayerMode)) { playerLives = 0; player1Lives = 0; } } catch(e) {}
         try { if (typeof triggerFinalGameOverSequence === 'function') triggerFinalGameOverSequence(); } catch(e) {}
+        // Herstel-garantie: als triggerFinalGameOverSequence() de timer
+        // heeft gewist / nooit heeft gezet (demo, vroegtijdige return),
+        // staat de cyclus alsnog aan. Zonder deze regel hing de game.
+        try { if (typeof gameOverSequenceStartTime === 'undefined' || !(gameOverSequenceStartTime > 0)) gameOverSequenceStartTime = Date.now(); } catch(e) {}
+        // Alle paden die na dit punt nog vijanden kunnen (her)spawnen of een
+        // wave/intro/capture kunnen hervatten, moeten uit: anders overschrijft
+        // een lopende setTimeout / wave-transition de game-over alsnog.
+        try { isWaveTransitioning = false; isCsCompletionDelayActive = false; isEntrancePhaseActive = false; isShowingIntro = false; isShowingCoopPlayersReady = false; coopPlayersReadyStartTime = 0; isShowingCaptureMessage = false; captureMessageStartTime = 0; } catch(e) {}
+        try { if (typeof enemySpawnTimeouts !== 'undefined' && Array.isArray(enemySpawnTimeouts)) { enemySpawnTimeouts.forEach(clearTimeout); enemySpawnTimeouts = []; } } catch(e) {}
+        try { enemies = []; enemyBullets = []; bullets = []; } catch(e) {}
+        try { if (typeof bossStageBoss !== 'undefined') bossStageBoss = null; if (typeof isBossStage !== 'undefined') isBossStage = false; } catch(e) {}
         return true;
-    } catch(e) { console.error("forceGameOverIfAllDead error", e); }
+    } catch(e) {
+        // Ook bij een onverwachte fout in de cleanup hierboven mag de
+        // game-over cyclus nooit verloren gaan: zet hem alsnog aan.
+        try { if (typeof gameOverSequenceStartTime !== 'undefined' && !(gameOverSequenceStartTime > 0)) gameOverSequenceStartTime = Date.now(); } catch(e2) {}
+        console.error("forceGameOverIfAllDead error", e);
+    }
     return false;
 }
 window.forceGameOverIfAllDead = forceGameOverIfAllDead;
@@ -8543,8 +8575,8 @@ var isMiniBossWave = false, isHotChallengeWave = false, miniBossSpawned = false,
 // - Challenge wisselt af: normaal, hot, normaal, hot... Hot = zelfde stage als
 //   normaal, enige verschil: 2 kogels per wave (per squadron) op het schip.
 //   Er bestaat GEEN hot mini boss.
-var MINI_BOSS_LOWER_PX = 38 - 20; // 1 cm lager (38px), daarna 20px hoger = netto 18px lager dan origineel
-var MINI_BOSS_Y = 87 + MINI_BOSS_LOWER_PX; // 105: 1 cm lager, daarna 20px hoger
+var MINI_BOSS_LOWER_PX = 38 - 20 + 38; // 1 cm lager (38px), daarna 20px hoger, daarna nog eens 1 cm lager (38px) = netto 56px lager dan origineel
+var MINI_BOSS_Y = 87 + MINI_BOSS_LOWER_PX; // 143: 1 cm lager, daarna 20px hoger, daarna nog eens 1 cm lager
 var MINI_BOSS_MINION_FIRE_INTERVAL_MS = 3000; // 1 kogel per minion per 3 sec
 var hotChallengeFiredSquadrons = {}; // squadronId -> true, als die wave zijn 2 hot-kogels al vuurde
 
